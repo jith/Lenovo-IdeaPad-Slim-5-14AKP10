@@ -1,0 +1,45 @@
+#!/bin/sh
+# speaker-dsp — live A/B toggle for the internal-speaker tuning DSP chain.
+#   speaker-dsp off     -> hear the RAW speaker (DSP bypassed, instant)
+#   speaker-dsp on      -> DSP active again (default)
+#   speaker-dsp status  -> show current state
+# No PipeWire restart needed: uses WirePlumber's "filters" metadata
+# (filter.smart.disabled). The physical Speaker sink stays the default in
+# both states - the smart filter inserts/removes itself automatically.
+# Chain config: /etc/pipewire/pipewire.conf.d/50-speaker-tuning.conf
+# No sudo needed; if run via sudo anyway, talk to the invoking user's session.
+
+if [ "$(id -u)" = "0" ] && [ -n "$SUDO_UID" ]; then
+  export XDG_RUNTIME_DIR="/run/user/$SUDO_UID"
+fi
+
+FILT="effect_input.speaker-tuning"
+
+fid=$(pw-dump 2>/dev/null | python3 -c "
+import json,sys
+try: data=json.load(sys.stdin)
+except Exception: data=[]
+for o in data:
+    if o.get('info',{}).get('props',{}).get('node.name')=='$FILT':
+        print(o['id']); break")
+
+[ -z "$fid" ] && { echo "error: $FILT not found - is PipeWire running in your session? (do not run this as root outside a desktop session)"; exit 1; }
+
+case "$1" in
+  off|raw)
+    pw-metadata -n filters "$fid" filter.smart.disabled true >/dev/null
+    echo "DSP BYPASSED - you are hearing the raw speaker"
+    ;;
+  on|dsp)
+    pw-metadata -n filters "$fid" filter.smart.disabled false >/dev/null
+    echo "DSP ACTIVE - tuned speaker (EQ + loudness maximizer)"
+    ;;
+  status|*)
+    dis=$(pw-metadata -n filters "$fid" filter.smart.disabled 2>/dev/null \
+          | grep -o "value:'[^']*'" | head -1)
+    case "$dis" in
+      *true*) echo "state: RAW (DSP bypassed)" ;;
+      *)      echo "state: DSP ACTIVE (tuned)" ;;
+    esac
+    ;;
+esac
