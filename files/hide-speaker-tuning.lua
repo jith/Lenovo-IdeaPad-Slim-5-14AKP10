@@ -21,6 +21,15 @@ raw_om = ObjectManager {
   }
 }
 
+-- The onboard sound CARD: GNOME Settings also builds output entries from
+-- card PORTS, so the card must be hidden too or a duplicate port-derived
+-- "Speaker" entry remains. (HDMI card stays visible.)
+card_om = ObjectManager {
+  Interest { type = "device",
+    Constraint { "device.name", "equals", "alsa_card.pci-0000_04_00.6" },
+  }
+}
+
 -- Match all clients; client.api is only present in the full info
 -- properties, not the registry globals that Interest constraints see.
 clients_om = ObjectManager {
@@ -63,6 +72,9 @@ clients_om:connect ("object-added", function (om, client)
   for node in raw_om:iterate () do
     hide (client, node)
   end
+  for dev in card_om:iterate () do
+    hide (client, dev)
+  end
 end)
 
 nodes_om:connect ("object-added", function (om, node)
@@ -77,6 +89,13 @@ raw_om:connect ("object-added", function (om, node)
   end
 end)
 
+card_om:connect ("object-added", function (om, dev)
+  for client in clients_om:iterate () do
+    hide (client, dev)
+  end
+end)
+
 clients_om:activate ()
 nodes_om:activate ()
 raw_om:activate ()
+card_om:activate ()
