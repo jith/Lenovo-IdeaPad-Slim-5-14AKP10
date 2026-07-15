@@ -1,18 +1,23 @@
--- Hide the speaker DSP's internal output stream from GNOME's mixer
--- connections, so it never shows up as a phantom entry in App Volumes.
--- Both sinks ("Speaker" = raw hardware, "Speaker (Tuned)" = DSP) stay
--- visible on purpose: on PipeWire 1.6.2 every single-visible-sink
--- arrangement hit a platform bug (smart filters bypass the DSP graph,
--- permission-hiding breaks pulse streams, virtual-sink volume corrupts
--- the chain), so two honest sinks is the robust configuration.
+-- Hide the RAW speaker sink and the DSP's internal output stream from
+-- GNOME's mixer connections (GNOME Settings, shell volume menu), so the
+-- only visible speaker output is the DSP sink named "Speaker".
 --
--- This user-level copy SHADOWS /usr/local/share/wireplumber/scripts/.
+-- Safe: no pulse client ever links to the raw sink - apps play into the
+-- DSP sink, and only the PipeWire daemon's filter-chain stream feeds the
+-- raw sink. (Hiding nodes that client streams link to breaks playback -
+-- see README platform bug #5.) pactl/pavucontrol still see everything.
 
 log = Log.open_topic ("s-hide-speaker-tuning")
 
 nodes_om = ObjectManager {
   Interest { type = "node",
     Constraint { "node.name", "matches", "effect_output.speaker-tuning" },
+  }
+}
+
+raw_om = ObjectManager {
+  Interest { type = "node",
+    Constraint { "node.name", "matches", "*HiFi__Speaker__sink" },
   }
 }
 
@@ -55,6 +60,9 @@ clients_om:connect ("object-added", function (om, client)
   for node in nodes_om:iterate () do
     hide (client, node)
   end
+  for node in raw_om:iterate () do
+    hide (client, node)
+  end
 end)
 
 nodes_om:connect ("object-added", function (om, node)
@@ -63,5 +71,12 @@ nodes_om:connect ("object-added", function (om, node)
   end
 end)
 
+raw_om:connect ("object-added", function (om, node)
+  for client in clients_om:iterate () do
+    hide (client, node)
+  end
+end)
+
 clients_om:activate ()
 nodes_om:activate ()
+raw_om:activate ()
