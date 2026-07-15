@@ -39,13 +39,27 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
 ## DSP chain (files/50-speaker-tuning.conf, all PipeWire builtins)
 
 1. High-pass 270 Hz — remove the inaudible-distortion band
-2. Body +2.5 dB @ 560 Hz — lowest octave the driver actually plays
+2. Body +3.5 dB @ 560 Hz — lowest octave the driver actually plays
 3. Box cut −5.5 dB @ 800 Hz — flatten the measured hump (clarity)
 4. Presence +3 dB @ 2.6 kHz — fill the measured dip
 5. Metal cut −3.5 dB @ 10.5 kHz — tame the measured peak
 6. Psychoacoustic bass: mono <250 Hz → x² + x³ harmonics → band-passed to
-   350–650 Hz (where the driver is audible) → mixed back in
-7. Static drive +4 dB (`Mult = 1.585`)
+   350–650 Hz (where the driver is audible; sub-300 Hz residue removed by a
+   cascaded high-pass — it's inaudible and would pump the limiter) → mixed in
+7. **Dynamic bass** (dynamic EQ): the harmonic branch's own envelope
+   (`abs → LP 5 Hz → clamp/log/exp` gain computer) gently ducks the
+   harmonics on loud passages — punchy at normal levels, never piles up
+8. Makeup drive +6 dB (`Mult = 2.0`) into a **lookahead limiter**:
+   stereo-linked envelope (side-chain high-passed at 250 Hz so only what the
+   speaker can reproduce drives it), fast-attack/slow-release via
+   `max(fast LP, slow LP)`, `clamp → log → exp` gain computer, main path
+   delayed 2.5 ms. Below threshold the gain is bit-exact 1.0 (measured);
+   above, output ceilings at ~1.3 × threshold. This recovers the loudness of
+   the old +5.6 dB drive experiment without its hard-clip harshness.
+
+The dynamics are built entirely from PipeWire builtin nodes (`abs`, `max`,
+`clamp`, `log`, `exp`, `delay`, `mult`) because LADSPA dynamics are unusable
+on this stack (bug #2 below).
 
 Tuning knobs are documented at the top of the conf; edit, then
 `systemctl --user restart pipewire wireplumber`.
