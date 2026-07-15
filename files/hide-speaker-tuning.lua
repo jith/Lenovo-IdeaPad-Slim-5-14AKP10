@@ -1,39 +1,27 @@
--- Hide the internal "Speaker Tuning DSP" filter nodes from PulseAudio
--- clients (GNOME Settings, gnome-shell volume menu, pactl, pavucontrol),
--- so only the physical Speaker output is listed as a device.
+-- Hide the speaker DSP's internal output stream from GNOME's mixer
+-- connections, so it never shows up as a phantom entry in App Volumes.
+-- Both sinks ("Speaker" = raw hardware, "Speaker (Tuned)" = DSP) stay
+-- visible on purpose: on PipeWire 1.6.2 every single-visible-sink
+-- arrangement hit a platform bug (smart filters bypass the DSP graph,
+-- permission-hiding breaks pulse streams, virtual-sink volume corrupts
+-- the chain), so two honest sinks is the robust configuration.
 --
--- WirePlumber and the PipeWire core keep full access, so audio is still
--- routed through the DSP; this only removes the virtual nodes from what
--- pulse clients can see. If this script ever fails, audio keeps working -
--- the filter nodes just become visible again.
---
--- Paired with:
---   ~/.config/pipewire/pipewire.conf.d/50-speaker-tuning.conf   (the DSP)
---   ~/.config/wireplumber/wireplumber.conf.d/50-hide-speaker-tuning.conf
+-- This user-level copy SHADOWS /usr/local/share/wireplumber/scripts/.
 
 log = Log.open_topic ("s-hide-speaker-tuning")
 
--- The two internal nodes created by 50-speaker-tuning.conf
 nodes_om = ObjectManager {
   Interest { type = "node",
-    Constraint { "node.name", "matches", "effect_*.speaker-tuning" },
+    Constraint { "node.name", "matches", "effect_output.speaker-tuning" },
   }
 }
 
 -- Match all clients; client.api is only present in the full info
--- properties, not the registry globals that Interest constraints see,
--- so we filter inside the callbacks instead (like access scripts do).
+-- properties, not the registry globals that Interest constraints see.
 clients_om = ObjectManager {
   Interest { type = "client" }
 }
 
--- Only blind the GNOME mixer-control (libgvc) connections: the device
--- lists in GNOME Settings and the shell volume menu. These connections
--- never own playback streams, so hiding nodes from them is safe.
--- IMPORTANT: never hide from ordinary pulse clients - their playback
--- streams get linked to the DSP node by WirePlumber, and a client whose
--- stream is linked to a node it cannot see times out (silent audio,
--- GNOME Settings crash). Learned the hard way.
 local function is_gvc_mixer_client (client)
   local props = client["properties"]
   return props ~= nil
@@ -55,10 +43,10 @@ local function hide (client, node)
     client:update_permissions { [nid] = "-" }
   end)
   if ok then
-    log:info ("hid DSP node " .. tostring (nid) ..
-        " from pulse client " .. tostring (cid))
+    log:info ("hid internal stream " .. tostring (nid) ..
+        " from gvc client " .. tostring (cid))
   else
-    log:warning ("could not hide DSP node " .. tostring (nid) .. ": " ..
+    log:warning ("could not hide node " .. tostring (nid) .. ": " ..
         tostring (err))
   end
 end
