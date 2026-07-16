@@ -50,12 +50,15 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
 7. **Dynamic bass** (dynamic EQ): the harmonic branch's own envelope
    (`abs → LP 5 Hz → clamp/log/exp` gain computer) gently ducks the
    harmonics on loud passages — punchy at normal levels, never piles up
-8. Makeup drive +6 dB (`Mult = 2.0`) into **LSP Limiter Stereo** (LV2): true
-   lookahead limiter (5 ms), ceiling −1 dBFS (`th = 0.891`), ALR off
-   (measured: ALR over-regulates sustained content by ~11 dB). Peaks land
-   exactly on the ceiling (measured), so the DAC never hard-clips — this
-   recovers the loudness of the old +5.6 dB drive experiment without its
-   hard-clip harshness.
+8. Makeup drive +8 dB (`Mult = 2.5`) into **LSP Multiband Limiter Stereo**
+   (LV2): 4 bands — bass <650 Hz, vocals 650–2500, presence 2500–8000, air
+   >8000 — each true-lookahead limited independently at −3 dB, then a final
+   −1 dBFS brickwall on the sum. Dynamic separation: a bass peak compresses
+   only the bass band, vocals/treble stay untouched (measured: 3 kHz output
+   bit-identical with and without a full-scale 500 Hz tone at the band
+   stage). ALR and gain-boost are off everywhere (ALR measured to
+   over-regulate sustained content ~11 dB; `envb` envelope tilt off —
+   measured to over-limit mids ~5 dB). The DAC never hard-clips.
 
 LV2-in-graph safety was verified by measurement (2026-07-16): LSP keeps
 processing at 100 %/50 %/25 % sink volume — the LADSPA skip bug (#2 below)
