@@ -1,0 +1,12 @@
+[Unit]
+Description=Volume-aware loudness contour for the speaker DSP
+After=pipewire.service pipewire-pulse.service wireplumber.service
+Wants=pipewire.service
+
+[Service]
+ExecStart=/usr/local/bin/speaker-loudness-follow
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

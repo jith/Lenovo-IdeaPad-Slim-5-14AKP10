@@ -13,6 +13,9 @@ install -D -m644 50-speaker-tuning.conf      /etc/pipewire/pipewire.conf.d/50-sp
 install -D -m644 hide-speaker-tuning.lua     /usr/local/share/wireplumber/scripts/hide-speaker-tuning.lua
 install -D -m644 50-hide-speaker-tuning.conf /etc/wireplumber/wireplumber.conf.d/50-hide-speaker-tuning.conf
 install -D -m755 speaker-dsp                 /usr/local/bin/speaker-dsp
+install -D -m755 speaker-loudness-follow     /usr/local/bin/speaker-loudness-follow
+install -D -m644 speaker-loudness.service    /etc/systemd/user/speaker-loudness.service
+systemctl --global enable speaker-loudness.service >/dev/null 2>&1 || true
 
 # Remove user-level copies so nothing double-loads or shadows the system
 # files (user pipewire conf fragments MERGE with /etc -> two DSP sinks!).
@@ -24,3 +27,4 @@ rm -f "$H/.config/pipewire/pipewire.conf.d/50-speaker-tuning.conf" \
 
 echo "Installed system-wide. Each logged-in user should now run:"
 echo "  systemctl --user restart pipewire pipewire-pulse wireplumber"
+echo "  systemctl --user daemon-reload && systemctl --user restart speaker-loudness"

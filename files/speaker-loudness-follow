@@ -1,0 +1,48 @@
+#!/bin/sh
+# speaker-loudness-follow: make the loudness contour track the volume knob
+# (Apple-style volume-aware EQ). Watches the DSP sink's volume and updates
+# the loud_comp node inside the filter graph at runtime.
+#
+# Math: PipeWire applies sink volume BEFORE the graph with a cubic taper
+# (measured on this machine: 50% -> -18 dB, 25% -> -36 dB), so
+#   attenuation A(dB) = 60 * log10(100 / vol%)
+# loud_comp "volume" gets the listening level (-A) which selects the ISO 226
+# contour AND attenuates; "input" gets 10^(A/20) as makeup so the signal is
+# not attenuated twice (the sink already did it). Net effect: 1 kHz unity,
+# bass/treble raised by the equal-loudness delta for that listening level.
+# A is capped at 30 dB: deeper contours pump the psycho-bass branch too hard.
+
+SINK="${SPEAKER_DSP_SINK:-effect_input.speaker-tuning}"
+LAST=""
+
+apply() {
+    V=$(pactl get-sink-volume "$SINK" 2>/dev/null \
+        | sed -n 's/.*front-left:[^/]*\/ *\([0-9]*\)%.*/\1/p')
+    [ -n "$V" ] || return 0
+    [ "$V" -gt 100 ] && V=100
+    [ "$V" -lt 2 ] && V=2
+    [ "$V" = "$LAST" ] && return 0
+    LAST=$V
+    set -- $(awk -v v="$V" 'BEGIN {
+        a = 60 * log(100 / v) / log(10)
+        if (a > 30) a = 30
+        printf "%.1f %.4f", a, 10 ^ (a / 20)
+    }')
+    A=$1; IG=$2
+    pw-cli s "$SINK" Props \
+        "{ params = [ \"loud:volume\" -$A \"loud:input\" $IG ] }" \
+        >/dev/null 2>&1 || LAST=""   # retry on next event if node not up yet
+}
+
+# wait for the sink, apply the current volume once, then follow changes
+i=0
+until pactl get-sink-volume "$SINK" >/dev/null 2>&1; do
+    i=$((i + 1)); [ "$i" -gt 60 ] && exit 1
+    sleep 1
+done
+apply
+pactl subscribe 2>/dev/null | while read -r line; do
+    case $line in
+        *"'change' on sink"*) apply ;;
+    esac
+done
