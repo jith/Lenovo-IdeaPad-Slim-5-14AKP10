@@ -43,7 +43,8 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
 2. Body +3.5 dB @ 560 Hz — lowest octave the driver actually plays
 3. Box cut −5.5 dB @ 800 Hz — flatten the measured hump (clarity)
 4. Presence +3 dB @ 2.6 kHz — fill the measured dip
-5. Metal cut −3.5 dB @ 10.5 kHz — tame the measured peak
+5. Metal cut −6 dB @ 10.5 kHz (wide) — tame the measured peak; the aluminum
+   chassis makes this region dominate if left hot
 6. Psychoacoustic bass: mono <250 Hz → x² + x³ harmonics → band-passed to
    350–650 Hz (where the driver is audible; sub-300 Hz residue removed by a
    cascaded high-pass — it's inaudible and would pump the limiter) → mixed in
@@ -52,11 +53,15 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
    harmonics on loud passages — punchy at normal levels, never piles up
 8. Makeup drive +8 dB (`Mult = 2.5`) into **LSP Multiband Limiter Stereo**
    (LV2): 4 bands — bass <650 Hz, vocals 650–2500, presence 2500–8000, air
-   >8000 — each true-lookahead limited independently at −3 dB, then a final
-   −1 dBFS brickwall on the sum. Dynamic separation: a bass peak compresses
-   only the bass band, vocals/treble stay untouched (measured: 3 kHz output
-   bit-identical with and without a full-scale 500 Hz tone at the band
-   stage). ALR and gain-boost are off everywhere (ALR measured to
+   >8000 — each true-lookahead limited independently with **unequal
+   ceilings** (bass −4.4 dB, vocals −2 dB, presence −4 dB, air −9 dB), then
+   a final −1 dBFS brickwall on the sum. Unequal on purpose: with equal
+   ceilings the energy-heavy bass/mids limit constantly while treble never
+   does, so loud music tilts metallic (measured). Vocals get the most
+   headroom (clarity priority) and the 10–11 kHz band gets a hard dynamic
+   cap. Dynamic separation: a bass peak compresses only the bass band
+   (measured: 3 kHz output bit-identical beside a full-scale 500 Hz tone at
+   the band stage). ALR and gain-boost are off everywhere (ALR measured to
    over-regulate sustained content ~11 dB; `envb` envelope tilt off —
    measured to over-limit mids ~5 dB). The DAC never hard-clips.
 
