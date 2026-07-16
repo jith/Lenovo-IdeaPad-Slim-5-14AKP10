@@ -95,6 +95,17 @@ Tuning knobs are documented at the top of the conf; edit, then
    `pw-record -P stream.capture.sink=true --target <sink> --format s16 out.wav`
    (stop with SIGINT). Plain pulse monitor captures get volume-scaled.
 
+## Troubleshooting
+
+- **GNOME shows no Speaker entry at all** → the DSP sink failed to load,
+  most likely because `lsp-plugins-lv2` was removed (the limiter needs it).
+  Confirm with `journalctl --user -u pipewire -b | grep -i filter`, then
+  reinstall the package. Audio itself keeps working meanwhile: run
+  `speaker-dsp off` to use the raw sink (it is only hidden from the GNOME
+  mixer, not from pactl/players).
+- **No sound after suspend/resume or a PipeWire package update** →
+  `systemctl --user restart pipewire pipewire-pulse wireplumber`.
+
 ## Known hardware issues (unrelated to DSP)
 
 - **Mic1 "Digital Microphone" is broken** (kernel/firmware DMIC fault —
