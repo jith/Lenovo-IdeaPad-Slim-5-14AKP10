@@ -39,6 +39,13 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
 
 ## DSP chain (files/50-speaker-tuning.conf, all PipeWire builtins)
 
+0. **Volume-aware loudness contour** (LSP Loudness Compensator, ISO 226,
+   IIR mode): the `speaker-loudness-follow` daemon (systemd user service)
+   tracks the volume knob and live-updates the contour — at low volume the
+   EQ shifts to keep bass/treble perceptually balanced, exactly like
+   phone-speaker DSPs. 1 kHz stays at unity (the sink's own cubic-taper
+   attenuation is compensated inside the plugin, verified); defaults are
+   flat so audio is unaffected if the daemon is down.
 1. High-pass 270 Hz — remove the inaudible-distortion band
 2. Body +3.5 dB @ 560 Hz — lowest octave the driver actually plays
 3. Box cut −5.5 dB @ 800 Hz — flatten the measured hump (clarity)
@@ -139,9 +146,12 @@ journalctl --user -u pipewire -b | grep -ci error    # 0
 ## Uninstall
 
 ```sh
+systemctl --user disable --now speaker-loudness 2>/dev/null
 sudo rm /etc/pipewire/pipewire.conf.d/50-speaker-tuning.conf \
         /usr/local/share/wireplumber/scripts/hide-speaker-tuning.lua \
         /etc/wireplumber/wireplumber.conf.d/50-hide-speaker-tuning.conf \
-        /usr/local/bin/speaker-dsp
+        /usr/local/bin/speaker-dsp \
+        /usr/local/bin/speaker-loudness-follow \
+        /etc/systemd/user/speaker-loudness.service
 systemctl --user restart pipewire pipewire-pulse wireplumber
 ```
