@@ -7,10 +7,11 @@ as a selectable PipeWire sink. Built and verified with digital signal captures
 
 | | |
 |---|---|
-| Laptop | Lenovo IdeaPad Slim 5 14AKP10 (83HX) |
-| Codec | Conexant/Senary SN6140 (`snd_hda_intel`, card 1) |
+| Laptop | Lenovo IdeaPad Slim 5 14AKP10 (83HX), aluminum chassis |
+| Speakers | 2 × 2 W front-firing stereo (unbranded OEM micro-drivers; Lenovo spec: "stereo speakers, 2W x2", Dolby-processed on Windows only) |
+| Amp/codec | Conexant/Senary SN6140 HDA codec, integrated stereo Class-D amp (`snd_hda_intel`, card 1, AMD Ryzen HDA controller 04:00.6) |
 | OS / stack | Ubuntu 26.04, PipeWire 1.6.2, WirePlumber 0.5.13, GNOME 50.1 |
-| Dependency | none beyond stock pipewire/wireplumber (chain is all-builtin) |
+| Dependency | `lsp-plugins-lv2` (LSP Limiter Stereo); everything else is PipeWire builtins |
 
 ## The two outputs
 
@@ -49,17 +50,16 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
 7. **Dynamic bass** (dynamic EQ): the harmonic branch's own envelope
    (`abs → LP 5 Hz → clamp/log/exp` gain computer) gently ducks the
    harmonics on loud passages — punchy at normal levels, never piles up
-8. Makeup drive +6 dB (`Mult = 2.0`) into a **lookahead limiter**:
-   stereo-linked envelope (side-chain high-passed at 250 Hz so only what the
-   speaker can reproduce drives it), fast-attack/slow-release via
-   `max(fast LP, slow LP)`, `clamp → log → exp` gain computer, main path
-   delayed 2.5 ms. Below threshold the gain is bit-exact 1.0 (measured);
-   above, output ceilings at ~1.3 × threshold. This recovers the loudness of
-   the old +5.6 dB drive experiment without its hard-clip harshness.
+8. Makeup drive +6 dB (`Mult = 2.0`) into **LSP Limiter Stereo** (LV2): true
+   lookahead limiter (5 ms), ceiling −1 dBFS (`th = 0.891`), ALR off
+   (measured: ALR over-regulates sustained content by ~11 dB). Peaks land
+   exactly on the ceiling (measured), so the DAC never hard-clips — this
+   recovers the loudness of the old +5.6 dB drive experiment without its
+   hard-clip harshness.
 
-The dynamics are built entirely from PipeWire builtin nodes (`abs`, `max`,
-`clamp`, `log`, `exp`, `delay`, `mult`) because LADSPA dynamics are unusable
-on this stack (bug #2 below).
+LV2-in-graph safety was verified by measurement (2026-07-16): LSP keeps
+processing at 100 %/50 %/25 % sink volume — the LADSPA skip bug (#2 below)
+does not apply to LV2. Sink volume is applied *before* the graph.
 
 Tuning knobs are documented at the top of the conf; edit, then
 `systemctl --user restart pipewire wireplumber`.
@@ -69,9 +69,10 @@ Tuning knobs are documented at the top of the conf; edit, then
 1. **`filter.smart = true` silently bypasses the DSP graph** — streams route
    through the filter nodes but audio is bit-exact passthrough. Never use
    smart filters on this stack without capture-verifying.
-2. **Volume ≠ 100% on a graph-hosting virtual sink corrupts processing**
-   (LADSPA nodes skipped, volume applied multiple times). Hence: all-builtin
-   graph + "use at 100%".
+2. **Volume ≠ 100% on a graph-hosting virtual sink corrupts LADSPA
+   processing** (LADSPA nodes skipped, volume applied multiple times).
+   LV2 nodes are NOT affected (verified by measurement at 100/50/25 %
+   volume, 2026-07-16) — hence LADSPA stays banned but LSP LV2 is used.
 3. **Stacked virtual sinks cascade volume multiplicatively** (~4× in dB) — a
    front "volume sink" feeding a DSP sink is unusable.
 4. `channelmix.lock-volumes=true` makes the adapter reject volume updates
