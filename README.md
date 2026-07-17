@@ -117,6 +117,9 @@ Tuning knobs are documented at the top of the conf; edit, then
   mixer, not from pactl/players).
 - **No sound after suspend/resume or a PipeWire package update** →
   `systemctl --user restart pipewire pipewire-pulse wireplumber`.
+- **`pw-dump`/`pw-cli e` shows all DSP params as 0.000** → the node is
+  suspended; suspended filter-chain nodes enumerate params as zeros (values
+  are intact and sets still apply). Play any audio and re-read.
 
 ## Known hardware issues (unrelated to DSP)
 
