@@ -23,7 +23,9 @@ U="${SUDO_USER:-sreejith}"
 H=$(getent passwd "$U" | cut -d: -f6)
 rm -f "$H/.config/pipewire/pipewire.conf.d/50-speaker-tuning.conf" \
       "$H/.local/share/wireplumber/scripts/hide-speaker-tuning.lua" \
-      "$H/.local/bin/speaker-dsp"
+      "$H/.local/bin/speaker-dsp" \
+      "$H/.local/bin/speaker-loudness-follow" \
+      "$H/.config/systemd/user/speaker-loudness.service"
 
 echo "Installed system-wide. Each logged-in user should now run:"
 echo "  systemctl --user restart pipewire pipewire-pulse wireplumber"

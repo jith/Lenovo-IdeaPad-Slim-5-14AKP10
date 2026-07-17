@@ -1,9 +1,9 @@
 #!/bin/sh
 # speaker-dsp — switch between raw and tuned speaker output.
 #   speaker-dsp on      -> "Speaker (Tuned)": measured EQ + psycho-bass +
-#                          loudness drive. Runs at 100% volume (the DSP sink
-#                          has a steep volume taper on PipeWire 1.6.2 - for
-#                          quieter listening use 'off' and the volume keys).
+#                          dynamics + volume-aware loudness contour.
+#                          Keeps your current volume (the speaker-loudness
+#                          service compensates the sink's steep taper).
 #   speaker-dsp off     -> raw "Speaker": cleanest, normal hardware volume.
 #   speaker-dsp status  -> show current state
 # Installed system-wide at /usr/local/bin/speaker-dsp. No sudo needed to use.
@@ -17,9 +17,11 @@ RAW="alsa_output.pci-0000_04_00.6.HiFi__Speaker__sink"
 
 case "$1" in
   on|dsp|tuned)
+    # volume is left alone on purpose: forcing 100% here (old behavior)
+    # could blast audio; low volumes are fine now - LV2 keeps processing
+    # at any volume and the loudness service compensates the taper.
     pactl set-default-sink "$DSP" \
-      && pactl set-sink-volume "$DSP" 100% \
-      && echo "TUNED - Speaker (Tuned) at 100% (EQ + bass + loudness)"
+      && echo "TUNED - Speaker (Tuned): EQ + bass + dynamics + loudness contour"
     ;;
   off|raw)
     pactl set-default-sink "$RAW" && echo "RAW - plain speaker, hardware volume"

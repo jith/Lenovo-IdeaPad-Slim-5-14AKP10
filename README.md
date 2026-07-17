@@ -21,7 +21,9 @@ as a selectable PipeWire sink. Built and verified with digital signal captures
 | **Speaker** | Raw hardware sink | Normal hardware volume — use for quiet listening |
 
 Switch anytime: `speaker-dsp on` / `speaker-dsp off` / `speaker-dsp status`
-(or pick in GNOME Settings → Sound). `on` also resets the DSP sink to 100%.
+(or pick in GNOME Settings → Sound). `on` keeps your current volume (it
+used to force 100%; that's obsolete — LV2 processes correctly at any
+volume and the loudness service compensates the taper).
 
 Two visible sinks is **deliberate** — every single-visible-sink design failed
 on this PipeWire version (see Platform bugs).
