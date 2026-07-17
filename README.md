@@ -17,7 +17,7 @@ as a selectable PipeWire sink. Built and verified with digital signal captures
 
 | GNOME output | What it is | Volume |
 |---|---|---|
-| **Speaker (Tuned)** — default | DSP sink (`effect_input.speaker-tuning`) | Use at/near **100%** (see bug #2/#3 below: virtual-sink volume has a steep nonlinear taper) |
+| **Speaker (Tuned)** — default | DSP sink (`effect_input.speaker-tuning`) | Any volume. The sink's steep cubic taper (bug #2/#3 below) is measured by the `speaker-loudness` service, which compensates the tonal side with the ISO 226 contour |
 | **Speaker** | Raw hardware sink | Normal hardware volume — use for quiet listening |
 
 Switch anytime: `speaker-dsp on` / `speaker-dsp off` / `speaker-dsp status`

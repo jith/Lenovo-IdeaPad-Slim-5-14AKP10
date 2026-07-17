@@ -14,6 +14,9 @@
 
 SINK="${SPEAKER_DSP_SINK:-effect_input.speaker-tuning}"
 LAST=""
+# decimal points must be '.' in the pw-cli pod regardless of user locale
+LC_ALL=C
+export LC_ALL
 
 apply() {
     V=$(pactl get-sink-volume "$SINK" 2>/dev/null \
@@ -43,6 +46,13 @@ done
 apply
 pactl subscribe 2>/dev/null | while read -r line; do
     case $line in
+        # 'new': the graph was recreated (params reset to flat defaults) -
+        # clear the cache so the contour is re-applied even at the same volume
+        *"'new' on sink"*)    LAST=""; apply ;;
         *"'change' on sink"*) apply ;;
     esac
 done
+# the subscribe pipe only ends when the audio server went away; exit dirty
+# so systemd's Restart policy re-runs us (the wait-for-sink loop above then
+# handles the server coming back)
+exit 1
