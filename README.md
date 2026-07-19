@@ -74,9 +74,29 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
    over-regulate sustained content ~11 dB; `envb` envelope tilt off —
    measured to over-limit mids ~5 dB). The DAC never hard-clips.
 
+9. **Stereo widener** (mid/side delta, builtin): adds `w_g × HP350(side)` to
+   L and subtracts it from R. Center (mono) content — vocals, dialog — has
+   zero side signal and passes **bit-identical** (verified); the mono sum
+   L+R is unchanged; bass stays untouched. `w_g "Mult"`: 0 = exact bypass,
+   0.3 default, 0.6 wide. Widens music and movie ambience without touching
+   clarity.
+
 LV2-in-graph safety was verified by measurement (2026-07-16): LSP keeps
 processing at 100 %/50 %/25 % sink volume — the LADSPA skip bug (#2 below)
 does not apply to LV2. Sink volume is applied *before* the graph.
+
+## Feature status — iPhone-style DSP checklist
+
+| Feature | Status | Where |
+|---|---|---|
+| Advanced real-time DSP | ✔ | full chain, ~3.5 % of one core, ~5 ms lookahead latency |
+| Dynamic EQ that adjusts with volume | ✔ | ISO 226 loudness contour + `speaker-loudness` volume follower |
+| Multi-band compression keeping vocals clear | ✔ | 4-band limiter, vocals get the most headroom (−2 dB vs −3…−9 dB) |
+| Bass enhancement (deeper-bass illusion) | ✔ | psycho-acoustic harmonics placed in the driver's 350–650 Hz band, dynamically ducked |
+| Intelligent distortion limiting | ✔ | per-band lookahead limiting + −1 dBFS brickwall (DAC never hard-clips) + HP270 excursion protection |
+| Stereo widening / spatial | ✔ | vocal-safe mid/side widener (side-only, >350 Hz) |
+| Loud without harsh | ✔ | +8 dB drive with peaks caught cleanly instead of clipping |
+| Balanced response (clear bass / natural mids / smooth treble) | ✔ | measured corrective EQ + unequal band ceilings pinning the 10–11 kHz metallic peak |
 
 Tuning knobs are documented at the top of the conf; edit, then
 `systemctl --user restart pipewire wireplumber`.
@@ -108,6 +128,12 @@ Tuning knobs are documented at the top of the conf; edit, then
 7. Verify DSP with digital capture, never ears:
    `pw-record -P stream.capture.sink=true --target <sink> --format s16 out.wav`
    (stop with SIGINT). Plain pulse monitor captures get volume-scaled.
+8. **One output port drives one link** — fanning a node's output to several
+   links can silently time-skew the copies (measured: an M/S widener fed
+   from an LV2 node's fanned output produced a phantom 90°-shifted side
+   signal that broke mono cancellation; the engine logs "already used by
+   link, use copy" only in some arrangements). Always fan out through
+   explicit `copy` nodes.
 
 ## Troubleshooting
 
