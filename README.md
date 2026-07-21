@@ -50,7 +50,9 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
    flat so audio is unaffected if the daemon is down.
 1. High-pass 270 Hz — remove the inaudible-distortion band
 2. Body +3.5 dB @ 560 Hz — lowest octave the driver actually plays
-3. Box cut −5.5 dB @ 800 Hz — flatten the measured hump (clarity)
+3. Box cut −3.5 dB static @ 800 Hz **+ dynamic cut up to ~−6 dB more** when
+   the 650–1100 band is actually hot (see 8) — adaptive vocal unmasking
+   instead of always-on thinning
 4. Presence +3 dB @ 2.6 kHz — fill the measured dip
 5. Metal cut −6 dB @ 10.5 kHz (wide) — tame the measured peak; the aluminum
    chassis makes this region dominate if left hot
@@ -60,7 +62,16 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
 7. **Dynamic bass** (dynamic EQ): the harmonic branch's own envelope
    (`abs → LP 5 Hz → clamp/log/exp` gain computer) gently ducks the
    harmonics on loud passages — punchy at normal levels, never piles up
-8. Makeup drive +10 dB (`Mult = 3.2`) into **LSP Multiband Limiter Stereo**
+8. **Adaptive dynamics** (LSP Multiband Compressor, 5 bands, every curve
+   verified with level-ramp capture A/B): bass <650 Hz lifted **+4.5 dB when
+   quiet** → unity when loud; the 650–1100 Hz box band gets a **downward
+   2.5:1 dynamic cut** (deepest exactly when the hump would mask vocals);
+   vocal core 1100–2500 Hz lifted **+5 dB when quiet** → bit-identical above
+   −13 dBFS; presence 2.5–8 kHz +3 dB quiet detail; the 10–11 kHz air band
+   is never lifted. This is the input-adaptive processing phone DSPs use
+   instead of static EQ — loud content always passes untouched.
+
+9. Makeup drive +10 dB (`Mult = 3.2`) into **LSP Multiband Limiter Stereo**
    (LV2): 4 bands — bass <650 Hz, vocals 650–2500, presence 2500–8000, air
    >8000 — each true-lookahead limited independently with **unequal
    ceilings** (bass −3.5 dB, vocals −1.5 dB, presence −3 dB, air −8 dB), then
@@ -74,7 +85,7 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
    over-regulate sustained content ~11 dB; `envb` envelope tilt off —
    measured to over-limit mids ~5 dB). The DAC never hard-clips.
 
-9. **Stereo widener** (mid/side delta, builtin): adds `w_g × HP350(side)` to
+10. **Stereo widener** (mid/side delta, builtin): adds `w_g × HP350(side)` to
    L and subtracts it from R. Center (mono) content — vocals, dialog — has
    zero side signal and passes **bit-identical** (verified); the mono sum
    L+R is unchanged; bass stays untouched. `w_g "Mult"`: 0 = exact bypass,
@@ -92,10 +103,12 @@ does not apply to LV2. Sink volume is applied *before* the graph.
 | Advanced real-time DSP | ✔ | full chain, ~3.5 % of one core, ~5 ms lookahead latency |
 | Dynamic EQ that adjusts with volume | ✔ | ISO 226 loudness contour + `speaker-loudness` volume follower |
 | Multi-band compression keeping vocals clear | ✔ | 4-band limiter, vocals get the most headroom (−1.5 dB vs −3…−8 dB) |
+| Upward compression lifting quiet vocals/detail | ✔ | 5-band adaptive stage: +4.5 dB quiet bass, +5 dB quiet vocal core, +3 dB quiet presence — unity above −13 dBFS (loud content bit-identical, measured) |
+| Dynamic EQ cutting the vocal masker only when needed | ✔ | 650–1100 Hz box band: −3.5 dB static + up to −6 dB dynamic 2.5:1 when hot |
 | Bass enhancement (deeper-bass illusion) | ✔ | psycho-acoustic harmonics placed in the driver's 350–650 Hz band, dynamically ducked |
 | Intelligent distortion limiting | ✔ | per-band lookahead limiting + −1 dBFS brickwall (DAC never hard-clips) + HP270 excursion protection |
 | Stereo widening / spatial | ✔ | vocal-safe mid/side widener (side-only, >350 Hz) |
-| Loud without harsh | ✔ | +10 dB drive with peaks caught cleanly instead of clipping (loudness pass 2026-07-21: measured +2.15 dB RMS vs the old +8 dB tune) |
+| Loud without harsh | ✔ | +10 dB drive with peaks caught cleanly instead of clipping (2026-07-21 passes: +3.4 dB RMS total vs the old +8 dB tune, pink-noise measured) |
 | Balanced response (clear bass / natural mids / smooth treble) | ✔ | measured corrective EQ + unequal band ceilings pinning the 10–11 kHz metallic peak |
 
 Tuning knobs are documented at the top of the conf; edit, then
