@@ -49,16 +49,18 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
    attenuation is compensated inside the plugin, verified); defaults are
    flat so audio is unaffected if the daemon is down.
 1. High-pass 270 Hz — remove the inaudible-distortion band
-2. Body +3.5 dB @ 560 Hz — lowest octave the driver actually plays
+2. Body +5 dB @ 560 Hz — lowest octave the driver actually plays
 3. Box cut −3.5 dB static @ 800 Hz **+ dynamic cut up to ~−6 dB more** when
    the 650–1100 band is actually hot (see 8) — adaptive vocal unmasking
    instead of always-on thinning
 4. Presence +3 dB @ 2.6 kHz — fill the measured dip
 5. Metal cut −6 dB @ 10.5 kHz (wide) — tame the measured peak; the aluminum
    chassis makes this region dominate if left hot
-6. Psychoacoustic bass: mono <250 Hz → x² + x³ harmonics → band-passed to
-   350–650 Hz (where the driver is audible; sub-300 Hz residue removed by a
-   cascaded high-pass — it's inaudible and would pump the limiter) → mixed in
+6. Psychoacoustic bass: mono <250 Hz → x² + x³ harmonics (2nd-harmonic
+   weight raised 2026-07-21: octave-up warmth = the "vocal bass" chest feel)
+   → band-passed ~300–800 Hz, wider than before (sub-300 Hz residue still
+   removed by a cascaded high-pass — it's inaudible and would pump the
+   limiter) → mixed in at a hotter branch gain with a relaxed duck threshold
 7. **Dynamic bass** (dynamic EQ): the harmonic branch's own envelope
    (`abs → LP 5 Hz → clamp/log/exp` gain computer) gently ducks the
    harmonics on loud passages — punchy at normal levels, never piles up
@@ -71,10 +73,10 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
    is never lifted. This is the input-adaptive processing phone DSPs use
    instead of static EQ — loud content always passes untouched.
 
-9. Makeup drive +10 dB (`Mult = 3.2`) into **LSP Multiband Limiter Stereo**
+9. Makeup drive +11 dB (`Mult = 3.6`) into **LSP Multiband Limiter Stereo**
    (LV2): 4 bands — bass <650 Hz, vocals 650–2500, presence 2500–8000, air
    >8000 — each true-lookahead limited independently with **unequal
-   ceilings** (bass −3.5 dB, vocals −1.5 dB, presence −3 dB, air −8 dB), then
+   ceilings** (bass −2.5 dB, vocals −1.5 dB, presence −3 dB, air −8 dB), then
    a final −1 dBFS brickwall on the sum. Unequal on purpose: with equal
    ceilings the energy-heavy bass/mids limit constantly while treble never
    does, so loud music tilts metallic (measured). Vocals get the most
@@ -102,13 +104,13 @@ does not apply to LV2. Sink volume is applied *before* the graph.
 |---|---|---|
 | Advanced real-time DSP | ✔ | full chain, ~3.5 % of one core, ~5 ms lookahead latency |
 | Dynamic EQ that adjusts with volume | ✔ | ISO 226 loudness contour + `speaker-loudness` volume follower |
-| Multi-band compression keeping vocals clear | ✔ | 4-band limiter, vocals get the most headroom (−1.5 dB vs −3…−8 dB) |
-| Upward compression lifting quiet vocals/detail | ✔ | 5-band adaptive stage: +4.5 dB quiet bass, +5 dB quiet vocal core, +3 dB quiet presence — unity above −13 dBFS (loud content bit-identical, measured) |
+| Multi-band compression keeping vocals clear | ✔ | 4-band limiter, vocals get the most headroom (−1.5 dB vs −2.5…−8 dB) |
+| Upward compression lifting quiet vocals/detail | ✔ | 5-band adaptive stage: +5.6 dB quiet bass, +5 dB quiet vocal core, +3 dB quiet presence — unity above −13 dBFS (loud content bit-identical, measured) |
 | Dynamic EQ cutting the vocal masker only when needed | ✔ | 650–1100 Hz box band: −3.5 dB static + up to −6 dB dynamic 2.5:1 when hot |
 | Bass enhancement (deeper-bass illusion) | ✔ | psycho-acoustic harmonics placed in the driver's 350–650 Hz band, dynamically ducked |
 | Intelligent distortion limiting | ✔ | per-band lookahead limiting + −1 dBFS brickwall (DAC never hard-clips) + HP270 excursion protection |
 | Stereo widening / spatial | ✔ | vocal-safe mid/side widener (side-only, >350 Hz) |
-| Loud without harsh | ✔ | +10 dB drive with peaks caught cleanly instead of clipping (2026-07-21 passes: +3.4 dB RMS total vs the old +8 dB tune, pink-noise measured) |
+| Loud without harsh | ✔ | +11 dB drive with peaks caught cleanly instead of clipping (2026-07-21 passes: +4.9 dB RMS total vs the old +8 dB tune, pink-noise measured) |
 | Balanced response (clear bass / natural mids / smooth treble) | ✔ | measured corrective EQ + unequal band ceilings pinning the 10–11 kHz metallic peak |
 
 Tuning knobs are documented at the top of the conf; edit, then
