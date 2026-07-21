@@ -60,10 +60,10 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
 7. **Dynamic bass** (dynamic EQ): the harmonic branch's own envelope
    (`abs → LP 5 Hz → clamp/log/exp` gain computer) gently ducks the
    harmonics on loud passages — punchy at normal levels, never piles up
-8. Makeup drive +8 dB (`Mult = 2.5`) into **LSP Multiband Limiter Stereo**
+8. Makeup drive +10 dB (`Mult = 3.2`) into **LSP Multiband Limiter Stereo**
    (LV2): 4 bands — bass <650 Hz, vocals 650–2500, presence 2500–8000, air
    >8000 — each true-lookahead limited independently with **unequal
-   ceilings** (bass −4.4 dB, vocals −2 dB, presence −4 dB, air −9 dB), then
+   ceilings** (bass −3.5 dB, vocals −1.5 dB, presence −3 dB, air −8 dB), then
    a final −1 dBFS brickwall on the sum. Unequal on purpose: with equal
    ceilings the energy-heavy bass/mids limit constantly while treble never
    does, so loud music tilts metallic (measured). Vocals get the most
@@ -91,11 +91,11 @@ does not apply to LV2. Sink volume is applied *before* the graph.
 |---|---|---|
 | Advanced real-time DSP | ✔ | full chain, ~3.5 % of one core, ~5 ms lookahead latency |
 | Dynamic EQ that adjusts with volume | ✔ | ISO 226 loudness contour + `speaker-loudness` volume follower |
-| Multi-band compression keeping vocals clear | ✔ | 4-band limiter, vocals get the most headroom (−2 dB vs −3…−9 dB) |
+| Multi-band compression keeping vocals clear | ✔ | 4-band limiter, vocals get the most headroom (−1.5 dB vs −3…−8 dB) |
 | Bass enhancement (deeper-bass illusion) | ✔ | psycho-acoustic harmonics placed in the driver's 350–650 Hz band, dynamically ducked |
 | Intelligent distortion limiting | ✔ | per-band lookahead limiting + −1 dBFS brickwall (DAC never hard-clips) + HP270 excursion protection |
 | Stereo widening / spatial | ✔ | vocal-safe mid/side widener (side-only, >350 Hz) |
-| Loud without harsh | ✔ | +8 dB drive with peaks caught cleanly instead of clipping |
+| Loud without harsh | ✔ | +10 dB drive with peaks caught cleanly instead of clipping (loudness pass 2026-07-21: measured +2.15 dB RMS vs the old +8 dB tune) |
 | Balanced response (clear bass / natural mids / smooth treble) | ✔ | measured corrective EQ + unequal band ceilings pinning the 10–11 kHz metallic peak |
 
 Tuning knobs are documented at the top of the conf; edit, then
