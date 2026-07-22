@@ -96,12 +96,25 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
 5. **Makeup drive +11 dB** (`Mult = 3.6`) into **LSP Multiband Limiter
    Stereo**: 4 bands — bass <650 Hz, vocals 650–2500, presence 2500–8000,
    air >8000 — each true-lookahead limited independently with **unequal
-   ceilings** (bass −2.5 dB, vocals −1.5 dB, presence −3 dB, air −8 dB),
-   then a final −1 dBFS brickwall on the sum. Unequal on purpose: with
+   ceilings** (bass −2.5 dB, vocals −3 dB, presence −4 dB, air −9 dB),
+   then a final −1 dBFS brickwall on the sum.
+   **2026-07-22 fix (the "ears hurt at high frequencies" bug)**: the
+   original gap-indexed split layout (`se_2/se_4/se_6`) silently mis-mapped
+   the band params — vocals were actually bound to `th_3`, and **nothing
+   above 2500 Hz was band-limited at all** (proven: 5 kHz and 10.5 kHz
+   tones passed at linear level with every `th` at −20 dB; only the
+   brickwall caught treble). With +11 dB drive that let 2.5–11 kHz ride
+   ~2–7 dB hotter than the ceilinged bass/vocals on loud songs. Splits are
+   now consecutive (`se_1/2/3` — unambiguous mapping), bass/vocal ceilings
+   carried over unchanged, presence/air finally capped. Measured after
+   fix: loud 5 kHz pinned at −4 dB, 10.5 kHz −2 dB quieter, pink spectrum
+   3–10.5 kHz down ~1 dB with 120–2200 Hz within ±0.2 dB, total loudness
+   −0.3 dB. Unequal on purpose: with
    equal ceilings the energy-heavy bass/mids limit constantly while treble
-   never does, so loud music tilts metallic (measured). Vocals get the most
-   headroom (clarity priority) and the 10–11 kHz band gets a hard dynamic
-   cap. Dynamic separation: a bass peak compresses only the bass band
+   never does, so loud music tilts metallic. Bass and vocals keep the most
+   headroom; the higher the band, the harder its cap — treble density is
+   what reads as painful on micro-drivers pushed loud.
+   Dynamic separation: a bass peak compresses only the bass band
    (measured: 3 kHz output bit-identical beside a full-scale 500 Hz tone at
    the band stage). ALR and gain-boost are off everywhere (ALR measured to
    over-regulate sustained content ~11 dB; `envb` envelope tilt off —
@@ -120,7 +133,7 @@ does not apply to LV2. Sink volume is applied *before* the graph.
 |---|---|---|
 | Advanced real-time DSP | ✔ | full chain, low single-digit % of one core; ~5 ms limiter lookahead + a few ms from the two linear-phase FFT stages |
 | Dynamic EQ that adjusts with volume | ✔ | ISO 226 loudness contour + `speaker-loudness` volume follower |
-| Multi-band compression keeping vocals clear | ✔ | 4-band limiter, vocals get the most headroom (−1.5 dB vs −2.5…−8 dB) |
+| Multi-band compression keeping vocals clear | ✔ | 4-band limiter, ceilings −2.5/−3/−4/−9 dB (bass/vocal/presence/air) — treble capped hardest so loudness never turns piercing |
 | Upward compression lifting quiet vocals/detail | ✔ | GOTT two-sided leveler (default): ~+8.5 dB quiet bass/vocal detail, unity when loud; capped 5-band mbc stage kept switchable |
 | Dynamic EQ cutting the vocal masker only when needed | ✔ | −3.5 dB static box cut always on; the extra dynamic 2:1 cut lives in the bypassed mbc stage (GOTT covers the region with downward leveling above −5 dBFS) |
 | Bass enhancement (deeper-bass illusion) | ✔ | psycho-acoustic harmonics placed in the driver's ~300–800 Hz band, dynamically ducked |
@@ -159,7 +172,14 @@ Tuning knobs are documented at the top of the conf; edit, then
 7. Verify DSP with digital capture, never ears:
    `pw-record -P stream.capture.sink=true --target <sink> --format s16 out.wav`
    (stop with SIGINT). Plain pulse monitor captures get volume-scaled.
-8. **One output port drives one link** — fanning a node's output to several
+8. **LSP multiband band params mis-map with gap-indexed splits** — enabling
+   crossover splits non-consecutively (`se_2/se_4/se_6`) binds bands to
+   unexpected param indices (measured: vocals on `th_3` not `th_2`) and can
+   leave whole regions with NO active band processing (>2500 Hz was never
+   limited); runtime `th`/`on` sets on structurally-inactive bands are
+   silently ignored. Always enable splits consecutively from `se_1` and
+   verify each band's ceiling with a tone capture.
+9. **One output port drives one link** — fanning a node's output to several
    links can silently time-skew the copies (measured: an M/S widener fed
    from an LV2 node's fanned output produced a phantom 90°-shifted side
    signal that broke mono cancellation; the engine logs "already used by
@@ -174,6 +194,10 @@ Tuning knobs are documented at the top of the conf; edit, then
   reinstall the package. Audio itself keeps working meanwhile: run
   `speaker-dsp off` to use the raw sink (it is only hidden from the GNOME
   mixer, not from pactl/players).
+- **Highs hurt / piercing treble on bright songs** → the 2026-07-22 fix
+  capped presence/air (`lim th_3/th_4`); if still too hot, lower `th_3`
+  (0.63 → 0.56 = −5 dB) / `th_4` (0.355 → 0.32), or weaken the GOTT
+  presence up-lift (`ru_3`, `tu_3`). All dynamic — quiet detail unaffected.
 - **Echo-like swell / washy-roomy vocals** → the adaptive stage is lifting
   reverb tails too much or too fast. On the default GOTT stage: raise the
   `tm_*` floor (less tail lift) or slow `tr_*`; or switch to the drier
