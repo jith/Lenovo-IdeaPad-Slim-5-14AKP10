@@ -78,6 +78,14 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
    modest lift caps, so gain recovery after a word/note is a slow drift, not
    an audible bloom — burst+tail capture: swell +4.9 dB/250 ms → +1.4 dB/
    300 ms. Faster/deeper settings re-introduce audible "echo" on vocals.
+   **Default since 2026-07-21 (user pick after A/B listening): the GOTT
+   two-sided leveler** runs instead of the 5-band stage: per band a comfort
+   zone (upward compression below −18 dBFS, downward above −5, a −25 dB
+   floor bounding tail runaway, linear-phase, 400 ms releases). Measured vs
+   the 5-band stage: +0.8 dB louder, +4.5 dB more quiet bass, +6.5 dB more
+   quiet vocal detail — cost: ~4 dB hotter reverb tails, steeper mid-pause
+   swell. The tuned 5-band stage stays in the graph bypassed; swap commands
+   are in the conf.
 
 9. Makeup drive +11 dB (`Mult = 3.6`) into **LSP Multiband Limiter Stereo**
    (LV2): 4 bands — bass <650 Hz, vocals 650–2500, presence 2500–8000, air
@@ -111,8 +119,8 @@ does not apply to LV2. Sink volume is applied *before* the graph.
 | Advanced real-time DSP | ✔ | full chain, ~3.5 % of one core, ~5 ms lookahead latency |
 | Dynamic EQ that adjusts with volume | ✔ | ISO 226 loudness contour + `speaker-loudness` volume follower |
 | Multi-band compression keeping vocals clear | ✔ | 4-band limiter, vocals get the most headroom (−1.5 dB vs −2.5…−8 dB) |
-| Upward compression lifting quiet vocals/detail | ✔ | 5-band adaptive stage: +4 dB quiet bass, +2 dB quiet vocal core, +1 dB quiet presence — unity above −13 dBFS (loud content bit-identical, measured) |
-| Dynamic EQ cutting the vocal masker only when needed | ✔ | 650–1100 Hz box band: −3.5 dB static + up to −5 dB dynamic 2:1 when hot |
+| Upward compression lifting quiet vocals/detail | ✔ | GOTT two-sided leveler (default): ~+8.5 dB quiet bass/vocal detail, unity when loud; capped 5-band mbc stage kept switchable |
+| Dynamic EQ cutting the vocal masker only when needed | ✔ | −3.5 dB static box cut always on; the extra dynamic 2:1 cut lives in the bypassed mbc stage (GOTT covers the region with downward leveling above −5 dBFS) |
 | Bass enhancement (deeper-bass illusion) | ✔ | psycho-acoustic harmonics placed in the driver's 350–650 Hz band, dynamically ducked |
 | Intelligent distortion limiting | ✔ | per-band lookahead limiting + −1 dBFS brickwall (DAC never hard-clips) + HP270 excursion protection |
 | Stereo widening / spatial | ✔ | vocal-safe mid/side widener (side-only, >350 Hz) |
