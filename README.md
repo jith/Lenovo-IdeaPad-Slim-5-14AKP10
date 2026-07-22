@@ -1,9 +1,10 @@
 # Speaker Tuning DSP — Lenovo IdeaPad Slim 5 14AKP10
 
 Measurement-driven speaker enhancement for Linux: corrective EQ + psychoacoustic
-bass + loudness drive for the laptop's 2 W × 2 front-firing speakers, deployed
-as a selectable PipeWire sink. Built and verified with digital signal captures
-(not by ear) on 2026-07-15.
+bass + input-adaptive dynamics + loudness drive for the laptop's 2 W × 2
+front-firing speakers, deployed as a selectable PipeWire sink. Built 2026-07-15,
+dynamics/loudness overhaul 2026-07-21 — every change verified with digital
+signal captures (level ramps, burst+tail, pink-noise spectra), never by ear.
 
 | | |
 |---|---|
@@ -11,7 +12,7 @@ as a selectable PipeWire sink. Built and verified with digital signal captures
 | Speakers | 2 × 2 W front-firing stereo (unbranded OEM micro-drivers; Lenovo spec: "stereo speakers, 2W x2", Dolby-processed on Windows only) |
 | Amp/codec | Conexant/Senary SN6140 HDA codec, integrated stereo Class-D amp (`snd_hda_intel`, card 1, AMD Ryzen HDA controller 04:00.6) |
 | OS / stack | Ubuntu 26.04, PipeWire 1.6.2, WirePlumber 0.5.13, GNOME 50.1 |
-| Dependency | `lsp-plugins-lv2` (LSP Limiter Stereo); everything else is PipeWire builtins |
+| Dependency | `lsp-plugins-lv2` (loudness compensator, MB compressor, GOTT leveler, MB limiter — all LV2); everything else is PipeWire builtins |
 
 ## The two outputs
 
@@ -39,7 +40,7 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
 - Harsh peak **+9..+11 dB @ 10–11 kHz** — the "metallic" sound.
 - Interference nulls 5–7 kHz (position-dependent; left uncorrected).
 
-## DSP chain (files/50-speaker-tuning.conf, all PipeWire builtins)
+## DSP chain (files/50-speaker-tuning.conf, in graph order — PipeWire builtins + LSP LV2)
 
 0. **Volume-aware loudness contour** (LSP Loudness Compensator, ISO 226,
    IIR mode): the `speaker-loudness-follow` daemon (systemd user service)
@@ -48,52 +49,57 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
    phone-speaker DSPs. 1 kHz stays at unity (the sink's own cubic-taper
    attenuation is compensated inside the plugin, verified); defaults are
    flat so audio is unaffected if the daemon is down.
-1. High-pass 270 Hz — remove the inaudible-distortion band
-2. Body +5 dB @ 560 Hz — lowest octave the driver actually plays
-3. Box cut −3.5 dB static @ 800 Hz **+ dynamic cut up to ~−5 dB more** when
-   the 650–1100 band is actually hot (see 8) — adaptive vocal unmasking
-   instead of always-on thinning
-4. Presence +3 dB @ 2.6 kHz — fill the measured dip
-5. Metal cut −6 dB @ 10.5 kHz (wide) — tame the measured peak; the aluminum
-   chassis makes this region dominate if left hot
-6. Psychoacoustic bass: mono <250 Hz → x² + x³ harmonics (2nd-harmonic
-   weight raised 2026-07-21: octave-up warmth = the "vocal bass" chest feel)
-   → band-passed ~300–800 Hz, wider than before (sub-300 Hz residue still
-   removed by a cascaded high-pass — it's inaudible and would pump the
-   limiter) → mixed in at a hotter branch gain with a relaxed duck threshold
-7. **Dynamic bass** (dynamic EQ): the harmonic branch's own envelope
-   (`abs → LP 5 Hz → clamp/log/exp` gain computer) gently ducks the
-   harmonics on loud passages — punchy at normal levels, never piles up
-8. **Adaptive dynamics** (LSP Multiband Compressor, 5 bands, every curve
-   verified with level-ramp capture A/B): bass <650 Hz lifted **+4 dB when
-   quiet** → unity when loud; the 650–1100 Hz box band gets a **downward
-   2:1 dynamic cut** (deepest exactly when the hump would mask vocals);
-   vocal core 1100–2500 Hz lifted **+2 dB when quiet** → bit-identical above
-   −13 dBFS; presence 2.5–8 kHz +1 dB quiet detail; the 10–11 kHz air band
-   is never lifted. This is the input-adaptive processing phone DSPs use
-   instead of static EQ — loud content always passes untouched.
-   **Anti-echo tuning (2026-07-21)**: crossovers run in *linear-phase* mode
-   (minimum-phase band recombination combs the vocal region when band gains
-   differ = metallic sheen), and all releases are slow (400–500 ms) with
-   modest lift caps, so gain recovery after a word/note is a slow drift, not
-   an audible bloom — burst+tail capture: swell +4.9 dB/250 ms → +1.4 dB/
-   300 ms. Faster/deeper settings re-introduce audible "echo" on vocals.
-   **Default since 2026-07-21 (user pick after A/B listening): the GOTT
-   two-sided leveler** runs instead of the 5-band stage: per band a comfort
-   zone (upward compression below −18 dBFS, downward above −5, a −25 dB
-   floor bounding tail runaway, linear-phase, 400 ms releases). Measured vs
-   the 5-band stage: +0.8 dB louder, +4.5 dB more quiet bass, +6.5 dB more
-   quiet vocal detail — cost: ~4 dB hotter reverb tails, steeper mid-pause
-   swell. The tuned 5-band stage stays in the graph bypassed; swap commands
-   are in the conf.
-
-9. Makeup drive +11 dB (`Mult = 3.6`) into **LSP Multiband Limiter Stereo**
-   (LV2): 4 bands — bass <650 Hz, vocals 650–2500, presence 2500–8000, air
-   >8000 — each true-lookahead limited independently with **unequal
-   ceilings** (bass −2.5 dB, vocals −1.5 dB, presence −3 dB, air −8 dB), then
-   a final −1 dBFS brickwall on the sum. Unequal on purpose: with equal
-   ceilings the energy-heavy bass/mids limit constantly while treble never
-   does, so loud music tilts metallic (measured). Vocals get the most
+1. **Stereo widener** (mid/side delta, builtin): adds `w_g × HP350(side)` to
+   L and subtracts it from R. Center (mono) content — vocals, dialog — has
+   zero side signal and passes **bit-identical** (verified); the mono sum
+   L+R is unchanged; bass stays untouched. `w_g "Mult"`: 0 = exact bypass,
+   0.3 default, 0.6 wide.
+2. **Corrective EQ** (per channel, from the stepped-tone measurement):
+   - High-pass 270 Hz — remove the inaudible-distortion band
+   - Body +5 dB @ 560 Hz — lowest octave the driver actually plays
+   - Box cut −3.5 dB @ 800 Hz — flatten the measured hump (an extra
+     *dynamic* 2:1 cut of this band lives in the switchable mbc stage,
+     see 4; the default GOTT stage levels the region downward above
+     −5 dBFS instead)
+   - Presence +3 dB @ 2.6 kHz — fill the measured dip
+   - Metal cut −6 dB @ 10.5 kHz (wide) — tame the measured peak; the
+     aluminum chassis makes this region dominate if left hot
+3. **Psychoacoustic bass with dynamic ducking**: mono <250 Hz → x² + x³
+   harmonics (2nd-harmonic-weighted: octave-up warmth = "vocal bass" chest
+   feel) → band-passed ~300–800 Hz where the driver is audible (sub-300 Hz
+   residue removed by a cascaded high-pass — inaudible, would pump the
+   limiter) → the branch's own envelope (`abs → LP 5 Hz → clamp/log/exp`)
+   ducks the harmonics on loud passages → mixed into both channels.
+4. **Adaptive dynamics — GOTT two-sided leveler (LSP, default since
+   2026-07-21, user pick after measured A/B)**: per band (650/2500/8000
+   splits) a "comfort zone" — quiet content is upward-compressed from below
+   −18 dBFS, hot content downward-compressed above −5, with a −25 dB floor
+   that bounds reverb-tail runaway (measured: unbounded, tails gained +7 dB
+   and climbing; floored, the swell converges at +3.5 dB/600 ms). Air band
+   >8 kHz is downward-only so the metallic 10–11 kHz region is never
+   lifted. Linear-phase crossovers, 400 ms releases (see anti-echo notes
+   below). Measured vs the alternative mbc stage: **+0.8 dB louder,
+   +4.5 dB more quiet-bass lift, +6.5 dB more quiet vocal detail**; cost:
+   reverb tails sit ~4 dB hotter.
+   **Alternative (in the graph, bypassed, swap commands in the conf): a
+   5-band LSP Multiband Compressor** with capped Boost-mode lifts — bass
+   <650 Hz +4 dB when quiet, box 650–1100 Hz *downward* 2:1 (cuts the vocal
+   masker only when hot), vocal core 1100–2500 Hz +2 dB, presence +1 dB,
+   all → exact unity above −13 dBFS (ramp-verified). Drier tails than GOTT,
+   less detail retrieval — the choice for echo-sensitive listening.
+   **Anti-echo rules (apply to both stages, learned by measurement)**:
+   crossovers must run *linear-phase* (minimum-phase recombination combs
+   the vocal region when band gains differ = metallic sheen); releases slow
+   (400–800 ms) and lifts capped, so post-word gain recovery is a slow
+   drift, not a bloom — burst+tail capture: swell +4.9 dB/250 ms (audible
+   echo) → +1.4 dB/300 ms (inaudible drift) on the mbc tune.
+5. **Makeup drive +11 dB** (`Mult = 3.6`) into **LSP Multiband Limiter
+   Stereo**: 4 bands — bass <650 Hz, vocals 650–2500, presence 2500–8000,
+   air >8000 — each true-lookahead limited independently with **unequal
+   ceilings** (bass −2.5 dB, vocals −1.5 dB, presence −3 dB, air −8 dB),
+   then a final −1 dBFS brickwall on the sum. Unequal on purpose: with
+   equal ceilings the energy-heavy bass/mids limit constantly while treble
+   never does, so loud music tilts metallic (measured). Vocals get the most
    headroom (clarity priority) and the 10–11 kHz band gets a hard dynamic
    cap. Dynamic separation: a bass peak compresses only the bass band
    (measured: 3 kHz output bit-identical beside a full-scale 500 Hz tone at
@@ -101,12 +107,8 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
    over-regulate sustained content ~11 dB; `envb` envelope tilt off —
    measured to over-limit mids ~5 dB). The DAC never hard-clips.
 
-10. **Stereo widener** (mid/side delta, builtin): adds `w_g × HP350(side)` to
-   L and subtracts it from R. Center (mono) content — vocals, dialog — has
-   zero side signal and passes **bit-identical** (verified); the mono sum
-   L+R is unchanged; bass stays untouched. `w_g "Mult"`: 0 = exact bypass,
-   0.3 default, 0.6 wide. Widens music and movie ambience without touching
-   clarity.
+Net loudness across the 2026-07-21 passes: **+4.5 dB RMS** (pink noise)
+over the original +8 dB tune, peaks always caught at −1 dBFS.
 
 LV2-in-graph safety was verified by measurement (2026-07-16): LSP keeps
 processing at 100 %/50 %/25 % sink volume — the LADSPA skip bug (#2 below)
@@ -116,12 +118,12 @@ does not apply to LV2. Sink volume is applied *before* the graph.
 
 | Feature | Status | Where |
 |---|---|---|
-| Advanced real-time DSP | ✔ | full chain, ~3.5 % of one core, ~5 ms lookahead latency |
+| Advanced real-time DSP | ✔ | full chain, low single-digit % of one core; ~5 ms limiter lookahead + a few ms from the two linear-phase FFT stages |
 | Dynamic EQ that adjusts with volume | ✔ | ISO 226 loudness contour + `speaker-loudness` volume follower |
 | Multi-band compression keeping vocals clear | ✔ | 4-band limiter, vocals get the most headroom (−1.5 dB vs −2.5…−8 dB) |
 | Upward compression lifting quiet vocals/detail | ✔ | GOTT two-sided leveler (default): ~+8.5 dB quiet bass/vocal detail, unity when loud; capped 5-band mbc stage kept switchable |
 | Dynamic EQ cutting the vocal masker only when needed | ✔ | −3.5 dB static box cut always on; the extra dynamic 2:1 cut lives in the bypassed mbc stage (GOTT covers the region with downward leveling above −5 dBFS) |
-| Bass enhancement (deeper-bass illusion) | ✔ | psycho-acoustic harmonics placed in the driver's 350–650 Hz band, dynamically ducked |
+| Bass enhancement (deeper-bass illusion) | ✔ | psycho-acoustic harmonics placed in the driver's ~300–800 Hz band, dynamically ducked |
 | Intelligent distortion limiting | ✔ | per-band lookahead limiting + −1 dBFS brickwall (DAC never hard-clips) + HP270 excursion protection |
 | Stereo widening / spatial | ✔ | vocal-safe mid/side widener (side-only, >350 Hz) |
 | Loud without harsh | ✔ | +11 dB drive with peaks caught cleanly instead of clipping (2026-07-21 passes: +4.5 dB RMS total vs the old +8 dB tune, pink-noise measured) |
@@ -172,12 +174,14 @@ Tuning knobs are documented at the top of the conf; edit, then
   reinstall the package. Audio itself keeps working meanwhile: run
   `speaker-dsp off` to use the raw sink (it is only hidden from the GNOME
   mixer, not from pactl/players).
-- **Echo-like swell on vocals ("metallic echo")** → the adaptive-dynamics
-  stage is lifting reverb tails too fast/too much, or the crossovers are
-  comb-filtering. Keep `mbc "mode" = 2` (linear phase), releases `rt_*` at
-  400–800 ms and lifts `bsa_*` ≤ ~1.6; see the ECHO WARNING knob note in
-  the conf. (If lipsync ever bothers you in video, `mode = 1` trades a few
-  ms latency for a slight metallic tint.)
+- **Echo-like swell / washy-roomy vocals** → the adaptive stage is lifting
+  reverb tails too much or too fast. On the default GOTT stage: raise the
+  `tm_*` floor (less tail lift) or slow `tr_*`; or switch to the drier
+  capped mbc stage (swap commands in the conf). On the mbc stage: keep
+  `mode = 2` (linear phase — mode 1 combs = metallic), releases `rt_*` at
+  400–800 ms, lifts `bsa_*` ≤ ~1.6; see the ECHO WARNING knob note in the
+  conf. (If lipsync ever bothers you in video, `mode = 1` trades a few ms
+  latency for a slight metallic tint.)
 - **No sound after suspend/resume or a PipeWire package update** →
   `systemctl --user restart pipewire pipewire-pulse wireplumber`.
 - **`pw-dump`/`pw-cli e` shows all DSP params as 0.000** → the node is
