@@ -10,6 +10,7 @@ cd "$(dirname "$0")/files"
     echo "WARNING: lsp-plugins-lv2 not found - install it (apt install lsp-plugins-lv2) or the DSP sink will fail to load."
 
 install -D -m644 50-speaker-tuning.conf      /etc/pipewire/pipewire.conf.d/50-speaker-tuning.conf
+install -D -m644 fir-correction.wav          /usr/local/share/speaker-dsp/fir-correction.wav
 install -D -m644 hide-speaker-tuning.lua     /usr/local/share/wireplumber/scripts/hide-speaker-tuning.lua
 install -D -m644 50-hide-speaker-tuning.conf /etc/wireplumber/wireplumber.conf.d/50-hide-speaker-tuning.conf
 install -D -m755 speaker-dsp                 /usr/local/bin/speaker-dsp

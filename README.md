@@ -3,8 +3,10 @@
 Measurement-driven speaker enhancement for Linux: corrective EQ + psychoacoustic
 bass + input-adaptive dynamics + loudness drive for the laptop's 2 W × 2
 front-firing speakers, deployed as a selectable PipeWire sink. Built 2026-07-15,
-dynamics/loudness overhaul 2026-07-21 — every change verified with digital
-signal captures (level ramps, burst+tail, pink-noise spectra), never by ear.
+dynamics/loudness overhaul 2026-07-21, iPhone-gap pass 2026-07-23 (FIR
+ripple correction + level-aware bass + thermal guard) — every change
+verified with digital signal captures (level ramps, burst+tail, pink-noise
+spectra) and, for the FIR pass, a 3-position acoustic re-measurement.
 
 | | |
 |---|---|
@@ -49,6 +51,16 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
    phone-speaker DSPs. 1 kHz stays at unity (the sink's own cubic-taper
    attenuation is compensated inside the plugin, verified); defaults are
    flat so audio is unaffected if the daemon is down.
+   **Level-aware bass extension (2026-07-23)** — the same daemon also moves
+   the excursion-protection HP corner with the knob (software stand-in for
+   a smart amp's excursion model): 270 Hz is a worst-case (100 % volume)
+   figure; with the cubic taper cutting 13–30 dB of drive at lower knob
+   values the driver can safely play lower. Measured basis: THD at
+   150–220 Hz is 4–8 % at −5 dBFS drive and falls with level. Map:
+   ≥75 % → 270 Hz | 60–74 → 240 | 45–59 → 210 | 30–44 → 190 | <30 → 170.
+   Verified by live param readback at 25/40/58/85 % and by tone capture
+   (200 Hz gains +3.7 dB relative at the lowered corner). Conf default
+   stays 270 — safe if the daemon is down.
 1. **Stereo widener** (mid/side delta, builtin): adds `w_g × HP350(side)` to
    L and subtracts it from R. Center (mono) content — vocals, dialog — has
    zero side signal and passes **bit-identical** (verified); the mono sum
@@ -64,6 +76,22 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
    - Presence +3 dB @ 2.6 kHz — fill the measured dip
    - Metal cut −6 dB @ 10.5 kHz (wide) — tame the measured peak; the
      aluminum chassis makes this region dominate if left hot
+   - **Fine-ripple FIR correction (2026-07-23)**: min-phase 2048-tap FIR
+     (PipeWire builtin `convolver`, IR at
+     `/usr/local/share/speaker-dsp/fir-correction.wav`) designed from a
+     1/12-octave 3-pass acoustic re-measurement (both-speakers + L-only +
+     R-only at three lid angles, power-averaged to reject mic-position
+     combing). Corrects only the ripple *between* the coarse biquad points
+     toward the chain's own broad voicing trend — voicing unchanged. Key
+     fixes: extra −7 dB @ 670–800 Hz (box hump still rode ~+7 dB over the
+     mid plateau), **−7 dB @ ~9 kHz — the true metallic-peak center the
+     10.5 kHz biquad partially missed**, +1..2 dB fills at 1.1–1.4 kHz,
+     capped +3 dB into the 5.4–6.4 kHz null region. Caps: boost ≤+4 dB
+     (0 above 9 kHz — the metallic band is never boosted), cut ≥−8 dB;
+     flat <300 Hz and >14 kHz. Min-phase → no latency, no pre-echo.
+     Verified: deployed convolver matches design within 0.05 dB (digital
+     capture); acoustic re-check moved box hump +6.4→+3.1, 9 kHz peak
+     +5.8→−2.8, 1.2 kHz hole −2.2→+1.1 dB vs trend.
 3. **Psychoacoustic bass with dynamic ducking**: mono <250 Hz → x² + x³
    harmonics (2nd-harmonic-weighted: octave-up warmth = "vocal bass" chest
    feel) → band-passed ~300–800 Hz where the driver is audible (sub-300 Hz
@@ -119,6 +147,19 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
    the band stage). ALR and gain-boost are off everywhere (ALR measured to
    over-regulate sustained content ~11 dB; `envb` envelope tilt off —
    measured to over-limit mids ~5 dB). The DAC never hard-clips.
+6. **Thermal guard (2026-07-23)**: a second LSP limiter instance in ALR
+   mode after the brickwall — the MB limiter is peak-based and happily
+   passes *sustained* −1 dBFS content that 2 W coils shouldn't eat for
+   long under +11 dB drive. ALR (the very behavior deliberately banned in
+   the loudness limiter) is slowed to its maximum (alr_at 200 ms, alr_rt
+   1000 ms), the peak side neutralized (th = 0 dBFS; upstream brickwall
+   already caps at −1), knee tuned by measured sweep to 1.25: a pinned
+   full-scale sine trims −1.65 dB (~32 % less coil power) over ~1 s while
+   loud pink program loses only 0.34 dB in its very loudest sustained
+   windows. Getting here found platform bugs #10/#11: LSP
+   `compressor_stereo` won't instantiate in filter-chain at all, and a
+   second `mb_compressor` instance loads but its band compression is
+   silently dead (crush-test verified) — a second `limiter_stereo` works.
 
 Net loudness across the 2026-07-21 passes: **+4.5 dB RMS** (pink noise)
 over the original +8 dB tune, peaks always caught at −1 dBFS.
@@ -141,6 +182,9 @@ does not apply to LV2. Sink volume is applied *before* the graph.
 | Stereo widening / spatial | ✔ | vocal-safe mid/side widener (side-only, >350 Hz) |
 | Loud without harsh | ✔ | +11 dB drive with peaks caught cleanly instead of clipping (2026-07-21 passes: +4.5 dB RMS total vs the old +8 dB tune, pink-noise measured) |
 | Balanced response (clear bass / natural mids / smooth treble) | ✔ | measured corrective EQ + unequal band ceilings pinning the 10–11 kHz metallic peak |
+| High-resolution correction between EQ points (per-unit calibration style) | ✔ 2026-07-23 | 1/12-octave 3-pass measurement → min-phase FIR convolver; box-hump and true 9 kHz peak fixed |
+| Excursion-modeled dynamic bass (bass depth follows playback level) | ✔ 2026-07-23 | volume-follower moves the HP corner 270→170 Hz as the knob drops; THD-vs-level measured |
+| Thermal power protection | ✔ 2026-07-23 | slow ALR guard post-brickwall: −1.65 dB on pinned content, ≤0.34 dB on music |
 
 Tuning knobs are documented at the top of the conf; edit, then
 `systemctl --user restart pipewire wireplumber`.
@@ -185,6 +229,18 @@ Tuning knobs are documented at the top of the conf; edit, then
    signal that broke mono cancellation; the engine logs "already used by
    link, use copy" only in some arrangements). Always fan out through
    explicit `copy` nodes.
+10. **LSP `compressor_stereo` does not instantiate inside filter-chain** —
+   the whole sink fails to load with only `invalid message id:2 op:2`
+   (Invalid argument) in the journal. Same graph loads fine the moment the
+   node is swapped for `limiter_stereo`; mbc/gott/loud_comp also fine.
+11. **A second `mb_compressor_stereo` instance is silently non-functional**
+   — it loads, passes audio, `g_wet` works, but band compression does
+   NOTHING (crush-test al 0.01 / cr 100 / at 5 = zero effect on any band,
+   with or without conf-built splits, both crossover modes; the first
+   instance's bands measurably work). Also: with no splits enabled at
+   graph build, a lone band 0 never compresses, and runtime `cbe_*` split
+   enables are structural = silently ignored (bug #8 family). A second
+   `limiter_stereo` instance works — used for the thermal guard.
 
 ## Troubleshooting
 
@@ -247,5 +303,6 @@ sudo rm /etc/pipewire/pipewire.conf.d/50-speaker-tuning.conf \
         /usr/local/bin/speaker-dsp \
         /usr/local/bin/speaker-loudness-follow \
         /etc/systemd/user/speaker-loudness.service
+sudo rm -r /usr/local/share/speaker-dsp
 systemctl --user restart pipewire pipewire-pulse wireplumber
 ```
