@@ -241,6 +241,18 @@ Tuning knobs are documented at the top of the conf; edit, then
    graph build, a lone band 0 never compresses, and runtime `cbe_*` split
    enables are structural = silently ignored (bug #8 family). A second
    `limiter_stereo` instance works — used for the thermal guard.
+12. **Default-sink fallback silently prefers the raw sink over a virtual sink**
+   — WirePlumber scores candidates in bands (`scripts/default-nodes/`):
+   configured default `30000 + prio`, selection history
+   `20001 + prio − position`, plain fallback `prio`. A history position is
+   worth only ±1, so the stock 1000 vs the DSP sink's 900 decides everything
+   below the 30000 band: losing the configured default (unplugging headphones
+   that were last selected) put audio on raw at 20998 over the DSP sink's
+   20899, bypassing the whole chain — and with the raw sink hidden from
+   GNOME's mixer, left the GNOME slider adjusting an idle node. Fixed by
+   demoting raw to `priority.session = 100`
+   (`files/51-speaker-sink-priority.conf`); raising the DSP sink above 1000
+   instead would also outrank an explicit `speaker-dsp off`.
 
 ## Troubleshooting
 
@@ -250,6 +262,13 @@ Tuning knobs are documented at the top of the conf; edit, then
   reinstall the package. Audio itself keeps working meanwhile: run
   `speaker-dsp off` to use the raw sink (it is only hidden from the GNOME
   mixer, not from pactl/players).
+- **GNOME's volume slider does nothing but `alsamixer` still works** → audio is
+  on the raw sink while GNOME's mixer can only see the DSP sink, so the slider
+  is adjusting an idle node; `alsamixer` drives the codec's hardware mixer,
+  downstream of the whole graph. Confirm with `speaker-dsp status` (reports
+  `RAW`), fix with `speaker-dsp on`. If it returns on its own after unplugging
+  headphones, `51-speaker-sink-priority.conf` is missing from
+  `/etc/wireplumber/wireplumber.conf.d/` — see platform bug #12.
 - **Highs hurt / piercing treble on bright songs** → the 2026-07-22 fix
   capped presence/air (`lim th_3/th_4`); if still too hot, lower `th_3`
   (0.63 → 0.56 = −5 dB) / `th_4` (0.355 → 0.32), or weaken the GOTT
@@ -300,6 +319,7 @@ systemctl --user disable --now speaker-loudness 2>/dev/null
 sudo rm /etc/pipewire/pipewire.conf.d/50-speaker-tuning.conf \
         /usr/local/share/wireplumber/scripts/hide-speaker-tuning.lua \
         /etc/wireplumber/wireplumber.conf.d/50-hide-speaker-tuning.conf \
+        /etc/wireplumber/wireplumber.conf.d/51-speaker-sink-priority.conf \
         /usr/local/bin/speaker-dsp \
         /usr/local/bin/speaker-loudness-follow \
         /etc/systemd/user/speaker-loudness.service

@@ -13,6 +13,7 @@ install -D -m644 50-speaker-tuning.conf      /etc/pipewire/pipewire.conf.d/50-sp
 install -D -m644 fir-correction.wav          /usr/local/share/speaker-dsp/fir-correction.wav
 install -D -m644 hide-speaker-tuning.lua     /usr/local/share/wireplumber/scripts/hide-speaker-tuning.lua
 install -D -m644 50-hide-speaker-tuning.conf /etc/wireplumber/wireplumber.conf.d/50-hide-speaker-tuning.conf
+install -D -m644 51-speaker-sink-priority.conf /etc/wireplumber/wireplumber.conf.d/51-speaker-sink-priority.conf
 install -D -m755 speaker-dsp                 /usr/local/bin/speaker-dsp
 install -D -m755 speaker-loudness-follow     /usr/local/bin/speaker-loudness-follow
 install -D -m644 speaker-loudness.service    /etc/systemd/user/speaker-loudness.service
@@ -23,6 +24,7 @@ systemctl --global enable speaker-loudness.service >/dev/null 2>&1 || true
 U="${SUDO_USER:-sreejith}"
 H=$(getent passwd "$U" | cut -d: -f6)
 rm -f "$H/.config/pipewire/pipewire.conf.d/50-speaker-tuning.conf" \
+      "$H/.config/wireplumber/wireplumber.conf.d/51-speaker-sink-priority.conf" \
       "$H/.local/share/wireplumber/scripts/hide-speaker-tuning.lua" \
       "$H/.local/bin/speaker-dsp" \
       "$H/.local/bin/speaker-loudness-follow" \
