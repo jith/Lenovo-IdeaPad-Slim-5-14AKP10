@@ -18,20 +18,27 @@ install -D -m755 speaker-dsp                 /usr/local/bin/speaker-dsp
 install -D -m755 speaker-loudness-follow     /usr/local/bin/speaker-loudness-follow
 install -D -m644 speaker-loudness.service    /etc/systemd/user/speaker-loudness.service
 install -D -m644 speaker-dsp-powersave.conf  /etc/modprobe.d/speaker-dsp-powersave.conf
-install -D -m644 speaker-dsp-powersave.service /etc/systemd/system/speaker-dsp-powersave.service
 systemctl --global enable speaker-loudness.service >/dev/null 2>&1 || true
 
-# P1 needs BOTH mechanisms - measured 2026-08-02:
-#  - the modprobe.d option alone did NOT survive a reboot on this system
-#    (correct file, `modprobe --showconfig` agrees, module not in initramfs,
-#    nothing else writing it - yet the live value came back as the kernel
-#    default 1). The system service below writes it explicitly at boot.
-#  - and neither helps the ALREADY-loaded module, so write it now too, or the
-#    fix silently waits for the next reboot.
-systemctl daemon-reload >/dev/null 2>&1 || true
-systemctl enable --now speaker-dsp-powersave.service >/dev/null 2>&1 || true
+# P1 (2026-08-02). modprobe.d only applies at module load, so write the value
+# now for the already-loaded module or the fix waits for the next reboot.
 [ -w /sys/module/snd_hda_intel/parameters/power_save ] \
     && echo 15 > /sys/module/snd_hda_intel/parameters/power_save 2>/dev/null || true
+
+# CRITICAL on Ubuntu 26.04: `tuned` is the power manager (NOT tlp or
+# power-profiles-daemon), and its *_powertop profiles contain a [sysfs] stanza
+# that writes /sys/module/snd_hda_intel/parameters/power_save=1 AFTER boot -
+# silently undoing both modprobe.d and any direct write. Point the everyday
+# profiles at 15. powersave_powertop is deliberately left at 1: choosing that
+# profile is an explicit request to trade quality for battery.
+for p in balanced_powertop balanced-battery_powertop; do
+    f="/etc/tuned/profiles/$p/tuned.conf"
+    [ -f "$f" ] || continue
+    grep -q '^/sys/module/snd_hda_intel/parameters/power_save=1$' "$f" || continue
+    cp -n "$f" "$f.bak-speaker-dsp" 2>/dev/null || true
+    sed -i 's|^/sys/module/snd_hda_intel/parameters/power_save=1$|/sys/module/snd_hda_intel/parameters/power_save=15|' "$f"
+done
+command -v tuned-adm >/dev/null 2>&1 && tuned-adm profile "$(tuned-adm active 2>/dev/null | sed 's/.*: //')" >/dev/null 2>&1 || true
 
 # Remove user-level copies so nothing double-loads or shadows the system
 # files (user pipewire conf fragments MERGE with /etc -> two DSP sinks!).

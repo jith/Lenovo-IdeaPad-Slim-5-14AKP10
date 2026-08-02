@@ -68,21 +68,30 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
    Verified by live param readback at 25/40/58/85 % and by tone capture
    (200 Hz gains +3.7 dB relative at the lowered corner). Conf default
    stays 270 — safe if the daemon is down.
-1. **Stereo widener** (mid/side delta, builtin): adds `w_g × HP350(side)` to
-   L and subtracts it from R. Center (mono) content — vocals, dialog — has
-   zero side signal and passes **bit-identical** (verified); the mono sum
-   L+R is unchanged; bass stays untouched. `w_g "Mult"`: 0 = exact bypass,
-   0.3 default, 0.6 wide.
+1. **Stereo widener** (mid/side delta, builtin): adds `w_g × side` to L and
+   subtracts it from R. Center (mono) content — vocals, dialog — has zero
+   side signal and passes **bit-identical** (verified); the mono sum L+R is
+   unchanged; bass stays untouched. `w_g "Mult"`: 0 = exact bypass, **0.32
+   default**, 0.6 wide.
+   **Shaped shuffler (S5, 2026-08-02)** — the side path is no longer a flat
+   gain above 350 Hz: HP350 → **+5 dB peaking @ 1.8 kHz Q 0.6** → **LP 8 kHz**,
+   so widening peaks where the ear's ITD/ILD image cues actually live and
+   rolls off before the metallic band. Zero latency, and mono safety is
+   structural so it survives any linear shaping of the side path.
 2. **Corrective EQ** (per channel, from the stepped-tone measurement):
-   - High-pass 270 Hz — remove the inaudible-distortion band
-   - Body +5 dB @ 560 Hz — lowest octave the driver actually plays
+   - High-pass 270 Hz, **plus a staggered second section at 0.75 × the
+     corner (S2a)** — −10.3 dB at 110 Hz for −0.2 dB at 400 Hz
+   - Body **+8 dB @ 560 Hz — an overboost (S2b)**, valid only because `mbc`
+     band 0 claws it back when the band is actually hot. Never raise the
+     static value without that compressor enabled
    - Box cut −3.5 dB @ 800 Hz — flatten the measured hump (an extra
      *dynamic* 2:1 cut of this band lives in the switchable mbc stage,
      see 4; the default GOTT stage levels the region downward above
      −5 dBFS instead)
    - Presence +3 dB @ 2.6 kHz — fill the measured dip
-   - Metal cut −6 dB @ 10.5 kHz (wide) — tame the measured peak; the
-     aluminum chassis makes this region dominate if left hot
+   - Metal cut **−3 dB @ 10.5 kHz (S6, was −6)** — the static cut was traded
+     for a deeper *dynamic* cut in GOTT band 4, so quiet material keeps its
+     air while loud material is held exactly as hard as before
    - **Fine-ripple FIR correction (2026-07-23)**: min-phase 2048-tap FIR
      (PipeWire builtin `convolver`, IR at
      `/usr/local/share/speaker-dsp/fir-correction.wav`) designed from a
@@ -99,12 +108,16 @@ Stepped-tone measurement (90 Hz–11.2 kHz, raw speaker → internal mic):
      Verified: deployed convolver matches design within 0.05 dB (digital
      capture); acoustic re-check moved box hump +6.4→+3.1, 9 kHz peak
      +5.8→−2.8, 1.2 kHz hole −2.2→+1.1 dB vs trend.
-3. **Psychoacoustic bass with dynamic ducking**: mono <250 Hz → x² + x³
-   harmonics (2nd-harmonic-weighted: octave-up warmth = "vocal bass" chest
-   feel) → band-passed ~300–800 Hz where the driver is audible (sub-300 Hz
-   residue removed by a cascaded high-pass — inaudible, would pump the
-   limiter) → the branch's own envelope (`abs → LP 5 Hz → clamp/log/exp`)
-   ducks the harmonics on loud passages → mixed into both channels.
+3. **Psychoacoustic bass with dynamic ducking**: mono 80–250 Hz, **split at
+   150 Hz into two legs, with x² + x³ generated PER LEG (S7, 2026-08-02)** →
+   band-passed ~330–680 Hz where the driver is audible (sub-300 Hz residue
+   removed by a cascaded high-pass — inaudible, would pump the limiter) →
+   the branch's own envelope (`abs → LP 5 Hz → clamp/log/exp`) ducks the
+   harmonics on loud passages → mixed into both channels.
+   The split is the fix for "kick and bassline turn to mush": x² of (a+b)
+   contains a `2ab` cross term that is not a harmonic of anything, and it
+   lands squarely in the output window. Generating per leg removes it for
+   notes in different legs — **measured IMD-to-harmonic −1.4 → −10.8 dB**.
 4. **Adaptive dynamics — GOTT two-sided leveler (LSP, default since
    2026-07-21, user pick after measured A/B)**: per band (650/2500/8000
    splits) a "comfort zone" — quiet content is upward-compressed from below
@@ -192,7 +205,7 @@ more than silence.
 | **S6** | Static treble cut −6 → −3 dB, GOTT band 4 deepened | **Quiet +1.7/+2.4/+3.0/+2.4 dB at 8/9/10.5/12 kHz; loud +0.1/−0.3 dB.** Subjectively near-indistinguishable — kept because there is no measured downside and the lookahead hard cap (`lim th_4`) is untouched |
 | **S7** | Split-band harmonic generation for the psycho-bass | **IMD-to-harmonic ratio −1.4 → −10.8 dB.** The fix for "kick and bassline turn to mush" |
 | **S8** | Loudness normalization across sources (`autogain_stereo`) | **18 dB source difference → 2.4 dB at the output.** Dynamics preserved — the block envelope is identical at `max_amp` 12/8/6, proving it is not chasing within-track level |
-| **P1** | `snd_hda_intel power_save` 1 → 15 s | Stops EAPD dropping the amp ~6 s into silence (pop + truncated first note). **Not** `power_save=0`, and **not** `suspend-timeout-seconds=0` — keeping the sink RUNNING makes the graph process silence forever, costing far more battery than the codec it would protect. **Needs BOTH a modprobe.d option and a systemd unit — see bug #17** |
+| **P1** | `snd_hda_intel power_save` 1 → 15 s | Stops EAPD dropping the amp ~6 s into silence (pop + truncated first note). **Not** `power_save=0`, and **not** `suspend-timeout-seconds=0` — keeping the sink RUNNING makes the graph process silence forever, costing far more battery than the codec it would protect. **`tuned` overwrites this after boot — the fix belongs in the tuned profile, see bug #17** |
 
 ### Measured and rejected
 
@@ -318,20 +331,28 @@ Tuning knobs are documented at the top of the conf; edit, then
    content-aware profile switching keyed on stream metadata is impossible on
    such a system; only a manual toggle can work.
 
-17. **`modprobe.d` options do not survive a reboot for `snd_hda_intel power_save`**
-   — `/etc/modprobe.d/speaker-dsp-powersave.conf` is present and correct,
-   `modprobe --showconfig` reports `options snd_hda_intel power_save=15`,
-   the module is **not** in the initramfs, no udev rule or other modprobe.d
-   file touches the parameter, and no power daemon is running
-   (tlp/power-profiles-daemon/thermald all inactive) — yet after a reboot the
-   live value came back as the kernel default `1`. Writing the value directly
-   works and *holds* (survives idle and a pipewire restart), so the failure is
-   purely at module-load time. Root cause unidentified. **Fix: ship a systemd
-   unit (`speaker-dsp-powersave.service`) that writes it at boot**, keeping
-   the modprobe.d file as well. Verified by resetting the value to 1 and
-   restarting the unit alone. Note `modprobe -r` will *silently* fail while
-   the module is in use (`used_by=10` with audio running), so a "reload test"
-   that appears to reload may not have — check the refcount first.
+17. **`tuned` silently overwrites sysfs module parameters after boot** — on
+   Ubuntu 26.04 the power manager is **`tuned`**, *not* tlp or
+   power-profiles-daemon. Its `*_powertop` profiles carry a `[sysfs]` stanza
+   containing literally
+   `/sys/module/snd_hda_intel/parameters/power_save=1`, applied at boot and
+   again on every profile change and AC↔battery transition. This silently
+   undoes both `modprobe.d` and any direct `/sys` write, and leaves no trace
+   in the audio logs. **Fix: set the value in the tuned profile itself**
+   (`/etc/tuned/profiles/*/tuned.conf`) — fighting a power manager from a
+   oneshot unit loses on the next profile switch.
+   **Debugging lesson, worth more than the bug:** the first diagnosis
+   concluded "modprobe.d does not survive a reboot, root cause unknown" and
+   shipped a systemd unit to work around it. That was wrong — modprobe.d was
+   fine, tuned was overwriting it — and the wrong conclusion came from
+   checking only `tlp`/`power-profiles-daemon`/`thermald` and declaring "no
+   power daemon is running". **Enumerate what IS running rather than testing
+   a list of what you expect.** `grep -rl snd_hda_intel /usr/lib /etc` found
+   it in seconds once asked the open question.
+   Also note `modprobe -r` fails *silently* while a module is in use
+   (`snd_hda_intel` showed `used_by=10` with audio running), so an apparent
+   "reload test" may not have reloaded anything — check the refcount before
+   trusting a negative result.
 
 ## Troubleshooting
 
@@ -409,8 +430,6 @@ journalctl --user -u pipewire -b | grep -ci error    # 0
 
 ```sh
 systemctl --user disable --now speaker-loudness 2>/dev/null
-sudo systemctl disable --now speaker-dsp-powersave.service 2>/dev/null
-sudo rm -f /etc/systemd/system/speaker-dsp-powersave.service
 sudo rm /etc/pipewire/pipewire.conf.d/50-speaker-tuning.conf \
         /usr/local/share/wireplumber/scripts/hide-speaker-tuning.lua \
         /etc/wireplumber/wireplumber.conf.d/50-hide-speaker-tuning.conf \
