@@ -18,9 +18,15 @@ Wants=sound.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-# tolerate the module not being present (e.g. sound disabled in BIOS) rather
-# than failing the boot over an audio nicety
-ExecStart=/bin/sh -c 'P=/sys/module/snd_hda_intel/parameters/power_save; [ -w "$P" ] && echo 15 > "$P" || true'
+# Wait (bounded) for the module rather than assuming After=sound.target has
+# already brought it up - that ordering is not a hard guarantee, and an early
+# run would otherwise no-op. Fail LOUDLY if the parameter never appears: a
+# silent no-op is what made the original modprobe.d approach look shipped when
+# it was not. `systemctl status speaker-dsp-powersave` then shows the problem.
+ExecStart=/bin/sh -c 'P=/sys/module/snd_hda_intel/parameters/power_save; \
+  n=0; while [ ! -w "$P" ] && [ $n -lt 40 ]; do sleep 0.25; n=$((n+1)); done; \
+  if [ -w "$P" ]; then echo 15 > "$P"; \
+  else echo "power_save not writable after 10s - snd_hda_intel not loaded?" >&2; exit 1; fi'
 
 [Install]
 WantedBy=multi-user.target
