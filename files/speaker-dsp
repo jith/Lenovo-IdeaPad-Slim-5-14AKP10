@@ -17,10 +17,19 @@ RAW="alsa_output.pci-0000_04_00.6.HiFi__Speaker__sink"
 
 case "$1" in
   on|dsp|tuned)
-    # volume is left alone on purpose: forcing 100% here (old behavior)
-    # could blast audio; low volumes are fine now - LV2 keeps processing
-    # at any volume and the loudness service compensates the taper.
+    # The DSP SINK's volume is left alone on purpose: forcing 100% there (old
+    # behavior) could blast audio; low volumes are fine now - LV2 keeps
+    # processing at any volume and the loudness service compensates the taper.
+    #
+    # The HARDWARE sink is different, and must be pinned to 0 dB (S0, 2026-08-02).
+    # Both sinks share one hardware volume control, so a level left behind by
+    # quiet listening on the raw sink silently attenuates the whole tuned path.
+    # This is not a loudness change: the graph's -1 dBFS ceiling and the drive
+    # setting already account for the amp sitting at 0 dB. The daemon re-pins on
+    # every sink event; this makes it immediate on an explicit switch.
     pactl set-default-sink "$DSP" \
+      && pactl set-sink-volume "$RAW" 100% >/dev/null 2>&1
+    [ "$(pactl get-default-sink)" = "$DSP" ] \
       && echo "TUNED - Speaker (Tuned): EQ + bass + dynamics + loudness contour"
     ;;
   off|raw)

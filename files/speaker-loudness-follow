@@ -24,7 +24,24 @@
 # tracks the knob; conf default stays 270 (safe if this daemon is down).
 
 SINK="${SPEAKER_DSP_SINK:-effect_input.speaker-tuning}"
+HW="${SPEAKER_DSP_HW_SINK:-alsa_output.pci-0000_04_00.6.HiFi__Speaker__sink}"
 LAST=""
+
+# S0 (2026-08-02): pin the hardware sink to 0 dB while the DSP sink is default.
+# Both sinks share ONE hardware volume control, and the README tells the user to
+# switch to the raw "Speaker" sink for quiet listening - so whatever level the raw
+# sink was last left at silently attenuated the tuned path too. Measured: it sat at
+# 67/74 = -7.00 dB, i.e. the graph fought to -1 dBFS and then the analog side threw
+# 7 dB away. Only pin while the DSP sink is default, so the raw sink stays under the
+# user's control when they deliberately switch to it.
+pin_hw() {
+    [ "$(pactl get-default-sink 2>/dev/null)" = "$SINK" ] || return 0
+    cur=$(pactl get-sink-volume "$HW" 2>/dev/null \
+        | sed -n 's/.*front-left:[^/]*\/ *\([0-9]*\)%.*/\1/p')
+    # compare before setting, or our own change event re-triggers us forever
+    [ -n "$cur" ] && [ "$cur" -ge 100 ] && return 0
+    pactl set-sink-volume "$HW" 100% >/dev/null 2>&1
+}
 # decimal points must be '.' in the pw-cli pod regardless of user locale
 LC_ALL=C
 export LC_ALL
@@ -35,6 +52,10 @@ apply() {
     [ -n "$V" ] || return 0
     [ "$V" -gt 100 ] && V=100
     [ "$V" -lt 2 ] && V=2
+    # pin BEFORE the unchanged-volume early return: the case that matters most is
+    # the user switching back from the raw sink, where the DSP volume has NOT
+    # changed but the shared hardware control was left attenuated
+    pin_hw
     [ "$V" = "$LAST" ] && return 0
     LAST=$V
     set -- $(awk -v v="$V" 'BEGIN {
@@ -50,8 +71,11 @@ apply() {
     elif [ "$V" -ge 30 ]; then HPF=190.0
     else                       HPF=170.0
     fi
+    # S2a: the second HP section tracks at 0.75 x the main corner (staggered
+    # cascade - steeper ultimate slope for almost no loss just above the corner)
+    HPF2=$(awk -v f="$HPF" 'BEGIN { printf "%.1f", f * 0.75 }')
     pw-cli s "$SINK" Props \
-        "{ params = [ \"loud:volume\" -$A \"loud:input\" $IG \"hp_l:Freq\" $HPF \"hp_r:Freq\" $HPF ] }" \
+        "{ params = [ \"loud:volume\" -$A \"loud:input\" $IG \"hp_l:Freq\" $HPF \"hp_r:Freq\" $HPF \"hp2_l:Freq\" $HPF2 \"hp2_r:Freq\" $HPF2 ] }" \
         >/dev/null 2>&1 || LAST=""   # retry on next event if node not up yet
 }
 
