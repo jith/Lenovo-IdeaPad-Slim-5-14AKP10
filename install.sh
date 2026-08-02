@@ -17,7 +17,14 @@ install -D -m644 51-speaker-sink-priority.conf /etc/wireplumber/wireplumber.conf
 install -D -m755 speaker-dsp                 /usr/local/bin/speaker-dsp
 install -D -m755 speaker-loudness-follow     /usr/local/bin/speaker-loudness-follow
 install -D -m644 speaker-loudness.service    /etc/systemd/user/speaker-loudness.service
+install -D -m644 speaker-dsp-powersave.conf  /etc/modprobe.d/speaker-dsp-powersave.conf
 systemctl --global enable speaker-loudness.service >/dev/null 2>&1 || true
+
+# modprobe.d only takes effect at module load, and snd_hda_intel is already
+# loaded. Apply the same value at runtime so the fix works now rather than
+# after the next reboot (the parameter is writable; see the conf for why 15).
+[ -w /sys/module/snd_hda_intel/parameters/power_save ] \
+    && echo 15 > /sys/module/snd_hda_intel/parameters/power_save 2>/dev/null || true
 
 # Remove user-level copies so nothing double-loads or shadows the system
 # files (user pipewire conf fragments MERGE with /etc -> two DSP sinks!).
