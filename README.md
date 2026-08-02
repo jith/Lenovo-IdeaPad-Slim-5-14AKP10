@@ -2,16 +2,23 @@
 
 Measurement-driven speaker enhancement for Linux: corrective EQ + psychoacoustic
 bass + input-adaptive dynamics + loudness drive for the laptop's 2 W × 2
-front-firing speakers, deployed as a selectable PipeWire sink. Built 2026-07-15,
+up-firing speakers, deployed as a selectable PipeWire sink. Built 2026-07-15,
 dynamics/loudness overhaul 2026-07-21, iPhone-gap pass 2026-07-23 (FIR
-ripple correction + level-aware bass + thermal guard) — every change
-verified with digital signal captures (level ramps, burst+tail, pink-noise
-spectra) and, for the FIR pass, a 3-position acoustic re-measurement.
+ripple correction + level-aware bass + thermal guard), **gain-structure and
+adaptive pass 2026-08-02** — every change verified with digital signal captures
+(level ramps, burst+tail, pink-noise spectra) and, for the FIR pass, a 3-position
+acoustic re-measurement.
+
+**Measured end to end (2026-08-02):** tuned vs raw speaker, same source, same
+analog level, same mic position, EBU R128 integrated — **−38.6 → −29.8 LUFS,
+i.e. +8.8 dB acoustic.** Peak pinned at −1 dBFS; total added latency from the
+2026-08-02 pass is 1.29 ms.
 
 | | |
 |---|---|
 | Laptop | Lenovo IdeaPad Slim 5 14AKP10 (83HX), aluminum chassis |
-| Speakers | 2 × 2 W front-firing stereo (unbranded OEM micro-drivers; Lenovo spec: "stereo speakers, 2W x2", Dolby-processed on Windows only) |
+| Speakers | 2 × 2 W **up-firing** stereo, either side of the keyboard (unbranded OEM micro-drivers; Lenovo spec: "stereo speakers, 2W x2", Dolby-processed on Windows only) |
+| Amp topology | **Dumb, open-loop.** HDA pin `0x17` with EAPD — a single on/off enable line. Audited 2026-08-02: no smart amp exists on this board (SoundWire bus empty, no audio I²C client, and the only non-standard NXP ACPI entry is `\_SB_.I2CA.NFC1`, an NFC stub with `_STA = 0`). **There is no I/V sense, so no excursion or coil-temperature telemetry is possible at any layer** — every protection stage here is open-loop and must assume worst case. No driver or kernel option changes this |
 | Amp/codec | Conexant/Senary SN6140 HDA codec, integrated stereo Class-D amp (`snd_hda_intel`, card 1, AMD Ryzen HDA controller 04:00.6) |
 | OS / stack | Ubuntu 26.04, PipeWire 1.6.2, WirePlumber 0.5.13, GNOME 50.1 |
 | Dependency | `lsp-plugins-lv2` (loudness compensator, MB compressor, GOTT leveler, MB limiter — all LV2); everything else is PipeWire builtins |
@@ -168,6 +175,35 @@ LV2-in-graph safety was verified by measurement (2026-07-16): LSP keeps
 processing at 100 %/50 %/25 % sink volume — the LADSPA skip bug (#2 below)
 does not apply to LV2. Sink volume is applied *before* the graph.
 
+## The 2026-08-02 pass (gain structure + adaptive layer)
+
+Nine changes, each gated on measurement. Two proposed stages were **measured and
+rejected** — recorded here because "we tried it and here is the number" is worth
+more than silence.
+
+| # | Change | Measured result |
+|---|---|---|
+| **S0** | Reclaim discarded analog output: hardware sink pinned to 0 dB, `drive` 3.6 → 2.5 | The chain drove to −1 dBFS and the analog mixer then threw away **7.00 dB**. Both sinks share one hardware control, so any level left behind by quiet listening on the raw sink silently attenuated the tuned path. Net **+4.4 dB** vs the old tune |
+| **S1** | Thermal guard re-tuned, `knee` 1.25 → 0.85 | **Mandatory after S0.** The guard is digital and cannot see the analog change: at the old knee, sustained content would have delivered **+7.1 dB more coil power**, roughly double what was intended. 0.85 lands it at +3.9 dB for 0.7 dB off loud pink |
+| **S2a** | Staggered second HP section at 0.75 × the corner | **−10.3 dB at 110 Hz for −0.2 dB at 400 Hz.** One 12 dB/oct section was the only excursion protection |
+| **S2b** | Overboost `body` +5 → +8 dB, clawed back by `mbc` band 0 (Down mode) | **+1.98 dB when quiet, −0.09 mid, +0.03 loud.** Ratio matters far more than threshold — anything above `cr` 1.5 removes more than the boost and makes mid-level content *quieter* than before |
+| **S4** | Limiter `ovs` 0 → 6; bass release 10 → 60 ms, vocal 5 → 20 ms | 10 ms was ~3 periods of 300 Hz content, so the bass band tracked the waveform rather than the programme. Latency cost **1.29 ms** |
+| **S5** | Shaped shuffler: side path +5 dB @ 1.8 kHz → LP 8 kHz | Side gain was flat above 350 Hz; widening now peaks where ITD/ILD cues live. Adds no L/R asymmetry |
+| **S6** | Static treble cut −6 → −3 dB, GOTT band 4 deepened | **Quiet +1.7/+2.4/+3.0/+2.4 dB at 8/9/10.5/12 kHz; loud +0.1/−0.3 dB.** Subjectively near-indistinguishable — kept because there is no measured downside and the lookahead hard cap (`lim th_4`) is untouched |
+| **S7** | Split-band harmonic generation for the psycho-bass | **IMD-to-harmonic ratio −1.4 → −10.8 dB.** The fix for "kick and bassline turn to mush" |
+| **S8** | Loudness normalization across sources (`autogain_stereo`) | **18 dB source difference → 2.4 dB at the output.** Dynamics preserved — the block envelope is identical at `max_amp` 12/8/6, proving it is not chasing within-track level |
+| **P1** | `snd_hda_intel power_save` 1 → 15 s | Stops EAPD dropping the amp ~6 s into silence (pop + truncated first note). **Not** `power_save=0`, and **not** `suspend-timeout-seconds=0` — keeping the sink RUNNING makes the graph process silence forever, costing far more battery than the codec it would protect |
+
+### Measured and rejected
+
+| Stage | Why it is not enabled |
+|---|---|
+| **S3** crest clipper | Works — but `ct` is inert without `thresh` + `boost`. Once driven properly: **+0.56 dB for 26.7 % THD** at the gentlest setting, +1.13 dB for 38.6 %. Quiet content is untouched at every setting, so the level-dependence is correct; the trade simply is not worth it on a distortion-limited driver. Left in-graph, bypassed (`ce = 0`), for A/B |
+| **S2c** Linkwitz Transform | The driver falls **20.6 dB from 700 → 420 Hz**. Flattening that needs ~+20 dB at 420 Hz, far past the excursion budget. The region is **excursion-limited, not filter-limited** — a matched filter cannot fix a limit that is not in the filters. A single-pass fit also could not identify Q (flat error surface from 2.5 to 3.8) |
+| **S9** per-content profiles | **Impossible on this system.** Chromium routes every tab through one audio process: a movie stream and a music stream are byte-identical — same PID, `media.name = "Playback"` on both, no `media.role`, no `media.category`. There is no signal to classify on |
+| **P2** realtime priority | A no-op here: `pipewire.service` already ships `LimitRTPRIO=95` and `LimitMEMLOCK=infinity`, `RestrictRealtime=no`, and the running process really has `RLIMIT_RTPRIO 95/95`. Threads are nevertheless `SCHED_OTHER`; RTKit caps at 20 while PipeWire requests 88, but forcing 20 did not help either. **Root cause unresolved — costs nothing today** (zero xruns, low single-digit % of one core) |
+| **P3** 96 kHz graph rate | Existed to reduce `mb_clipper` aliasing, which died with S3. The remaining benefit was latency, now measured at 1.29 ms — nothing to fix. The negotiated quantum (2048) dominates latency anyway and is the cheaper lever |
+
 ## Feature status — iPhone-style DSP checklist
 
 | Feature | Status | Where |
@@ -254,6 +290,34 @@ Tuning knobs are documented at the top of the conf; edit, then
    (`files/51-speaker-sink-priority.conf`); raising the DSP sink above 1000
    instead would also outrank an explicit `speaker-dsp off`.
 
+13. **Capturing the DSP sink's own monitor gives you PRE-processing audio** —
+   `pw-record -P stream.capture.sink=true --target effect_input.speaker-tuning`
+   returns what was *written into* the sink, not what the graph produced. Every
+   parameter looks inert. This cost hours on 2026-08-02 and nearly got two
+   working plugins declared dead. **Capture the monitor of the sink the chain
+   outputs TO** (`alsa_output.…Speaker__sink`) — that is the graph's output.
+   Always control-test the rig first with a parameter that *must* work
+   (`g_out` on any LSP node): if that does not move the measurement, the
+   measurement is wrong, not the plugin.
+14. **LSP clipper `ct` does nothing on its own** — the sigmoid threshold reads
+   back correctly and is completely inert: 0.9/0.7/0.5/0.3 measured
+   bit-identical. The real controls are **`thresh` (dB) plus `boost` = 1**;
+   with `thresh = 0` the clipper never engages whatever `ct` says. Applies to
+   `clipper_stereo` and `mb_clipper_stereo` alike.
+15. **filter-chain reports ZERO latency** — both `Latency` and `ProcessLatency`
+   enumerate as zeros regardless of what the hosted plugins actually add
+   (measured: `lim ovs=6` costs a real 1.29 ms). So plugin latency is never
+   advertised to applications and **cannot be compensated for lip-sync** — it
+   simply has to stay small. Budget accordingly rather than relying on
+   PipeWire to declare it.
+16. **Chromium-family browsers expose no per-stream classification** — Brave
+   (and Chrome/Chromium) route every tab through one shared audio process.
+   Two simultaneous streams, one a movie and one music, are byte-identical:
+   same `application.process.id`, `media.name = "Playback"` on both, no
+   `media.role`, no `media.category`, not even the tab title. Any
+   content-aware profile switching keyed on stream metadata is impossible on
+   such a system; only a manual toggle can work.
+
 ## Troubleshooting
 
 - **GNOME shows no Speaker entry at all** → the DSP sink failed to load,
@@ -285,7 +349,13 @@ Tuning knobs are documented at the top of the conf; edit, then
   `systemctl --user restart pipewire pipewire-pulse wireplumber`.
 - **`pw-dump`/`pw-cli e` shows all DSP params as 0.000** → the node is
   suspended; suspended filter-chain nodes enumerate params as zeros (values
-  are intact and sets still apply). Play any audio and re-read.
+  are intact and sets still apply). Play any audio and re-read. **This is by
+  far the easiest trap in the whole project to fall into** — it looks exactly
+  like "the daemon isn't writing" or "readback is broken", and it re-caught us
+  on 2026-08-02. Confirmed working while RUNNING: `drive_l:Mult 2.5`,
+  `lim:th 0.891`, `lim:ovs 6.0`, `body_l:Gain 8.0`, `hp_l:Freq 240.0`
+  (the daemon's live corner map). Check the sink state *first*:
+  `pactl list sinks short | grep speaker-tuning`.
 
 ## Known hardware issues (unrelated to DSP)
 
@@ -302,6 +372,14 @@ cd ~/speaker-dsp
 sudo sh install.sh          # installs to /etc + /usr/local, removes user-level copies
 systemctl --user restart pipewire pipewire-pulse wireplumber   # per logged-in user
 ```
+
+`install.sh` also writes `power_save=15` straight to `/sys` (P1), because
+`modprobe.d` only takes effect at module load and `snd_hda_intel` is already
+up — otherwise the pop fix would silently wait for the next reboot.
+
+**Not installed, deliberately:** a realtime-priority drop-in. See platform bug
+#12b/P2 above — the limits it would set are already set, so it would be a
+placebo. Revisit only if xruns ever appear.
 
 ## Verify after install
 
@@ -320,9 +398,11 @@ sudo rm /etc/pipewire/pipewire.conf.d/50-speaker-tuning.conf \
         /usr/local/share/wireplumber/scripts/hide-speaker-tuning.lua \
         /etc/wireplumber/wireplumber.conf.d/50-hide-speaker-tuning.conf \
         /etc/wireplumber/wireplumber.conf.d/51-speaker-sink-priority.conf \
+        /etc/modprobe.d/speaker-dsp-powersave.conf \
         /usr/local/bin/speaker-dsp \
         /usr/local/bin/speaker-loudness-follow \
         /etc/systemd/user/speaker-loudness.service
+echo 1 | sudo tee /sys/module/snd_hda_intel/parameters/power_save   # restore stock idle timeout
 sudo rm -r /usr/local/share/speaker-dsp
 systemctl --user restart pipewire pipewire-pulse wireplumber
 ```
