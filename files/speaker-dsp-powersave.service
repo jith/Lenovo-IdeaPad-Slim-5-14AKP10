@@ -1,0 +1,26 @@
+[Unit]
+# P1 belt-and-braces (2026-08-02). The modprobe.d option alone was MEASURED
+# NOT to take effect on this system: /etc/modprobe.d/speaker-dsp-powersave.conf
+# is present and correct, `modprobe --showconfig` reports
+# "options snd_hda_intel power_save=15", snd_hda_intel is NOT in the initramfs,
+# no udev rule or other modprobe.d file touches the parameter, and no power
+# daemon is running (tlp/power-profiles-daemon/thermald all inactive) - yet
+# after a reboot the live value came back as 1, the kernel default.
+# Writing the value directly is the reliable path. Verified that the written
+# value holds: it survives 5 s idle and a full pipewire restart, so nothing is
+# fighting it at runtime - the failure is purely at module-load time.
+# The modprobe.d file is kept as well; it is correct and costs nothing.
+Description=HDA codec idle timeout for the speaker DSP (P1)
+Documentation=https://github.com/jith/Lenovo-IdeaPad-Slim-5-14AKP10
+After=sound.target
+Wants=sound.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# tolerate the module not being present (e.g. sound disabled in BIOS) rather
+# than failing the boot over an audio nicety
+ExecStart=/bin/sh -c 'P=/sys/module/snd_hda_intel/parameters/power_save; [ -w "$P" ] && echo 15 > "$P" || true'
+
+[Install]
+WantedBy=multi-user.target

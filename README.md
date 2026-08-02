@@ -192,7 +192,7 @@ more than silence.
 | **S6** | Static treble cut −6 → −3 dB, GOTT band 4 deepened | **Quiet +1.7/+2.4/+3.0/+2.4 dB at 8/9/10.5/12 kHz; loud +0.1/−0.3 dB.** Subjectively near-indistinguishable — kept because there is no measured downside and the lookahead hard cap (`lim th_4`) is untouched |
 | **S7** | Split-band harmonic generation for the psycho-bass | **IMD-to-harmonic ratio −1.4 → −10.8 dB.** The fix for "kick and bassline turn to mush" |
 | **S8** | Loudness normalization across sources (`autogain_stereo`) | **18 dB source difference → 2.4 dB at the output.** Dynamics preserved — the block envelope is identical at `max_amp` 12/8/6, proving it is not chasing within-track level |
-| **P1** | `snd_hda_intel power_save` 1 → 15 s | Stops EAPD dropping the amp ~6 s into silence (pop + truncated first note). **Not** `power_save=0`, and **not** `suspend-timeout-seconds=0` — keeping the sink RUNNING makes the graph process silence forever, costing far more battery than the codec it would protect |
+| **P1** | `snd_hda_intel power_save` 1 → 15 s | Stops EAPD dropping the amp ~6 s into silence (pop + truncated first note). **Not** `power_save=0`, and **not** `suspend-timeout-seconds=0` — keeping the sink RUNNING makes the graph process silence forever, costing far more battery than the codec it would protect. **Needs BOTH a modprobe.d option and a systemd unit — see bug #17** |
 
 ### Measured and rejected
 
@@ -318,6 +318,21 @@ Tuning knobs are documented at the top of the conf; edit, then
    content-aware profile switching keyed on stream metadata is impossible on
    such a system; only a manual toggle can work.
 
+17. **`modprobe.d` options do not survive a reboot for `snd_hda_intel power_save`**
+   — `/etc/modprobe.d/speaker-dsp-powersave.conf` is present and correct,
+   `modprobe --showconfig` reports `options snd_hda_intel power_save=15`,
+   the module is **not** in the initramfs, no udev rule or other modprobe.d
+   file touches the parameter, and no power daemon is running
+   (tlp/power-profiles-daemon/thermald all inactive) — yet after a reboot the
+   live value came back as the kernel default `1`. Writing the value directly
+   works and *holds* (survives idle and a pipewire restart), so the failure is
+   purely at module-load time. Root cause unidentified. **Fix: ship a systemd
+   unit (`speaker-dsp-powersave.service`) that writes it at boot**, keeping
+   the modprobe.d file as well. Verified by resetting the value to 1 and
+   restarting the unit alone. Note `modprobe -r` will *silently* fail while
+   the module is in use (`used_by=10` with audio running), so a "reload test"
+   that appears to reload may not have — check the refcount first.
+
 ## Troubleshooting
 
 - **GNOME shows no Speaker entry at all** → the DSP sink failed to load,
@@ -394,6 +409,8 @@ journalctl --user -u pipewire -b | grep -ci error    # 0
 
 ```sh
 systemctl --user disable --now speaker-loudness 2>/dev/null
+sudo systemctl disable --now speaker-dsp-powersave.service 2>/dev/null
+sudo rm -f /etc/systemd/system/speaker-dsp-powersave.service
 sudo rm /etc/pipewire/pipewire.conf.d/50-speaker-tuning.conf \
         /usr/local/share/wireplumber/scripts/hide-speaker-tuning.lua \
         /etc/wireplumber/wireplumber.conf.d/50-hide-speaker-tuning.conf \

@@ -18,11 +18,18 @@ install -D -m755 speaker-dsp                 /usr/local/bin/speaker-dsp
 install -D -m755 speaker-loudness-follow     /usr/local/bin/speaker-loudness-follow
 install -D -m644 speaker-loudness.service    /etc/systemd/user/speaker-loudness.service
 install -D -m644 speaker-dsp-powersave.conf  /etc/modprobe.d/speaker-dsp-powersave.conf
+install -D -m644 speaker-dsp-powersave.service /etc/systemd/system/speaker-dsp-powersave.service
 systemctl --global enable speaker-loudness.service >/dev/null 2>&1 || true
 
-# modprobe.d only takes effect at module load, and snd_hda_intel is already
-# loaded. Apply the same value at runtime so the fix works now rather than
-# after the next reboot (the parameter is writable; see the conf for why 15).
+# P1 needs BOTH mechanisms - measured 2026-08-02:
+#  - the modprobe.d option alone did NOT survive a reboot on this system
+#    (correct file, `modprobe --showconfig` agrees, module not in initramfs,
+#    nothing else writing it - yet the live value came back as the kernel
+#    default 1). The system service below writes it explicitly at boot.
+#  - and neither helps the ALREADY-loaded module, so write it now too, or the
+#    fix silently waits for the next reboot.
+systemctl daemon-reload >/dev/null 2>&1 || true
+systemctl enable --now speaker-dsp-powersave.service >/dev/null 2>&1 || true
 [ -w /sys/module/snd_hda_intel/parameters/power_save ] \
     && echo 15 > /sys/module/snd_hda_intel/parameters/power_save 2>/dev/null || true
 
