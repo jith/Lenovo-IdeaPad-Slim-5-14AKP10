@@ -17,25 +17,17 @@ scratch.
   PipeWire and `pactl`.
 - `files/speaker-dsp` switches the default output between the virtual and raw
   speaker sinks.
-- `files/fir-correction.wav` is an uninstalled calibration asset for a future
-  `convolver` stage; the starter does not load it.
-
-The previous loudness follower and its systemd unit are intentionally absent.
 
 ## Install
 
 ```sh
 cd ~/speaker-dsp
 sudo sh install.sh
-systemctl --user disable --now speaker-loudness.service 2>/dev/null || true
-systemctl --user daemon-reload
 systemctl --user restart pipewire pipewire-pulse wireplumber
 speaker-dsp on
 ```
 
-`install.sh` removes only known legacy project files first, including old
-per-user configuration fragments that could otherwise create a duplicate
-sink.
+`install.sh` installs the system-wide starter configuration and helper.
 
 ## Use the speaker helper
 

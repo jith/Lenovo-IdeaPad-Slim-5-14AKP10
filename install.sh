@@ -14,38 +14,8 @@ HIDE_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/50-hide-speaker-tuning.conf
 PRIORITY_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/51-speaker-sink-priority.conf
 HIDE_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/hide-speaker-tuning.lua
 
-remove_legacy_user_files() {
-    # /etc/passwd is intentionally used instead of getent: every path below
-    # is an exact legacy project path for a locally-defined account.
-    while IFS=: read -r _ _ _ _ _ user_home _; do
-        [ -n "$user_home" ] && [ "$user_home" != "/" ] && [ -d "$user_home" ] || continue
-        rm -f -- \
-            "$user_home/.config/pipewire/pipewire.conf.d/50-speaker-tuning.conf" \
-            "$user_home/.config/wireplumber/wireplumber.conf.d/50-hide-speaker-tuning.conf" \
-            "$user_home/.config/wireplumber/wireplumber.conf.d/51-speaker-sink-priority.conf" \
-            "$user_home/.local/share/wireplumber/scripts/hide-speaker-tuning.lua" \
-            "$user_home/.local/bin/speaker-dsp" \
-            "$user_home/.local/bin/speaker-loudness-follow" \
-            "$user_home/.config/systemd/user/speaker-loudness.service" \
-            "$user_home/.config/systemd/user/default.target.wants/speaker-loudness.service"
-    done </etc/passwd
-}
-
-remove_legacy_system_files() {
-    # Disable the old globally enabled user unit before removing its file.
-    systemctl --global disable speaker-loudness.service >/dev/null 2>&1 || true
-
-    rm -f -- \
-        /usr/local/bin/speaker-dsp \
-        /usr/local/bin/speaker-loudness-follow \
-        /etc/systemd/user/speaker-loudness.service \
-        /usr/local/share/speaker-dsp/fir-correction.wav
-}
-
 print_user_restart_instructions() {
     echo "For each logged-in user, run:"
-    echo "  systemctl --user disable --now speaker-loudness.service 2>/dev/null || true"
-    echo "  systemctl --user daemon-reload"
     echo "  systemctl --user restart pipewire pipewire-pulse wireplumber"
 }
 
@@ -54,12 +24,10 @@ uninstall() {
         "$FILTER_DEST" \
         "$HIDE_CONF_DEST" \
         "$PRIORITY_CONF_DEST" \
-        "$HIDE_SCRIPT_DEST"
+        "$HIDE_SCRIPT_DEST" \
+        /usr/local/bin/speaker-dsp
 
-    remove_legacy_system_files
-    remove_legacy_user_files
-
-    echo "Removed the Speaker DSP filter and all known legacy project files."
+    echo "Removed the system-wide Speaker DSP files."
     print_user_restart_instructions
 }
 
@@ -84,11 +52,6 @@ install_filter() {
         echo "missing speaker switch helper: $FILES_DIR/speaker-dsp" >&2
         exit 1
     }
-
-    # User configuration fragments merge with /etc. Remove exact old project
-    # paths first, otherwise an old filter can create a duplicate sink.
-    remove_legacy_system_files
-    remove_legacy_user_files
 
     install -D -m644 "$FILES_DIR/50-speaker-tuning.conf" "$FILTER_DEST"
     install -D -m644 "$FILES_DIR/50-hide-speaker-tuning.conf" "$HIDE_CONF_DEST"
