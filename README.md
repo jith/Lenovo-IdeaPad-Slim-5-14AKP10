@@ -301,6 +301,21 @@ noise instead of erroring, which is exactly the kind of failure that produces
 confident, wrong numbers. `parecord --device=<sink>.monitor` also works if you
 prefer the PulseAudio tools.
 
+**Measured on this machine**, skeleton against raw, 60 s of pink noise:
+
+```
+  tuned    -17.45 LUFS
+  raw      -17.45 LUFS
+  delta     +0.00 LU     -> stage 13 stays at Mult = 1.0
+```
+
+Worth understanding why that is 0.00 and not the 1.18 dB that stage 1 takes
+out of the unweighted RMS: BS.1770 is K-weighted, and K-weighting rolls off
+hard below about 100 Hz. A 20 Hz high-pass is nearly invisible to it. The two
+figures are both correct and measure different things — use RMS to check what
+a stage did to the signal, and LUFS to check what it did to perceived
+loudness.
+
 Two rules the tool follows and you should too:
 
 - **The louder path is attenuated at its own output. Never boost the quieter
@@ -311,8 +326,14 @@ Two rules the tool follows and you should too:
 
 While it runs you will hear the material twice. Set a comfortable level with
 the **hardware** sink's volume: it sits after the monitor tap and does not
-affect the measurement. The virtual sink's volume is before the filter graph
-and does.
+affect the measurement. Verified — the same 3 s of pink noise captured at
+100% / 40% / 15% hardware volume reads −21.378 / −21.444 / −21.444 dBFS, so a
+16 dB change in volume moves the measurement by 0.07 dB, which is
+capture-start jitter rather than level.
+
+The virtual sink's volume is a different matter: it is software, it sits
+*before* the filter graph, and changing it does change what the
+level-dependent stages see. Leave it at 100%.
 
 ## Null test
 
@@ -437,6 +458,25 @@ level: the file is a stimulus played identically down both paths, so whatever
 is clipped in it is clipped the same way in both captures and cancels exactly
 in the null subtraction. Lowering the level would only move where the
 level-dependent stages sit.
+
+## Acceptance status
+
+Measured on the installed graph, not asserted.
+
+| Criterion | Result |
+|---|---|
+| `effect_input.speaker-tuning` in `pactl list sinks short` | pass — present, 48000 Hz |
+| No warnings or errors in the PipeWire journal on load | pass — zero filter-chain lines since the restart |
+| Null test residual below −60 dBFS above 30 Hz | pass — **−inf dBFS**, captures bit-identical |
+| Loudness match within 0.1 LU before any trim | pass — **+0.00 LU** |
+| Skeleton is bypass-equivalent apart from stage 1 | pass — tracks a stage-1-only prediction to **±0.01 dB** |
+| `tools/lt-coeffs.py` standalone, self-test passes | pass — 15/15 |
+| `sudo sh install.sh uninstall` reverts cleanly | not run — needs sudo. Its five removal paths were checked against what is on disk and cover it exactly, with nothing left behind |
+
+The null baseline in `tests/captures/` was taken through the skeleton rather
+than through the original pass-through, so it proves "nothing changed since
+the skeleton" rather than "the skeleton matches the pass-through". The latter
+is what the ±0.01 dB level check above establishes instead.
 
 ## Open questions
 

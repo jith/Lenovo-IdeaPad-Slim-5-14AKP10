@@ -46,10 +46,16 @@ require_node() {
 #
 # The capture point is the sink's monitor, which carries post-DSP audio when
 # the chain is in front of it and unprocessed audio when it is not. Same node
-# either way, so an A/B through it compares like with like. It is also ahead
-# of the codec's hardware volume, so turning the speakers down does not change
-# what is measured -- verified, not assumed. Use the hardware sink's volume for
-# that, never the virtual sink's, which sits before the filter graph.
+# either way, so an A/B through it compares like with like.
+#
+# The monitor is also ahead of the codec's hardware volume, so turning the
+# speakers down does not change what is measured. Measured on this machine:
+# the same 3 s of pink noise captured at 100% / 40% / 15% hardware volume
+# reads -21.378 / -21.444 / -21.444 dBFS -- a 16 dB change in volume moves the
+# capture by 0.07 dB, which is capture-start jitter, not level. Use the
+# hardware sink's volume to set a comfortable listening level, never the
+# virtual sink's, which sits before the filter graph and would change what the
+# level-dependent stages see.
 #
 # It has to be `-P stream.capture.sink=true` against the SINK's own name.
 # `pw-record --target=<sink>.monitor` looks like it should work -- that is the
