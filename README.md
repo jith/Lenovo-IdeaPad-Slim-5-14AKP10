@@ -6,6 +6,17 @@ does no processing: each channel passes through an explicit `copy` node. Use
 this as the known-good starting point for building and verifying filters from
 scratch.
 
+## System and speakers
+
+| Item | Details |
+|---|---|
+| Laptop | Lenovo IdeaPad Slim 5 14AKP10 (83HX), aluminum chassis |
+| Audio hardware | Conexant/Senary SN6140 HDA codec with integrated stereo Class-D amplifier (`snd_hda_intel`, AMD Ryzen HDA controller `04:00.6`) |
+| Speakers | Two unbranded OEM micro-speakers, 2 W each, stereo |
+| Speaker placement | Front-firing left and right speakers |
+| System | Ubuntu 26.04 LTS, Linux 7.0.0-29-generic |
+| Audio stack | PipeWire 1.6.2 and WirePlumber 0.5.13 |
+
 ## What is installed
 
 - `files/50-speaker-tuning.conf` creates the pass-through virtual sink and
@@ -79,4 +90,4 @@ both `playback.props.target.object` in `files/50-speaker-tuning.conf` and
 sudo sh install.sh uninstall
 ```
 
-Then run the three user-level `systemctl` commands shown in the install step.
+Then restart the user-level PipeWire services shown in the install step.
