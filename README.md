@@ -4,14 +4,15 @@ A thirteen-stage PipeWire filter chain for the Lenovo IdeaPad Slim 5 14AKP10
 speakers, installed as **Speaker (Tuning)**, a virtual stereo sink in front of
 the hardware sink.
 
-It ships as a **skeleton**: every stage exists as a real node in the graph, but
-each stage whose coefficients have not been measured yet sits at a
-bypass-equivalent value. The point is a graph that loads cleanly end to end, so
-measured values can be dropped in one stage at a time without ever debugging
-topology and tuning at once.
+Every stage exists as a real node in the graph, and each stage whose
+coefficients have not been measured yet sits at a bypass-equivalent value. The
+point is a graph that loads cleanly end to end, so measured values can be
+dropped in one stage at a time without ever debugging topology and tuning at
+once.
 
-Only stage 1 (a 20 Hz subsonic high-pass) and stage 12 (the brickwall limiter)
-do anything as installed.
+**Live so far:** stage 0 (headroom trim, −3.12 dB), stage 1 (20 Hz subsonic
+high-pass), stage 2 (Linkwitz transform, 761 Hz Q 2.63 → 650 Hz Q 0.707) and
+stage 12 (brickwall limiter). Stages 3–11 and 13 are bypass-equivalent.
 
 ## System and speakers
 
@@ -33,9 +34,9 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 
 | # | Stage | Nodes | Implementation | Parameters | State as installed | Source |
 |---|---|---|---|---|---|---|
-| 0 | Headroom trim | `s0trim_*` | builtin `linear` | −6 dB, recovered at stage 10 makeup | **unity** — set to `Mult = 0.5012` when stage 2 goes live | US12342139B2 |
+| 0 | Headroom trim | `s0trim_*` | builtin `linear` | −3.12 dB, recovered at stage 10 makeup | **active**, `Mult = 0.6983` | US12342139B2 |
 | 1 | Subsonic high-pass | `s1sub_*` | builtin `bq_highpass` | 20 Hz, Q 0.707 | **active** | US12445775B2 |
-| 2 | Linkwitz transform | `s2lt_*` | builtin `bq_raw`, one per channel | **numerator = measured (fc, Qtc); denominator = target (fc′, Qtc′)** | identity | US12342139B2 |
+| 2 | Linkwitz transform | `s2lt_*` | builtin `bq_raw`, one per channel | **numerator = measured (fc, Qtc); denominator = target (fc′, Qtc′)** — 761 Hz Q 2.63 → 650 Hz Q 0.707 | **active** | US12342139B2 |
 | 3 | HF path | `s3neg_*`, `s3hf_*`, `s3dly_*` | `invert` + `mixer` + `delay` | HF = input − LF; delay matches LF branch group delay | high-pass on, delay 0 | CN115442709B |
 | 4 | Subband split | `s4lp_*`, `s4bp1..3_*` | `bq_lowpass` + 3× `bq_bandpass` | centres 0.25 / 0.45 / 0.75 × f1, Q 2.0; top edge 0.96 × f1 | placeholder f1 = 200 Hz | CN115442709B |
 | 5 | Harmonic generation | `s5h<band>x<order>_*` | `mult`, order n = x^n | low band 4/5/6, mid 3/4/5, upper 2/3/4 | live but muted at stage 8 | CN115442709B, US5930373A |
@@ -66,11 +67,15 @@ input → s0 trim → s1 subsonic HP → s2 Linkwitz
 
 Five places. Each is a decision, not an accident.
 
-1. **Stage 0 ships at unity, not −6 dB.** The −6 dB exists to make room for the
-   Linkwitz transform's boost, and stage 10's makeup returns it. With stage 2
-   at identity and stage 10 bypassed, applying −6 dB would leave the skeleton
-   6 dB below the baseline and fail the loudness-match criterion. The value is
-   in the config, commented, next to the stage that consumes it.
+1. **Stage 0 is sized from measurement, not fixed at −6 dB.** It exists to make
+   room for the Linkwitz transform's boost, and stage 10's makeup returns it.
+   The specified −6 dB assumed a bigger transform than this one turned out to
+   need: the worst peak increase stage 2 causes across the three test signals
+   is +3.12 dB, so stage 0 takes exactly that. Note it is sized on the 100 Hz
+   square, at +3.12 dB, not on the filter's frequency-domain peak of +2.73 dB —
+   a transient sees the filter's phase as well as its magnitude. Re-derive it
+   whenever stage 2 changes. While stage 2 was at identity this sat at unity,
+   so the skeleton stayed level-matched to the baseline.
 
 2. **The f1 split is complementary, not two independent filters.** `HF = input
    − LP(f1)` via `invert` + `mixer`, rather than an independent `bq_highpass`.
@@ -242,11 +247,24 @@ Verified: that command measured −34.10 dBFS at the monitor against −22.12 wi
 `Mult = 1.0`, a 11.98 dB drop where 20·log10(0.25) is 12.04. It really takes
 effect.
 
-Two caveats. The values do **not** read back — `pw-dump` shows no graph
-controls in Props, so this is write-only and the config file remains the only
-record of what a stage is set to. And nothing is persisted: a PipeWire restart
-reverts everything to the file. Find the value live, then write it into
+Three caveats, the last one important.
+
+The values do **not** read back — `pw-dump` shows no graph controls in Props,
+so this is write-only and the config file remains the only record of what a
+stage is set to. Nothing is persisted either: a PipeWire restart reverts
+everything to the file. Find the value live, then write it into
 `files/50-speaker-tuning.conf` and reinstall.
+
+**Never set `bq_raw` coefficients this way.** Controls are applied one at a
+time, so a partially-applied set is a filter nobody designed — and it can
+easily be unstable. Setting `a1 = -1.9` while `a2` was still 0 put the poles
+outside the unit circle, the biquad diverged to NaN within milliseconds, and
+the chain output silence. Resetting the coefficients does *not* fix it,
+because the NaN is in the filter's delay line, not its coefficients. It
+recovers only when the sink suspends and the graph is re-initialised, which
+takes a few seconds of idle. Stage 2 and stage 11 go through
+`install.sh` and a restart. Scalar controls — gains, `Mult`, thresholds,
+`enabled` — are safe live.
 
 This is also the quickest way to confirm the A/B switch works at all, since
 the skeleton is deliberately inaudible — set `s13trim_*:Mult` to `0.25`, and
@@ -287,12 +305,25 @@ response curve relative to the 1.3–2.4 kHz mean, and estimates `fc` and `Qtc`.
 ### Measured on this machine
 
 ```
-  resonance      fc = 734 Hz, +12.3 dB above passband
-  -3 dB points   672 .. 815 Hz (bandwidth 144 Hz)
-  Qtc            5.10 from bandwidth, 4.14 from peak height
-  output is 10 dB down by 407 Hz
-  output is 20 dB down by 251 Hz
+  resonance      fc = 761 Hz, +8.4 dB above passband
+  -3 dB points   604 .. 854 Hz (bandwidth 250 Hz)
+  Qtc            3.04 from bandwidth, 2.63 from peak height
+  output is 10 dB down by 427 Hz
+  output is 20 dB down by 381 Hz
 ```
+
+A useful consistency check: a second-order resonance of Q 2.63 peaks
+20·log10(2.63) = 8.40 dB above its passband, and 8.4 dB is what was measured.
+The driver really does behave like a second-order high-pass at this fc and Q,
+which is what makes a Linkwitz transform the right tool.
+
+**These numbers superseded an earlier, wrong set** (734 Hz, Q 4.14–5.10,
++12.3 dB). A log sweep spends less time per hertz as it climbs, so a
+fixed-window FFT reads a *flat* system as a curve sloping about 1 dB/octave.
+`sweep-response.py` did not divide that out, and the tilt inflated the peak by
+~4 dB and Q by ~1.5. It now normalises against the stimulus by default, and
+reads the source sweep back as flat to 0.0 dB. If you ever see it warn that no
+`--reference` was given, the numbers are not trustworthy.
 
 Two things follow, and both matter more than the numbers themselves.
 

@@ -75,34 +75,61 @@ def main():
     p.add_argument("--ref-lo", type=float, default=1300.0,
                    help="passband reference band, low edge (Hz)")
     p.add_argument("--ref-hi", type=float, default=2400.0)
+    p.add_argument("--reference", default="tests/material/sweep.wav",
+                   help="the stimulus WAV, analysed identically and divided "
+                        "out. Pass '' to skip (not recommended)")
     args = p.parse_args()
 
-    x, rate = read_mono(args.capture)
-    frames = track(x, rate)
-    t0, slope = find_start(frames, args.f0, args.f1, args.dur)
-    if not 0.8 < slope < 1.2:
-        print(f"  warning: sweep fit slope {slope:.3f} (want 1.0) -- is this "
-              f"a {args.f0:g}->{args.f1:g} Hz sweep over {args.dur:g} s?")
+    edges = args.f0 * 2 ** (np.arange(0, 61) / 6.0)
+    centres = np.sqrt(edges[:-1] * edges[1:])
 
-    keep = (frames[:, 0] > t0 + 0.2) & (frames[:, 0] < t0 + args.dur - 0.2)
-    t = frames[keep, 0]
-    freq = args.f0 * (args.f1 / args.f0) ** ((t - t0) / args.dur)
-    level = np.convolve(frames[keep, 2], np.ones(15) / 15, mode="same")
+    def binned(path):
+        x, rate = read_mono(path)
+        frames = track(x, rate)
+        t0, slope = find_start(frames, args.f0, args.f1, args.dur)
+        if not 0.8 < slope < 1.2:
+            print(f"  warning: {path}: sweep fit slope {slope:.3f} (want 1.0)")
+        keep = ((frames[:, 0] > t0 + 0.2) &
+                (frames[:, 0] < t0 + args.dur - 0.2))
+        t = frames[keep, 0]
+        freq = args.f0 * (args.f1 / args.f0) ** ((t - t0) / args.dur)
+        level = np.convolve(frames[keep, 2], np.ones(15) / 15, mode="same")
+        out = np.full(len(centres), np.nan)
+        for i, (lo, hi) in enumerate(zip(edges[:-1], edges[1:])):
+            sel = (freq >= lo) & (freq < hi)
+            if sel.any():
+                out[i] = level[sel].mean()
+        return out, t0
 
-    ref = level[(freq > args.ref_lo) & (freq < args.ref_hi)].mean()
-    level -= ref
+    level, t0 = binned(args.capture)
 
-    print(f"  sweep starts at {t0:.2f}s, {len(freq)} points")
+    # A log sweep spends less time per hertz as it rises, so a fixed-window
+    # FFT reads a FLAT system as a curve sloping about 1 dB/octave. Dividing
+    # by the stimulus analysed the same way removes that, and any other
+    # artefact the two share. Without it the tilt is indistinguishable from
+    # the speaker's response, which is exactly the mistake it is here to stop.
+    if args.reference:
+        ref_level, _ = binned(args.reference)
+        level = level - ref_level
+        print(f"  normalised against {args.reference}")
+    else:
+        print("  WARNING: no --reference given. The log sweep's own spectral")
+        print("  tilt (~1 dB/octave) is still in these numbers; treat the")
+        print("  shape as indicative only.")
+
+    valid = ~np.isnan(level)
+    band = valid & (centres > args.ref_lo) & (centres < args.ref_hi)
+    level = level - (level[band].mean() if band.any() else 0.0)
+
+    print(f"  sweep starts at {t0:.2f}s")
     print(f"  levels are relative to the {args.ref_lo:g}-{args.ref_hi:g} Hz mean\n")
     print("   freq(Hz)   rel(dB)")
-    edges = args.f0 * 2 ** (np.arange(0, 61) / 6.0)
-    for lo, hi in zip(edges[:-1], edges[1:]):
-        sel = (freq >= lo) & (freq < hi)
-        if not sel.any():
+    for c, val in zip(centres, level):
+        if np.isnan(val):
             continue
-        val = level[sel].mean()
-        print(f"  {np.sqrt(lo * hi):8.0f}  {val:8.1f}  "
-              f"{'#' * max(0, int((val + 40) / 1.2))}")
+        print(f"  {c:8.0f}  {val:8.1f}  {'#' * max(0, int((val + 40) / 1.2))}")
+
+    freq, level = centres[valid], level[valid]
 
     # Resonance: the highest point below the reference band.
     search = (freq > args.f0 * 4) & (freq < args.ref_lo)
