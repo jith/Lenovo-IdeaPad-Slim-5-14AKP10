@@ -10,8 +10,19 @@ point is a graph that loads cleanly end to end, so measured values can be
 dropped in one stage at a time without ever debugging topology and tuning at
 once.
 
-**Live so far:** stages 0, 1, 2, 9, 10, 12 and 13. Stages 3–8 (the virtual
-bass branch) and stage 11 (excursion limiter) are still bypass-equivalent.
+**Live so far:** stages 0, 1, 2, 9, 10, 12 and 13 — seven of fourteen. Stages
+3–8 (the virtual bass branch) and stage 11 (excursion limiter) exist in the
+graph and run, but are set to contribute nothing.
+
+### What is left
+
+| # | Stage | Why it is not on yet |
+|---|---|---|
+| 3–8 | Virtual bass branch | Needs `f1` moved from the 200 Hz placeholder. These drivers are 20 dB down by 381 Hz, so the current subbands at 50/90/150 Hz and their harmonics at 200–600 Hz sit in an octave the speakers cannot reproduce. Rescale `f1`, the three subband centres and the stage 6 peaking frequencies together, aiming the harmonics at or above the 761 Hz resonance. |
+| 11 | Excursion limiter | Needs `x_max`, which has no datasheet for these OEM drivers, and an Hx(s) displacement estimate to put on the sidechain. Stage 10's band 0 already does much of this job empirically. |
+
+Both are judgement calls rather than measurements, and both would be much
+better grounded with real music in `tests/material/` than with pink noise.
 
 ## System and speakers
 
@@ -48,19 +59,117 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 12 | Brickwall | `s12brick` | LSP Limiter | −0.3 dBFS, no makeup, ALR and boost off | **always on** | — |
 | 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **−0.07 dB**, `Mult = 0.991973` | ITU-R BS.1770 |
 
-Signal flow:
+## Signal flow
+
+Node-for-node as wired in `files/50-speaker-tuning.conf`.
+**●** = doing something · **○** = present but bypass-equivalent
+
+### Per channel — stages 0 to 8
+
+Left shown; right is `_r` throughout and mechanically identical.
 
 ```
-input → s0 trim → s1 subsonic HP → s2 Linkwitz
-      → split at f1
-          ├── HF = input − LF  → s3 delay ────────────────┐
-          └── LF = LP(f1) ──────────────────── unity ─────┤
-                    └→ 3 bandpasses → s5 harmonics        │
-                       → s6 weighting → s7 dcblock + K ───┤
-      ← ────────────────────────────── s8 sum ────────────┘
-      → s9 M/S widening → s10 multiband → s11 excursion
-      → s12 brickwall → s13 trim → hardware sink
+in_L
+ │
+ ● s0trim_l      linear         Mult 0.6983          -3.12 dB headroom
+ ● s1sub_l       bq_highpass    20 Hz  Q 0.707       subsonic
+ ● s2lt_l        bq_raw         761 Q2.63 -> 650 Q0.707   Linkwitz
+ │
+ ├────────────────────────────────────────────┐  (dry, for the HF subtraction)
+ │                                            │
+ ○ s4lp_l        bq_lowpass  f1 = 200 Hz      │        LF = LP(f1)
+ │                                            │
+ ├─ ○ s3neg_l    invert  ───────────────────┐ │
+ │                                          │ │
+ │                        ○ s3hf_l  mixer ──┴─┘        HF = s2lt - LF
+ │                             │  Gain 1,2 = 1
+ │                        ○ s3dly_l  delay  0 s        group-delay match
+ │                             │
+ │                             └──────────────────────────────┐
+ │                                                            │
+ ├──────────────────────────────────── LF straight through ───┤
+ │                                                            │
+ ├─ ○ s4bp1_l  bandpass  50 Hz  Q2 ─┐                         │
+ ├─ ○ s4bp2_l  bandpass  90 Hz  Q2 ─┤  subbands 0.25/0.45/    │
+ └─ ○ s4bp3_l  bandpass 150 Hz  Q2 ─┘  0.75 x f1              │
+                    │                                         │
+       ○ s5hNxM_l   mult      x^n, orders 4/5/6, 3/4/5, 2/3/4 │
+       ○ s6wNxM_l   bq_peaking  at n x centre, 0 dB           │
+       ○ s6sumN_l   mixer     sums the 3 orders of a band     │
+       ○ s7dc_l     dcblock   one port per band, kills x^even DC
+       ○ s7kN_l     LSP compressor_mono   enabled = 0         │
+       ○ s7sum_l    mixer     sums the 3 bands                │
+                    │                                         │
+                    └───────────────── harmonics ─────────────┤
+                                                              │
+                                    ● s8sum_l  mixer ─────────┘
+                                       Gain 1 = 1   HF
+                                       Gain 2 = 1   LF        <- the crossfade:
+                                       Gain 3 = 0   harmonics    trade 2 against 3
 ```
+
+### Shared — stages 9 to 13
+
+Stage 9 is the only place the channels meet.
+
+Stage 9, the M/S matrix. Every mixer gain is positive because the builtin
+`mixer` clamps to [0, 10], so each subtraction goes through an `invert`.
+
+```
+  s8sum_l ─┬──────────────────────→ ● s9mid    mixer 0.5 / 0.5   M = (L+R)/2
+  s8sum_r ─┼──────────────────────↗
+           │
+  s8sum_l ─┼──────────────────────→ ● s9side   mixer 0.5 / 0.5   S = (L-R)/2
+  s8sum_r ─┴─ ● s9negr  invert ───↗
+                                         │
+                     ┌───────────────────┴───────────────────┐
+              ● s9slp  bq_lowpass 300 Hz          ● s9shp  bq_highpass 300 Hz
+                     │                                       │
+                     └────────→ ● s9swid  mixer ←────────────┘
+                                  Gain 1 = 0  below 300 Hz   <- BASS MONO
+                                  Gain 2 = 1  above 300 Hz   <- widen here
+                                        │  = S'
+                        ┌───────────────┴───────────────┐
+                        │                        ● s9negs  invert
+                        │                               │
+              ● s9outl  mixer  M + S'         ● s9outr  mixer  M - S'
+```
+
+Stages 10 to 13 are plain stereo in series.
+
+```
+  s9outl ─┐
+  s9outr ─┴→ ● s10mbc    Calf MultibandCompressor
+             │           120 / 1000 / 6000 Hz, mode 0
+             │           thresholds -20 / -15 / -9 / -9 dB
+             │           bypass0..3 = 0   (they default to 1 -- see below)
+             │           level_out +4.11 dB, returning stage 0's trim
+             │
+             ├─ ○ s11hx_l/r  bq_raw identity ──┐   displacement estimate
+             │                                 ↓
+             └→ ○ s11xcur   LSP sc_compressor_stereo   enabled = 0
+                │                              ↑ sidechain
+                │
+                ● s12brick  LSP limiter_stereo   -0.3 dBFS, never bypassed
+                │
+                ● s13trim_l/r  linear  Mult 0.991973   -0.07 dB A/B trim
+                │
+                └→ alsa_output.pci-0000_04_00.6.HiFi__Speaker__sink
+```
+
+Two structural notes that are easy to misread from the diagram.
+
+**The two splits use different filters on purpose.** The f1 split at stage 3/4
+is complementary — `HF = input − LP(f1)` — so the pair reconstructs the input
+exactly while the harmonic branch is muted. Stage 9's side split uses a real
+`bq_lowpass`/`bq_highpass` pair instead, because the complementary form makes a
+poor high-pass once you turn one side down: 6 dB/octave and a +1.8 dB bump at
+the corner. That difference is measured, not stylistic — see the stage 9 notes.
+
+**Stages 5–7 exist and run, but contribute nothing** while `s8sum` `Gain 3` is
+0. They are not disconnected; the audio is generated, weighted, DC-blocked and
+summed, then multiplied by zero. That is what makes them safe to bring up
+gradually.
 
 ### Where this departs from the stage table it was specified from
 
