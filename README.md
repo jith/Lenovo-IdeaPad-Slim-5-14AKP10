@@ -10,9 +10,9 @@ point is a graph that loads cleanly end to end, so measured values can be
 dropped in one stage at a time without ever debugging topology and tuning at
 once.
 
-**Live so far:** stage 0 (headroom trim, −3.12 dB), stage 1 (20 Hz subsonic
-high-pass), stage 2 (Linkwitz transform, 761 Hz Q 2.63 → 650 Hz Q 0.707) and
-stage 12 (brickwall limiter). Stages 3–11 and 13 are bypass-equivalent.
+**Live so far:** stage 1 (20 Hz subsonic high-pass), stage 2 (Linkwitz
+transform, 761 Hz Q 2.63 → 650 Hz Q 0.707) and stage 12 (brickwall limiter).
+Stage 0 is at unity and stages 3–11 and 13 are bypass-equivalent.
 
 ## System and speakers
 
@@ -34,7 +34,7 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 
 | # | Stage | Nodes | Implementation | Parameters | State as installed | Source |
 |---|---|---|---|---|---|---|
-| 0 | Headroom trim | `s0trim_*` | builtin `linear` | −3.12 dB, recovered at stage 10 makeup | **active**, `Mult = 0.6983` | US12342139B2 |
+| 0 | Headroom trim | `s0trim_*` | builtin `linear` | −3.12 dB on paper, recovered at stage 10 makeup | **unity** — stage 10 is bypassed, so the trim would be pure loss; stage 12 catches the worst case | US12342139B2 |
 | 1 | Subsonic high-pass | `s1sub_*` | builtin `bq_highpass` | 20 Hz, Q 0.707 | **active** | US12445775B2 |
 | 2 | Linkwitz transform | `s2lt_*` | builtin `bq_raw`, one per channel | **numerator = measured (fc, Qtc); denominator = target (fc′, Qtc′)** — 761 Hz Q 2.63 → 650 Hz Q 0.707 | **active** | US12342139B2 |
 | 3 | HF path | `s3neg_*`, `s3hf_*`, `s3dly_*` | `invert` + `mixer` + `delay` | HF = input − LF; delay matches LF branch group delay | high-pass on, delay 0 | CN115442709B |
@@ -67,15 +67,19 @@ input → s0 trim → s1 subsonic HP → s2 Linkwitz
 
 Five places. Each is a decision, not an accident.
 
-1. **Stage 0 is sized from measurement, not fixed at −6 dB.** It exists to make
-   room for the Linkwitz transform's boost, and stage 10's makeup returns it.
-   The specified −6 dB assumed a bigger transform than this one turned out to
-   need: the worst peak increase stage 2 causes across the three test signals
-   is +3.12 dB, so stage 0 takes exactly that. Note it is sized on the 100 Hz
-   square, at +3.12 dB, not on the filter's frequency-domain peak of +2.73 dB —
-   a transient sees the filter's phase as well as its magnitude. Re-derive it
-   whenever stage 2 changes. While stage 2 was at identity this sat at unity,
-   so the skeleton stayed level-matched to the baseline.
+1. **Stage 0 is at unity, and the headroom it should take is deferred.** It
+   exists to make room for the Linkwitz transform's boost, with stage 10's
+   makeup returning it. Stage 2 needs −3.12 dB on paper — sized on the 100 Hz
+   square, not the filter's frequency-domain peak of +2.73 dB, because a
+   transient sees the filter's phase as well as its magnitude.
+
+   But stage 10 is bypassed, so taking that headroom is 3.1 dB of pure loss
+   with nothing to give it back. Measured on hardware rather than assumed:
+   at unity, dense pink at −1 dBFS peak comes out at −2.35 dBFS and never
+   touches the limiter, and the 100 Hz square lands at exactly −0.30 dBFS —
+   the stage 12 ceiling — while still keeping the full +3.15 dB of RMS. The
+   brickwall handles the one case that needs handling, which is what it is
+   for. Set stage 0 back to `0.6983` when stage 10's makeup goes live.
 
 2. **The f1 split is complementary, not two independent filters.** `HF = input
    − LP(f1)` via `invert` + `mixer`, rather than an independent `bq_highpass`.
@@ -414,13 +418,18 @@ noise instead of erroring, which is exactly the kind of failure that produces
 confident, wrong numbers. `parecord --device=<sink>.monitor` also works if you
 prefer the PulseAudio tools.
 
-**Measured on this machine**, skeleton against raw, 60 s of pink noise:
+**Measured on this machine**, 60 s of pink noise, with stage 2 live:
 
 ```
-  tuned    -17.45 LUFS
+  tuned    -17.58 LUFS
   raw      -17.45 LUFS
-  delta     +0.00 LU     -> stage 13 stays at Mult = 1.0
+  delta     -0.13 LU     -> SPEAKER_DSP_RAW_TRIM_DB=-0.13
 ```
+
+Raw is the louder path, so raw is the one attenuated — `speaker-dsp` now
+defaults to that trim. The 0.13 LU is the Linkwitz transform's cut around the
+761 Hz resonance, which sits right where K-weighting is most sensitive.
+Before stage 2 the two paths matched at +0.00 LU.
 
 Worth understanding why that is 0.00 and not the 1.18 dB that stage 1 takes
 out of the unweighted RMS: BS.1770 is K-weighted, and K-weighting rolls off
@@ -574,15 +583,18 @@ level-dependent stages sit.
 
 ## Acceptance status
 
-Measured on the installed graph, not asserted.
+Measured on the installed graph, not asserted. The null and bypass rows were
+taken while the whole chain was still bypass-equivalent; they are the
+acceptance evidence for the skeleton, not a claim about the chain as it stands
+now with stage 2 live.
 
 | Criterion | Result |
 |---|---|
 | `effect_input.speaker-tuning` in `pactl list sinks short` | pass — present, 48000 Hz |
 | No warnings or errors in the PipeWire journal on load | pass — zero filter-chain lines since the restart |
 | Null test residual below −60 dBFS above 30 Hz | pass — **−inf dBFS**, captures bit-identical |
-| Loudness match within 0.1 LU before any trim | pass — **+0.00 LU** |
-| Skeleton is bypass-equivalent apart from stage 1 | pass — tracks a stage-1-only prediction to **±0.01 dB** |
+| Loudness match within 0.1 LU before any trim | pass — **+0.00 LU** as a skeleton; **−0.13 LU** with stage 2 live, trimmed on the raw path |
+| Skeleton is bypass-equivalent apart from stage 1 | pass — tracked a stage-1-only prediction to **±0.01 dB** |
 | `tools/lt-coeffs.py` standalone, self-test passes | pass — 15/15 |
 | `sudo sh install.sh uninstall` reverts cleanly | not run — needs sudo. Its five removal paths were checked against what is on disk and cover it exactly, with nothing left behind |
 
