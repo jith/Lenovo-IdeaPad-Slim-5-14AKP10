@@ -31,22 +31,22 @@ do anything as installed.
 Node names follow `s<stage><role>_<channel>`. Left and right are structurally
 identical and mechanically mirrored; only stage 9 crosses channels.
 
-| # | Stage | Nodes | Implementation | State as installed | Source |
-|---|---|---|---|---|---|
-| 0 | Headroom trim | `s0trim_*` | builtin `linear` | **unity** — set to −6 dB (`Mult = 0.5012`) when stage 2 goes live | US12342139B2 |
-| 1 | Subsonic high-pass | `s1sub_*` | builtin `bq_highpass` | **active**, 20 Hz Q 0.707 | US12445775B2 |
-| 2 | Linkwitz transform | `s2lt_*` | builtin `bq_raw` | identity | US12342139B2 |
-| 3 | HF path | `s3neg_*`, `s3hf_*`, `s3dly_*` | `invert` + `mixer` + `delay` | high-pass on, delay 0 | CN115442709B |
-| 4 | Subband split | `s4lp_*`, `s4bp1..3_*` | `bq_lowpass` + 3× `bq_bandpass` | placeholder frequencies | CN115442709B |
-| 5 | Harmonic generation | `s5h<band>x<order>_*` | `mult` cascades | live but muted at stage 8 | CN115442709B, US5930373A |
-| 6 | Harmonic weighting | `s6w<band>x<order>_*`, `s6sum<band>_*` | `bq_peaking` per order | 0 dB | CN115442709B |
-| 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | bypass (`enabled = 0`) | CN115442709B, US10382857 |
-| 8 | Sum | `s8sum_*` | builtin `mixer` | HF + LF unity, harmonics muted | CN115442709B |
-| 9 | M/S widening | `s9*` | explicit M/S matrix | unity (exact identity) | US8660271B2 |
-| 10 | Multiband compressor | `s10mbc` | Calf MultibandCompressor | bypass (`bypass = 1`) | US12342139B2 |
-| 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_raw` estimate → LSP sidechain comp | bypass (`enabled = 0`) | US12445775B2, CN115442709B |
-| 12 | Brickwall | `s12brick` | LSP Limiter | **always on**, −0.3 dBFS, no makeup | — |
-| 13 | A/B trim | `s13trim_*` | builtin `linear` | 0 dB | ITU-R BS.1770 |
+| # | Stage | Nodes | Implementation | Parameters | State as installed | Source |
+|---|---|---|---|---|---|---|
+| 0 | Headroom trim | `s0trim_*` | builtin `linear` | −6 dB, recovered at stage 10 makeup | **unity** — set to `Mult = 0.5012` when stage 2 goes live | US12342139B2 |
+| 1 | Subsonic high-pass | `s1sub_*` | builtin `bq_highpass` | 20 Hz, Q 0.707 | **active** | US12445775B2 |
+| 2 | Linkwitz transform | `s2lt_*` | builtin `bq_raw`, one per channel | **numerator = measured (fc, Qtc); denominator = target (fc′, Qtc′)** | identity | US12342139B2 |
+| 3 | HF path | `s3neg_*`, `s3hf_*`, `s3dly_*` | `invert` + `mixer` + `delay` | HF = input − LF; delay matches LF branch group delay | high-pass on, delay 0 | CN115442709B |
+| 4 | Subband split | `s4lp_*`, `s4bp1..3_*` | `bq_lowpass` + 3× `bq_bandpass` | centres 0.25 / 0.45 / 0.75 × f1, Q 2.0; top edge 0.96 × f1 | placeholder f1 = 200 Hz | CN115442709B |
+| 5 | Harmonic generation | `s5h<band>x<order>_*` | `mult`, order n = x^n | low band 4/5/6, mid 3/4/5, upper 2/3/4 | live but muted at stage 8 | CN115442709B, US5930373A |
+| 6 | Harmonic weighting | `s6w<band>x<order>_*`, `s6sum<band>_*` | `bq_peaking` per order | gain ∝ ln(n)·R(f), f = band centre | 0 dB | CN115442709B |
+| 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | threshold per band from K = min over orders | bypass (`enabled = 0`) | CN115442709B, US10382857 |
+| 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics; `Gain 2`/`Gain 3` are the crossfade | HF + LF unity, harmonics muted | CN115442709B |
+| 9 | M/S widening | `s9*` | explicit M/S matrix | mono below ~300 Hz via `s9swid` `Gain 1` | unity (exact identity) | US8660271B2 |
+| 10 | Multiband compressor | `s10mbc` | Calf MultibandCompressor | lowest threshold on the LF band | bypass (`bypass = 1`) | US12342139B2 |
+| 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_raw` estimate → LSP sidechain comp | Hx(s) displacement estimate on the sidechain; x_max unknown | bypass (`enabled = 0`) | US12445775B2, CN115442709B |
+| 12 | Brickwall | `s12brick` | LSP Limiter | −0.3 dBFS, no makeup, ALR and boost off | **always on** | — |
+| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | 0 dB | ITU-R BS.1770 |
 
 Signal flow:
 
@@ -82,11 +82,23 @@ Five places. Each is a decision, not an accident.
    goal.
 
 3. **The Linkwitz transform has the measured parameters in the numerator.** The
-   stage table says numerator = target, denominator = measured. The filter that
-   turns a measured response into a target one is `H_target / H_measured`,
-   which puts the *measured* `(fc, Qtc)` on top. Following the table as written
-   would attenuate the low end instead of extending it. `tools/lt-coeffs.py`
-   implements the correct form and says so in its docstring.
+   stage table this was specified from said numerator = target, denominator =
+   measured. That is backwards. The filter that makes a measured response
+   behave like a target one is `H_target / H_measured`; both are second-order
+   high-passes, so the `s²` terms cancel and what survives is
+
+   ```
+   H(s) = (s² + (wm/Qm)s + wm²)     <- MEASURED (fc,  Qtc)
+          -------------------------
+          (s² + (wt/Qt)s + wt²)     <- TARGET   (fc', Qtc')
+   ```
+
+   Putting the target on top inverts the correction and cuts the low end
+   instead of extending it. The stage table above, the comment in
+   `files/50-speaker-tuning.conf` and `tools/lt-coeffs.py` all carry the
+   corrected form; the tool's `--self-test` asserts that the result actually
+   boosts (`+15.2 dB at 60 Hz` for its test case), which is the check that
+   would catch the inversion.
 
 4. **Stage 2 is one biquad per channel, not two in series.** A Linkwitz
    transform is a single second-order section. Splitting it into separate
@@ -320,21 +332,45 @@ with known low-frequency content alongside them.
 
 `tests/material/` and `tests/captures/` are gitignored — do not commit audio.
 
-The generator uses ffmpeg because **sox is not installed on this machine**
-(`sudo apt install sox` if you want it). The commands in
-`tools/make-test-material.sh` are the ones that were actually run and checked:
+sox synthesises the signals; ffmpeg measures them, so the RMS reported is the
+same measurement the rest of the tooling uses rather than sox's slightly
+different definition of the same word. The exact commands:
+
+```sh
+# pink noise -- two pinknoise specs, not one: with a single spec sox writes
+# the same noise to both channels, the side signal is exactly zero and stage 9
+# goes untested. Level is set by a second pass, below.
+sox -n -r 48000 -c 2 -b 32 -e float pink.tmp.wav synth 60 pinknoise pinknoise gain -6
+sox pink.tmp.wav pink.wav gain <correction>
+
+# log sweep -- `/` is sox's smooth exponential sweep, a fixed number of
+# semitones per second. `:` would give a linear one.
+sox -n -r 48000 -c 2 -b 32 -e float sweep.wav synth 30 sine 20/20000 gain -6
+
+# 100 Hz square
+sox -n -r 48000 -c 2 -b 32 -e float square100.wav synth 5 square 100 gain -6
+```
+
+`<correction>` is measured, not assumed: the script reads the RMS back with
+ffmpeg and applies the difference from −20 dBFS. Note that `gain -20` would
+attenuate *by* 20 dB, which is not the same thing as landing *at* −20 dBFS RMS.
+
+As generated and checked:
 
 ```
-  pink.wav       RMS -20.000 dBFS
-  sweep.wav      RMS  -9.031 dBFS
-  square100.wav  RMS  -6.021 dBFS
+  pink.wav       RMS -20.000 dBFS     (L−R RMS 0.142, so stage 9 has a side signal)
+  sweep.wav      RMS  -9.011 dBFS     (log sweep verified: 117 / 645 / 3627 Hz
+                                       at t = 7.5 / 15 / 22.5 s)
+  square100.wav  RMS  -6.000 dBFS
 ```
 
-No sox equivalents are given here. `sox synth` needs its levels verified
-against a measurement rather than assumed — `vol -20dB` attenuates by 20 dB, it
-does not produce −20 dBFS RMS — and its sweep is linear unless told otherwise,
-which is why the generator spells the exponential out in `aevalsrc`. Writing
-those commands down untested would defeat the point of having a stated RMS.
+sox synthesises at 0 dBFS and its pink noise overshoots on three to five
+samples in 5.76 million, so `synth` warns about clipping however the gain is
+arranged. That does not matter here and should not be "fixed" by lowering the
+level: the file is a stimulus played identically down both paths, so whatever
+is clipped in it is clipped the same way in both captures and cancels exactly
+in the null subtraction. Lowering the level would only move where the
+level-dependent stages sit.
 
 ## Open questions
 
