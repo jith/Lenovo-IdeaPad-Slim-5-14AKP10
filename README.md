@@ -139,14 +139,37 @@ load and the journal has the reason. Remove with `sudo sh install.sh uninstall`.
 ```sh
 speaker-dsp on       # Speaker (Tuning), the 13-stage chain
 speaker-dsp off      # raw hardware speaker
-speaker-dsp ab       # toggle, with the loudness trim applied
+speaker-dsp ab       # toggle, carrying the level across
 speaker-dsp status
 ```
 
-`ab` is the one to use for listening comparisons: it applies the raw-path trim
-so switching does not change loudness. Set the trim with
-`SPEAKER_DSP_RAW_TRIM` (a percentage) from what `tools/loudness-match.sh`
-reports, or edit the default in `files/speaker-dsp`.
+`ab` is the one to use for listening comparisons: it copies the current level
+onto the sink it switches to and applies the raw-path trim, so switching does
+not change loudness. Set the trim in dB with `SPEAKER_DSP_RAW_TRIM_DB` from
+what `tools/loudness-match.sh` reports, or edit the default in
+`files/speaker-dsp`. It is 0.0 here, because the two paths already match.
+
+### GNOME's slider is inert in raw mode
+
+By design, GNOME shows one output entry — `hide-speaker-tuning.lua` hides the
+raw sink from `org.gnome.VolumeControl` so there is no duplicate speaker in
+the list. Confirmed by asking as that client:
+
+```
+plain pactl                          -> effect_input.speaker-tuning, alsa_output...Speaker__sink
+identifying as org.gnome.VolumeControl -> effect_input.speaker-tuning only
+```
+
+The consequence is that `speaker-dsp off` switches the default to a sink GNOME
+cannot see. Audio really does move — a playing stream follows — but GNOME
+keeps showing "Speaker (Tuning)" as selected and its slider now drives a sink
+that is no longer in the path, so the slider does nothing until you switch
+back. `speaker-dsp` prints a note whenever raw is selected. Set the level in
+raw mode with `pactl set-sink-volume <raw-sink> <n>%`, or just switch back.
+
+Note also that `speaker-dsp` does **not** pin the virtual sink to unity. With
+one entry in GNOME that sink is your volume control, and forcing it to 100%
+would jump the level to full every time you switched on.
 
 ## Sample rate is pinned
 
@@ -204,6 +227,30 @@ Never stack two unverified stages.
 **Stop and report if any test produces audible buzzing, rattling or scraping.**
 These are 2 W sealed micro-speakers and boosted sub-bass damages them
 mechanically. Stage 12 stays on for every test without exception.
+
+### Tuning live, without reinstalling
+
+Every graph control can be set on the running chain, which is far faster than
+edit → install → restart for finding a value. Find the sink's node id with
+`pactl list sinks short`, then:
+
+```sh
+pw-cli set-param 40 Props '{ params = [ "s13trim_l:Mult" 0.25 "s13trim_r:Mult" 0.25 ] }'
+```
+
+Verified: that command measured −34.10 dBFS at the monitor against −22.12 with
+`Mult = 1.0`, a 11.98 dB drop where 20·log10(0.25) is 12.04. It really takes
+effect.
+
+Two caveats. The values do **not** read back — `pw-dump` shows no graph
+controls in Props, so this is write-only and the config file remains the only
+record of what a stage is set to. And nothing is persisted: a PipeWire restart
+reverts everything to the file. Find the value live, then write it into
+`files/50-speaker-tuning.conf` and reinstall.
+
+This is also the quickest way to confirm the A/B switch works at all, since
+the skeleton is deliberately inaudible — set `s13trim_*:Mult` to `0.25`, and
+`speaker-dsp ab` becomes obvious.
 
 ### Enabling individual stages
 
@@ -526,39 +573,30 @@ guessed.
 - **`x_max`** for the excursion limiter. No datasheet exists for these OEM
   drivers.
 
-### Volume dependence — needs a decision
+### Volume dependence — decided: the chain sees post-volume audio
 
 US12342139B2 selects different transform and compressor parameters per volume
-level, because a static chain is only correct at one drive level. The skeleton
-assumes strategy (a): the virtual sink stays at unity and user volume acts on
-the hardware sink, so the chain always sees full scale.
+level, because a static chain is only correct at one drive level.
 
-**That assumption is implementable here but is not what happens today.** What
-was verified on this machine:
+**Measured, not inferred.** Setting the virtual sink to pactl's "50%" drops the
+level at the hardware sink's monitor — which is downstream of the whole graph —
+by 18.08 dB. pactl's percentage is a cubic scale, so 50% is 0.125 linear =
+−18.06 dB. The match confirms the virtual sink's volume is applied *inside* the
+DSP path, before the graph.
 
-- `effect_input.speaker-tuning` carries `softVolumes` and no `HARDWARE` flag —
-  its volume is software, applied by the capture stream, which is *before* the
-  filter graph. `libpipewire-module-filter-chain`'s `capture.volumes` option
-  exists precisely to redirect that into a graph control port, which confirms
-  it is not in the graph by default.
-- `alsa_output.pci-0000_04_00.6.HiFi__Speaker__sink` reports
-  `HW_VOLUME_CTRL` — it has real hardware volume, so it can carry user volume.
+Keeping a single GNOME entry means that sink is the user's volume control, so
+it cannot be pinned to unity: the chain necessarily sees post-volume audio.
+That rules out strategy (a) and settles the question by choice rather than
+leaving it open.
 
-The catch: GNOME's slider drives the *default* sink, which is the virtual sink.
-Pinning it to unity makes that slider dead — the exact failure that commit
-2e18532 fixed. So this is not something to change silently. `speaker-dsp` sets
-the virtual sink to 100% when selecting it, which keeps the chain at full scale
-whenever you switch through the helper, but nothing stops the slider from
-moving it afterwards.
+The consequence to design around: **tune at one representative listening
+level.** Stages 7, 10 and 11 are level-dependent, so their thresholds are only
+correct near the level you set them at. Note the level you tuned at in the
+config next to the thresholds.
 
-Three ways forward, none picked:
-
-1. Leave it. The chain sees post-volume audio; tune at one representative
-   level and accept drift elsewhere.
-2. Pin the virtual sink at unity and move user volume to the hardware sink,
-   with a WirePlumber rule so GNOME's slider follows the hardware sink.
-3. Watch the volume and retune coefficients at runtime with `pw-cli set-param`,
-   which is what US12342139B2 actually describes.
+If that turns out to matter audibly, the remaining option is what
+US12342139B2 actually describes — watch the sink volume and retune at runtime
+with `pw-cli set-param`, which is verified working below.
 
 ## References
 
