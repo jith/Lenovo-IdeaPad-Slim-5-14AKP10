@@ -231,11 +231,46 @@ is to preserve interaural level differences during harmonic generation
 
 ```sh
 tools/measure-speaker.sh tests/captures/sweep-mic.wav
-ffmpeg -i tests/captures/sweep-mic.wav -lavfi 'showspectrumpic=s=1600x800:legend=1' spectrum.png
+tools/sweep-response.py tests/captures/sweep-mic.wav
 ```
 
-`fc` is the peak frequency of the enclosure resonance. `Qtc` is `fc` divided by
-the −3 dB bandwidth around that peak. Feed both, plus the target you want, to:
+`sweep-response.py` locates the sweep in the capture, prints a 1/6-octave
+response curve relative to the 1.3–2.4 kHz mean, and estimates `fc` and `Qtc`.
+
+### Measured on this machine
+
+```
+  resonance      fc = 734 Hz, +12.3 dB above passband
+  -3 dB points   672 .. 815 Hz (bandwidth 144 Hz)
+  Qtc            5.10 from bandwidth, 4.14 from peak height
+  output is 10 dB down by 407 Hz
+  output is 20 dB down by 251 Hz
+```
+
+Two things follow, and both matter more than the numbers themselves.
+
+**These speakers produce nothing usable below about 250 Hz.** Output is 20 dB
+down by 251 Hz and buried in the room noise floor below ~240 Hz — the sweep
+simply does not come back on the microphone there. That is the justification
+for the whole virtual-bass branch, and it also means the placeholder
+frequencies in stage 4 are in the wrong place: `f1 = 200 Hz` with subband
+centres at 50 / 90 / 150 Hz feeds the harmonic generator from a region the
+speaker cannot reproduce, and stage 6 then places the harmonics at 200–600 Hz,
+much of which is still in the dead zone. Both need rescaling upward once you
+decide the target, and the harmonics want to land at or above the resonance
+where there is actually output.
+
+**A Linkwitz transform from 734 Hz is not a small ask.** Extending to even
+400 Hz means roughly +20 dB of boost into a 2 W sealed driver at the frequency
+where it is already least able to move air. Work up to it, keep stage 12 on,
+and stop at the first sign of mechanical noise.
+
+The two `Qtc` figures disagree (5.10 vs 4.14) because each assumes an ideal
+second-order resonance and this is not one. Take the range. And note that a Q
+of 4–5 is sharp for a driver in a sealed box — a good part of that peak is
+plausibly chassis cavity resonance, which the caveat below is precisely about.
+
+Feed the result, plus the target you want, to:
 
 ```sh
 tools/lt-coeffs.py FC QTC FC2 QTC2 [--rate 48000]
