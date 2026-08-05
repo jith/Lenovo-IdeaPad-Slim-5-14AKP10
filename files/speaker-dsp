@@ -1,6 +1,6 @@
 #!/bin/sh
-# Switch the default output between the starter's virtual speaker sink and
-# the raw hardware speaker. No sudo is required when run as the desktop user.
+# Switch the default output between the tuned virtual speaker sink and the raw
+# hardware speaker. No sudo is required when run as the desktop user.
 
 if [ "$(id -u)" = "0" ] && [ -n "${SUDO_UID:-}" ]; then
     export XDG_RUNTIME_DIR="/run/user/$SUDO_UID"
@@ -9,25 +9,59 @@ fi
 DSP=effect_input.speaker-tuning
 RAW=alsa_output.pci-0000_04_00.6.HiFi__Speaker__sink
 
+# Loudness trim for the raw path, as a percentage volume on the hardware sink.
+# 100 means the two paths already match. Set this from the delta reported by
+# tools/loudness-match.sh, and only ever below 100 -- the rule is that the
+# louder path is attenuated at its own output, never the quieter one boosted.
+# When the tuned path is the louder one, its trim belongs at stage 13 of
+# files/50-speaker-tuning.conf instead, not here.
+RAW_TRIM=${SPEAKER_DSP_RAW_TRIM:-100}
+
+usage() {
+    echo "usage: speaker-dsp {on|off|ab|status}" >&2
+    echo "  on      Speaker (Tuning), the 13-stage filter chain" >&2
+    echo "  off     raw hardware speaker" >&2
+    echo "  ab      toggle between them with the loudness trim applied" >&2
+    echo "  status  which one is currently the default output" >&2
+    exit 2
+}
+
+# Volume on the raw sink is hardware volume on the codec, after everything.
+# The virtual sink's volume is software and sits BEFORE the filter graph, so
+# it must stay at unity or it changes what the level-dependent stages see.
+select_tuned() {
+    pactl set-sink-volume "$DSP" 100% >/dev/null 2>&1
+    pactl set-default-sink "$DSP"
+}
+
+select_raw() {
+    pactl set-sink-volume "$RAW" "$RAW_TRIM%" >/dev/null 2>&1
+    pactl set-default-sink "$RAW"
+}
+
 case "${1:-status}" in
     on|dsp|tuning)
-        pactl set-default-sink "$DSP" &&
-            echo "SPEAKER DSP - Speaker (Tuning) is the default output"
+        select_tuned && echo "SPEAKER DSP - Speaker (Tuning) is the default output"
         ;;
     off|raw)
-        pactl set-default-sink "$RAW" &&
-            echo "RAW SPEAKER - the hardware speaker is the default output"
+        select_raw &&
+            echo "RAW SPEAKER - the hardware speaker is the default output (trim ${RAW_TRIM}%)"
+        ;;
+    ab)
+        current=$(pactl get-default-sink) || exit $?
+        if [ "$current" = "$DSP" ]; then
+            select_raw && echo "A/B -> RAW SPEAKER (trim ${RAW_TRIM}%)"
+        else
+            select_tuned && echo "A/B -> SPEAKER DSP (Speaker (Tuning))"
+        fi
         ;;
     status)
-        current_sink=$(pactl get-default-sink) || exit $?
-        case "$current_sink" in
-            "$DSP") echo "state: Speaker (Tuning) (pass-through starter)" ;;
-            "$RAW") echo "state: raw hardware speaker" ;;
-            *) echo "state: other output ($current_sink)" ;;
+        current=$(pactl get-default-sink) || exit $?
+        case "$current" in
+            "$DSP") echo "state: Speaker (Tuning), 13-stage chain" ;;
+            "$RAW") echo "state: raw hardware speaker (trim ${RAW_TRIM}%)" ;;
+            *) echo "state: other output ($current)" ;;
         esac
         ;;
-    *)
-        echo "usage: speaker-dsp {on|off|status}" >&2
-        exit 2
-        ;;
+    *) usage ;;
 esac
