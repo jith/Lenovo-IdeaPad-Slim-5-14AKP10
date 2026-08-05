@@ -1,11 +1,6 @@
--- Hide the RAW speaker sink and the DSP's internal output stream from
--- GNOME's mixer connections (GNOME Settings, shell volume menu), so the
--- only visible speaker output is the DSP sink named "Speaker".
---
--- Safe: no pulse client ever links to the raw sink - apps play into the
--- DSP sink, and only the PipeWire daemon's filter-chain stream feeds the
--- raw sink. (Hiding nodes that client streams link to breaks playback -
--- see README platform bug #5.) pactl/pavucontrol still see everything.
+-- Hide the raw speaker sink and the DSP's internal output stream from GNOME's
+-- mixer connections. Apps may still use the virtual Speaker (Tuning) sink;
+-- pactl and pavucontrol continue to show every node.
 
 log = Log.open_topic ("s-hide-speaker-tuning")
 
@@ -21,17 +16,14 @@ raw_om = ObjectManager {
   }
 }
 
--- The onboard sound CARD: GNOME Settings also builds output entries from
--- card PORTS, so the card must be hidden too or a duplicate port-derived
--- "Speaker" entry remains. (HDMI card stays visible.)
+-- GNOME also derives output entries from card ports, so hide this onboard
+-- speaker card while leaving other devices such as HDMI visible.
 card_om = ObjectManager {
   Interest { type = "device",
     Constraint { "device.name", "equals", "alsa_card.pci-0000_04_00.6" },
   }
 }
 
--- Match all clients; client.api is only present in the full info
--- properties, not the registry globals that Interest constraints see.
 clients_om = ObjectManager {
   Interest { type = "client" }
 }
@@ -57,8 +49,8 @@ local function hide (client, node)
     client:update_permissions { [nid] = "-" }
   end)
   if ok then
-    log:info ("hid internal stream " .. tostring (nid) ..
-        " from gvc client " .. tostring (cid))
+    log:info ("hid node " .. tostring (nid) .. " from gvc client " ..
+        tostring (cid))
   else
     log:warning ("could not hide node " .. tostring (nid) .. ": " ..
         tostring (err))

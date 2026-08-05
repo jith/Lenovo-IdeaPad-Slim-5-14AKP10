@@ -1,37 +1,33 @@
 #!/bin/sh
-# speaker-dsp — switch between raw and tuned speaker output.
-#   speaker-dsp on      -> "Speaker (Tuned)": measured EQ + psycho-bass +
-#                          dynamics + volume-aware loudness contour.
-#                          Keeps your current volume (the speaker-loudness
-#                          service compensates the sink's steep taper).
-#   speaker-dsp off     -> raw "Speaker": cleanest, normal hardware volume.
-#   speaker-dsp status  -> show current state
-# Installed system-wide at /usr/local/bin/speaker-dsp. No sudo needed to use.
+# Switch the default output between the starter's virtual speaker sink and
+# the raw hardware speaker. No sudo is required when run as the desktop user.
 
-if [ "$(id -u)" = "0" ] && [ -n "$SUDO_UID" ]; then
-  export XDG_RUNTIME_DIR="/run/user/$SUDO_UID"
+if [ "$(id -u)" = "0" ] && [ -n "${SUDO_UID:-}" ]; then
+    export XDG_RUNTIME_DIR="/run/user/$SUDO_UID"
 fi
 
-DSP="effect_input.speaker-tuning"
-RAW="alsa_output.pci-0000_04_00.6.HiFi__Speaker__sink"
+DSP=effect_input.speaker-tuning
+RAW=alsa_output.pci-0000_04_00.6.HiFi__Speaker__sink
 
-case "$1" in
-  on|dsp|tuned)
-    # volume is left alone on purpose: forcing 100% here (old behavior)
-    # could blast audio; low volumes are fine now - LV2 keeps processing
-    # at any volume and the loudness service compensates the taper.
-    pactl set-default-sink "$DSP" \
-      && echo "TUNED - Speaker (Tuned): EQ + bass + dynamics + loudness contour"
-    ;;
-  off|raw)
-    pactl set-default-sink "$RAW" && echo "RAW - plain speaker, hardware volume"
-    ;;
-  status|*)
-    cur=$(pactl get-default-sink)
-    case "$cur" in
-      "$DSP") echo "state: TUNED (Speaker (Tuned) is default)" ;;
-      "$RAW") echo "state: RAW (plain speaker)" ;;
-      *)      echo "state: other output ($cur)" ;;
-    esac
-    ;;
+case "${1:-status}" in
+    on|dsp|tuning)
+        pactl set-default-sink "$DSP" &&
+            echo "SPEAKER DSP - Speaker (Tuning) is the default output"
+        ;;
+    off|raw)
+        pactl set-default-sink "$RAW" &&
+            echo "RAW SPEAKER - the hardware speaker is the default output"
+        ;;
+    status)
+        current_sink=$(pactl get-default-sink) || exit $?
+        case "$current_sink" in
+            "$DSP") echo "state: Speaker (Tuning) (pass-through starter)" ;;
+            "$RAW") echo "state: raw hardware speaker" ;;
+            *) echo "state: other output ($current_sink)" ;;
+        esac
+        ;;
+    *)
+        echo "usage: speaker-dsp {on|off|status}" >&2
+        exit 2
+        ;;
 esac
