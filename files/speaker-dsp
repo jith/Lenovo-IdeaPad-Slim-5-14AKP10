@@ -14,10 +14,17 @@ RAW=alsa_output.pci-0000_04_00.6.HiFi__Speaker__sink
 # quieter one boosted. When the tuned path is the louder one its trim belongs
 # at stage 13 of the filter graph instead.
 #
-# -0.13 dB measured with stage 2 live: the Linkwitz transform's cut around the
-# 761 Hz resonance costs that much K-weighted loudness. Re-run the loudness
-# match after enabling any stage that changes level.
-RAW_TRIM_DB=${SPEAKER_DSP_RAW_TRIM_DB:--0.13}
+# -0.75 dB measured with stages 2 and 9 live, on the shipped pink noise.
+# Two contributions: the Linkwitz transform's cut around the 761 Hz resonance
+# (-0.13) and bass mono removing side energy below 300 Hz (-0.62).
+#
+# Pink noise has fully decorrelated channels, which is the worst case for bass
+# mono. On material whose bass is already mono, as most records are cut, the
+# same measurement gives -0.52. The 0.23 dB between them is well under
+# audibility, but the honest figure is the one measured on what you actually
+# listen to: drop a few tracks into tests/material/ and re-run
+# tools/loudness-match.sh against them.
+RAW_TRIM_DB=${SPEAKER_DSP_RAW_TRIM_DB:--0.75}
 
 usage() {
     echo "usage: speaker-dsp {on|off|ab|status}" >&2

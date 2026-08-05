@@ -309,6 +309,22 @@ response curve relative to the 1.3–2.4 kHz mean, and estimates `fc` and `Qtc`.
 
 ### Measured on this machine
 
+Stage 9 confirmed on the installed chain — side energy removed, by band,
+against the same measurement on the source material:
+
+| band | measured | predicted offline |
+|---|---|---|
+| 40–150 Hz | **−20.1 dB** | −20.1 dB |
+| 150–300 Hz | **−6.7 dB** | −6.6 dB |
+| 300–600 Hz | **−1.2 dB** | −1.1 dB |
+| 600–1200 Hz | −0.1 dB | −0.1 dB |
+| 1.2–4 kHz | −0.0 dB | −0.0 dB |
+
+Every band within 0.1 dB of the model. Note this is an *electrical* result,
+taken from the sink monitor: it says the filter does what it should, not that
+you can hear it. Below 300 Hz these drivers are more than 15 dB down, so bass
+mono here buys excursion headroom rather than an audible change.
+
 ```
   resonance      fc = 761 Hz, +8.4 dB above passband
   -3 dB points   604 .. 854 Hz (bandwidth 250 Hz)
@@ -419,18 +435,26 @@ noise instead of erroring, which is exactly the kind of failure that produces
 confident, wrong numbers. `parecord --device=<sink>.monitor` also works if you
 prefer the PulseAudio tools.
 
-**Measured on this machine**, 60 s of pink noise, with stage 2 live:
+**Measured on this machine**, 60 s of pink noise:
 
-```
-  tuned    -17.58 LUFS
-  raw      -17.45 LUFS
-  delta     -0.13 LU     -> SPEAKER_DSP_RAW_TRIM_DB=-0.13
-```
+| chain state | tuned | raw | delta |
+|---|---|---|---|
+| skeleton (all bypass-equivalent) | −17.45 | −17.45 | **+0.00 LU** |
+| stage 2 live | −17.58 | −17.45 | **−0.13 LU** |
+| stages 2 and 9 live | −18.20 | −17.45 | **−0.75 LU** |
 
-Raw is the louder path, so raw is the one attenuated — `speaker-dsp` now
-defaults to that trim. The 0.13 LU is the Linkwitz transform's cut around the
-761 Hz resonance, which sits right where K-weighting is most sensitive.
-Before stage 2 the two paths matched at +0.00 LU.
+Raw is the louder path, so raw is the one attenuated — `speaker-dsp` defaults
+to `SPEAKER_DSP_RAW_TRIM_DB=-0.75`. The 0.13 is the Linkwitz transform's cut
+around the 761 Hz resonance, where K-weighting is most sensitive; the further
+0.62 is bass mono removing side energy below 300 Hz.
+
+That 0.62 is a **worst case**: pink noise here has fully decorrelated
+channels, so half its low-frequency energy is in the side signal. Most records
+are cut with near-mono bass. Repeating the measurement on material whose bass
+is already mono gives −0.52 LU instead. The 0.23 dB between them is well below
+audibility, but the figure that matters is the one measured on what you listen
+to — drop a few tracks into `tests/material/` and re-run the match against
+them.
 
 Worth understanding why that is 0.00 and not the 1.18 dB that stage 1 takes
 out of the unweighted RMS: BS.1770 is K-weighted, and K-weighting rolls off
@@ -594,7 +618,7 @@ now with stage 2 live.
 | `effect_input.speaker-tuning` in `pactl list sinks short` | pass — present, 48000 Hz |
 | No warnings or errors in the PipeWire journal on load | pass — zero filter-chain lines since the restart |
 | Null test residual below −60 dBFS above 30 Hz | pass — **−inf dBFS**, captures bit-identical |
-| Loudness match within 0.1 LU before any trim | pass — **+0.00 LU** as a skeleton; **−0.13 LU** with stage 2 live, trimmed on the raw path |
+| Loudness match within 0.1 LU before any trim | pass — **+0.00 LU** as a skeleton. With stages 2 and 9 live it is −0.75 LU by design, trimmed on the raw path |
 | Skeleton is bypass-equivalent apart from stage 1 | pass — tracked a stage-1-only prediction to **±0.01 dB** |
 | `tools/lt-coeffs.py` standalone, self-test passes | pass — 15/15 |
 | `sudo sh install.sh uninstall` reverts cleanly | not run — needs sudo. Its five removal paths were checked against what is on disk and cover it exactly, with nothing left behind |
