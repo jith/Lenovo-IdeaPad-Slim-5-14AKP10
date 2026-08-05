@@ -1,0 +1,4 @@
+# Test material and captures are generated, large, and not source.
+tests/material/
+tests/captures/
+*.wav
