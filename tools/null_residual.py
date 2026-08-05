@@ -8,19 +8,24 @@ the two paths -- the brickwall limiter's lookahead, for instance -- does not
 count as a residual. A gain difference does, and is meant to: that is the
 whole point of comparing before any trim is applied.
 
-WHY THE BASELINE GETS HIGH-PASSED
+--hp COMPENSATES A BASELINE THAT PREDATES STAGE 1
 
-Stage 1 is a 20 Hz biquad high-pass and it is active in the skeleton. Its
-magnitude response is flat to within 0.01 dB above 50 Hz, but its phase is
-not: at 1 kHz a 20 Hz high-pass still rotates the signal enough that the raw
-difference against an unfiltered baseline only reaches -31 dBFS, and against
-pink noise the broadband residual lands near -25 dBFS. That is phase, not
-error -- but a plain subtraction cannot tell the two apart, so a -60 dBFS null
-against an unfiltered baseline is unreachable with stage 1 on.
+By default nothing is compensated: both captures are compared exactly as
+recorded, which is what you want when the baseline was taken through the same
+graph and the question is whether a stage you just edited changed anything.
 
-So the same high-pass is applied to the baseline first. What is then measured
-is whether every OTHER stage is bypass-equivalent, which is the thing worth
-proving. Pass --hp 0 to compare raw and see the uncompensated figure.
+Pass --hp 20 only when the baseline is a genuine pass-through capture taken
+before stage 1 existed. Stage 1 is a 20 Hz biquad high-pass whose magnitude is
+flat to within 0.01 dB above 50 Hz but whose phase is not: at 1 kHz it still
+rotates the signal enough that the raw difference reaches only -31 dBFS, and
+against pink noise the broadband residual lands near -25 dBFS. That is phase,
+not error, and subtraction cannot tell them apart -- so against a
+pre-stage-1 baseline a -60 dBFS null is unreachable however correct the rest
+of the chain is. Applying the same high-pass to the baseline first isolates
+the question actually worth answering.
+
+Applying it when the baseline ALREADY contains stage 1 high-passes that side
+twice and reports a fictitious ~-17 dBFS residual, so the default is off.
 """
 
 import argparse
@@ -112,9 +117,10 @@ def main():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("baseline")
     p.add_argument("current")
-    p.add_argument("--hp", type=float, default=20.0,
-                   help="stage 1 high-pass to apply to the baseline, Hz "
-                        "(0 disables; default 20)")
+    p.add_argument("--hp", type=float, default=0.0,
+                   help="high-pass to apply to the baseline before "
+                        "subtracting, Hz. Use 20 only when the baseline "
+                        "predates stage 1 (default 0, no compensation)")
     p.add_argument("--hp-q", type=float, default=0.707, help="its Q")
     args = p.parse_args()
 
@@ -139,7 +145,7 @@ def main():
           f"{len(a) / rate_a:.1f} s compared")
     print(f"  baseline peak            {db(a):7.1f} dBFS")
     if args.hp > 0:
-        print(f"  residual, no stage 1     {db(raw_resid):7.1f} dBFS   "
+        print(f"  residual, uncompensated  {db(raw_resid):7.1f} dBFS   "
               f"(phase of the {args.hp:g} Hz high-pass, not error)")
         print(f"  residual, stage 1 undone {db(resid):7.1f} dBFS")
     else:

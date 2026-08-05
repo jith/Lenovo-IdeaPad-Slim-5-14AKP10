@@ -75,6 +75,10 @@ sleep 1
 kill -INT "$REC" 2>/dev/null || true
 wait "$REC" 2>/dev/null || true
 
+# Mic1 returns full-scale samples regardless of the room, and a railed capture
+# looks like a perfectly good file until you plot it.
+assert_sane_capture "$OUT" "mic capture"
+
 echo
 echo "captured $OUT"
 echo

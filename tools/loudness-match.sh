@@ -28,7 +28,6 @@ MATERIAL=${1:-tests/material/pink.wav}
 
 require_node "$SINK_DSP"
 require_node "$SINK_RAW"
-require_node "$MONITOR_RAW"
 
 WORK=$(mktemp -d -t loudmatch-XXXXXX)
 trap 'rm -rf "$WORK"' EXIT
@@ -39,19 +38,16 @@ DUR=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$MATERIAL")
 # switching the default, so the desktop's output selection is left alone.
 capture() {
     _out=$WORK/$1.wav
-    pw-record --target="$MONITOR_RAW" --format=f32 --rate=$RATE --channels=2 \
-        "$_out" &
-    _rec=$!
+    record_sink "$SINK_RAW" "$_out"; _rec=$REC_PID
     sleep 1
     pw-cat -p --target="$2" --format=f32 --rate=$RATE "$MATERIAL" >/dev/null
     sleep 1
-    kill -INT "$_rec" 2>/dev/null || true
-    wait "$_rec" 2>/dev/null || true
-    [ -s "$_out" ] || die "captured nothing for $1"
+    stop_record "$_rec"
+    assert_sane_capture "$_out" "$1"
 }
 
 echo "material $MATERIAL (${DUR}s)"
-echo "capture  $MONITOR_RAW"
+echo "capture  $SINK_RAW (monitor)"
 echo
 echo "This plays through the speakers twice. Set a comfortable level with the"
 echo "HARDWARE sink's volume -- it sits after the monitor tap, so it does not"

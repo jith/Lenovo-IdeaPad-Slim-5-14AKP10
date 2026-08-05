@@ -248,8 +248,21 @@ number stage 0 has to make room for.
 
 ### The microphone caveat
 
-**The internal microphone is not a measurement microphone.** It is
-uncalibrated and sits inside the chassis, so it hears case resonance and its
+**Mic1 is broken on this machine.** `alsa_input.pci-0000_04_00.6.HiFi__Mic1__source`
+returns full-scale samples with about a dozen distinct values whatever the
+room is doing, through both `pw-record` and `parecord` — so it is the source,
+not the recorder. **Mic2 is the working internal microphone**; a quiet room
+reads around −60 dBFS through it, and it is what `tools/measure-speaker.sh`
+uses by default. There is also an `acppdmmach` card (the AMD ACP digital mic
+array) that PipeWire is not currently exposing as a source.
+
+The tools call `assert_sane_capture` on every capture and refuse to report
+numbers from one that is railed or silent, because a railed capture produces a
+perfectly ordinary-looking WAV and every measurement taken from it is
+meaningless.
+
+**Even on Mic2, the internal microphone is not a measurement microphone.** It
+is uncalibrated and sits inside the chassis, so it hears case resonance and its
 own arbitrary response along with the speaker.
 
 Valid uses: locating the resonance peak, estimating its Q, and relative
@@ -273,6 +286,20 @@ It plays the same file through the tuned and raw paths, capturing both from the
 monitor of the *physical* sink — the same node either way, post-DSP in tuned
 mode and unprocessed in raw mode, so the comparison is exact. It measures
 integrated loudness to ITU-R BS.1770 / EBU R128 and prints the trim.
+
+**Capturing a sink monitor needs the `stream.capture.sink` property**, not the
+`.monitor` node name:
+
+```sh
+pw-record -P 'stream.capture.sink=true' --target=<sink-name> out.wav   # correct
+pw-record --target=<sink-name>.monitor out.wav                         # garbage
+```
+
+`<sink>.monitor` is the name `pactl` prints, but it is not a native PipeWire
+node. The target silently fails to resolve and `pw-record` writes full-scale
+noise instead of erroring, which is exactly the kind of failure that produces
+confident, wrong numbers. `parecord --device=<sink>.monitor` also works if you
+prefer the PulseAudio tools.
 
 Two rules the tool follows and you should too:
 
@@ -298,22 +325,61 @@ tools/null-test.sh baseline tests/captures        # BEFORE changing the graph
 tools/null-test.sh compare tests/captures
 ```
 
+The stored baseline in `tests/captures/` was taken through the skeleton as
+installed, so it already contains stage 1. That is the right reference for
+everything that follows: from here on, any residual is the stage you just
+edited. It is *not* a capture of the original pass-through — that would have
+had to be taken before the graph was installed, and the window for it has
+passed. What the skeleton is bypass-equivalent to the pass-through rests on
+instead is the level check below, which is a stronger result anyway.
+
 `compare` sample-aligns against the baseline by cross-correlation, inverts,
 sums, and reports the residual peak split at 30 Hz. A constant latency
 difference — the limiter's lookahead, for instance — is removed by the
-alignment. A gain difference is not, and is meant not to be.
+alignment. A gain difference is not, and is meant not to be. Every item is
+measured even if an earlier one fails.
 
-**The baseline is high-passed before subtraction, and that is deliberate.**
-Stage 1 is a 20 Hz biquad and it is active. Its magnitude is flat to within
-0.01 dB above 50 Hz, but its *phase* is not: at 1 kHz a 20 Hz high-pass still
-rotates the signal enough that the raw difference only reaches −31 dBFS, and
-against pink noise the broadband residual sits near −25 dBFS. That is phase,
-not error, but subtraction cannot tell them apart — so a −60 dBFS null against
-an unfiltered baseline is unreachable with stage 1 on, no matter how correct
-the rest of the chain is. Applying the same high-pass to the baseline first
-isolates the question actually worth answering: is every *other* stage
-bypass-equivalent. `--hp 0` shows the uncompensated figure, which is also
-printed either way.
+### Is the skeleton really bypass-equivalent?
+
+Measured, not argued. Take the source material, apply stage 1 alone offline,
+correct for the silence either side of the capture, and compare against what
+the installed chain actually produced:
+
+| Material | Source | After 20 Hz HP | + silence pad | Predicted | **Captured** | Delta |
+|---|---|---|---|---|---|---|
+| pink | −20.00 | −21.18 | −0.14 | −21.32 | **−21.31** | **+0.01 dB** |
+| sweep | −9.01 | −9.12 | −0.29 | −9.41 | **−9.41** | **−0.00 dB** |
+
+All figures dBFS RMS. The chain reproduces a stage-1-only prediction to within
+0.01 dB, which is what "every other stage is bypass-equivalent" means in
+numbers. That also satisfies the loudness criterion with room to spare.
+
+### Repeatability
+
+**Measured on this machine**, skeleton against skeleton with the graph
+unchanged:
+
+```
+compare pink    residual -inf dBFS   PASS   (62.0 s, aligned -1024 samples)
+compare sweep   residual -inf dBFS   PASS   (32.0 s, aligned +1024 samples)
+```
+
+Exactly zero — the two captures are bit-identical. Nothing in the path
+resamples, the graph is deterministic, and the limiter never engages at these
+levels, so the method has no noise floor at all here. A −60 dBFS threshold has
+enormous margin; anything that shows up later is real.
+
+**`--pre-stage1` compensates a baseline that predates stage 1.** By default
+neither side is touched, which is what you want when the baseline came through
+this same graph. Pass it only when the baseline is a genuine pass-through
+capture from before stage 1 existed: stage 1's magnitude is flat to within
+0.01 dB above 50 Hz but its *phase* is not, and at 1 kHz a 20 Hz high-pass
+still rotates the signal enough that the raw difference reaches only −31 dBFS,
+with pink noise landing near −25 dBFS. That is phase, not error, and
+subtraction cannot tell them apart — so against a pre-stage-1 baseline a
+−60 dBFS null is unreachable however correct the chain is. Passing it when the
+baseline *already* contains stage 1 high-passes that side twice and reports a
+fictitious ~−17 dBFS residual.
 
 `tools/null_residual.py` was checked against an exact stage-1 match (−81.9 dBFS
 above 30 Hz, pass), a 0.2 dB gain error (caught), and a 5 ms delay (removed by

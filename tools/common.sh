@@ -5,13 +5,11 @@
 
 SINK_DSP=effect_input.speaker-tuning
 SINK_RAW=alsa_output.pci-0000_04_00.6.HiFi__Speaker__sink
-# Post-DSP in tuned mode, unprocessed in raw mode: the same node either way,
-# so an A/B through it compares like with like. Also ahead of the codec's
-# hardware volume, so turning the speaker down does not change what is
-# measured -- as long as you use the hardware sink's volume and not the
-# virtual sink's, which sits before the filter graph.
-MONITOR_RAW="$SINK_RAW.monitor"
-MIC_DEFAULT=alsa_input.pci-0000_04_00.6.HiFi__Mic1__source
+
+# Mic1 on this machine is railed: it returns full-scale samples with a dozen
+# distinct values whatever the room is doing. Mic2 is the working internal
+# microphone -- a quiet room reads about -60 dBFS through it.
+MIC_DEFAULT=alsa_input.pci-0000_04_00.6.HiFi__Mic2__source
 
 RATE=48000
 
@@ -37,6 +35,63 @@ require_node() {
     pactl list short sources 2>/dev/null | cut -f2 | grep -qx "$1" && return 0
     pactl list short sinks 2>/dev/null | cut -f2 | grep -qx "$1" && return 0
     die "node '$1' not found. \`pactl list short sinks\` and \`... sources\` show what exists."
+}
+
+# record_sink <sink> <file> -- start capturing a sink's output in the
+# background, setting REC_PID. Caller stops it with stop_record "$REC_PID".
+#
+# Sets a global rather than echoing the PID: pw-record prints its filename on
+# stdout, so a $(record_sink ...) substitution captures that too and then
+# blocks until the pipe closes, which is never while the recorder is running.
+#
+# The capture point is the sink's monitor, which carries post-DSP audio when
+# the chain is in front of it and unprocessed audio when it is not. Same node
+# either way, so an A/B through it compares like with like. It is also ahead
+# of the codec's hardware volume, so turning the speakers down does not change
+# what is measured -- verified, not assumed. Use the hardware sink's volume for
+# that, never the virtual sink's, which sits before the filter graph.
+#
+# It has to be `-P stream.capture.sink=true` against the SINK's own name.
+# `pw-record --target=<sink>.monitor` looks like it should work -- that is the
+# name pactl prints -- but the monitor is not a native node, the target does
+# not resolve, and pw-record writes full-scale garbage instead of failing.
+record_sink() {
+    pw-record -P 'stream.capture.sink=true' --target="$1" \
+        --format=f32 --rate=$RATE --channels=2 "$2" >/dev/null 2>&1 &
+    REC_PID=$!
+}
+
+stop_record() {
+    kill -INT "$1" 2>/dev/null || true
+    wait "$1" 2>/dev/null || true
+}
+
+# assert_sane_capture <file> <label> -- refuse to report numbers from a
+# capture that is saturated or silent. A railed source and an unresolved
+# target both produce a file that looks superficially fine, and every
+# measurement downstream of one is meaningless.
+assert_sane_capture() {
+    [ -s "$1" ] || die "$2: captured nothing"
+    ffmpeg -hide_banner -nostats -i "$1" -af astats=metadata=1 -f null - 2>&1 \
+        | awk -v label="$2" -v f="$1" '
+            /Peak level dB/ { if (pk == "") pk = $NF }
+            /RMS level dB/  { if (rms == "") rms = $NF }
+            END {
+                if (pk == "" || rms == "") {
+                    printf "error: %s: could not measure %s\n", label, f > "/dev/stderr"
+                    exit 1
+                }
+                if (pk >= -0.001 && rms >= -3.0) {
+                    printf "error: %s: capture is railed (peak %s dBFS, RMS %s dBFS).\n", label, pk, rms > "/dev/stderr"
+                    printf "  A working capture never sits within 3 dB of full scale.\n" > "/dev/stderr"
+                    printf "  Check the source is not Mic1, which is broken on this machine.\n" > "/dev/stderr"
+                    exit 1
+                }
+                if (rms <= -90.0) {
+                    printf "error: %s: capture is silent (RMS %s dBFS).\n", label, rms > "/dev/stderr"
+                    exit 1
+                }
+            }' || exit 1
 }
 
 # lufs <file> -- integrated loudness, ITU-R BS.1770 / EBU R128.
