@@ -11,8 +11,9 @@ dropped in one stage at a time without ever debugging topology and tuning at
 once.
 
 **Live so far:** stage 1 (20 Hz subsonic high-pass), stage 2 (Linkwitz
-transform, 761 Hz Q 2.63 → 650 Hz Q 0.707) and stage 12 (brickwall limiter).
-Stage 0 is at unity and stages 3–11 and 13 are bypass-equivalent.
+transform, 761 Hz Q 2.63 → 650 Hz Q 0.707), stage 9 (bass mono below 300 Hz)
+and stage 12 (brickwall limiter). Stage 0 is at unity; stages 3–8, 10, 11 and
+13 are bypass-equivalent.
 
 ## System and speakers
 
@@ -43,7 +44,7 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 6 | Harmonic weighting | `s6w<band>x<order>_*`, `s6sum<band>_*` | `bq_peaking` per order | gain ∝ ln(n)·R(f), f = band centre | 0 dB | CN115442709B |
 | 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | threshold per band from K = min over orders | bypass (`enabled = 0`) | CN115442709B, US10382857 |
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics; `Gain 2`/`Gain 3` are the crossfade | HF + LF unity, harmonics muted | CN115442709B |
-| 9 | M/S widening | `s9*` | explicit M/S matrix | mono below ~300 Hz via `s9swid` `Gain 1` | unity (exact identity) | US8660271B2 |
+| 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
 | 10 | Multiband compressor | `s10mbc` | Calf MultibandCompressor | lowest threshold on the LF band | bypass (`bypass = 1`) | US12342139B2 |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_raw` estimate → LSP sidechain comp | Hx(s) displacement estimate on the sidechain; x_max unknown | bypass (`enabled = 0`) | US12445775B2, CN115442709B |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −0.3 dBFS, no makeup, ALR and boost off | **always on** | — |
@@ -285,7 +286,7 @@ the skeleton is deliberately inaudible — set `s13trim_*:Mult` to `0.25`, and
 | 5–7 | `s8sum_*` `Gain 3` up from 0, `Gain 2` down from 1 — this is the crossfade |
 | 6 | `s6w<band>x<order>_*` `Gain`, from `ln(n) · R(f)` |
 | 7 | `s7k<band>_*` `enabled` → 1, then set `al` (threshold) per band |
-| 9 | `s9swid` `Gain 1` → 0 for mono bass; `Gain 2` above 1 to widen |
+| 9 | `s9swid` `Gain 1` → 0 for mono bass (done); `Gain 2` above 1 to widen |
 | 10 | `s10mbc` `bypass` → 0, lowest `threshold0`, `makeup0` recovers stage 0 |
 | 11 | `s11xcur` `enabled` → 1, `s11hx_*` coefficients from the Hx estimate |
 | 13 | `s13trim_*` `Mult` from `tools/loudness-match.sh` |
