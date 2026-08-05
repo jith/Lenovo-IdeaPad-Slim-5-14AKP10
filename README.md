@@ -10,10 +10,8 @@ point is a graph that loads cleanly end to end, so measured values can be
 dropped in one stage at a time without ever debugging topology and tuning at
 once.
 
-**Live so far:** stage 1 (20 Hz subsonic high-pass), stage 2 (Linkwitz
-transform, 761 Hz Q 2.63 → 650 Hz Q 0.707), stage 9 (bass mono below 300 Hz)
-and stage 12 (brickwall limiter). Stage 0 is at unity; stages 3–8, 10, 11 and
-13 are bypass-equivalent.
+**Live so far:** stages 0, 1, 2, 9, 10, 12 and 13. Stages 3–8 (the virtual
+bass branch) and stage 11 (excursion limiter) are still bypass-equivalent.
 
 ## System and speakers
 
@@ -35,7 +33,7 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 
 | # | Stage | Nodes | Implementation | Parameters | State as installed | Source |
 |---|---|---|---|---|---|---|
-| 0 | Headroom trim | `s0trim_*` | builtin `linear` | −3.12 dB on paper, recovered at stage 10 makeup | **unity** — stage 10 is bypassed, so the trim would be pure loss; stage 12 catches the worst case | US12342139B2 |
+| 0 | Headroom trim | `s0trim_*` | builtin `linear` | −3.12 dB, returned by stage 10's `level_out` | **active**, `Mult = 0.6983` | US12342139B2 |
 | 1 | Subsonic high-pass | `s1sub_*` | builtin `bq_highpass` | 20 Hz, Q 0.707 | **active** | US12445775B2 |
 | 2 | Linkwitz transform | `s2lt_*` | builtin `bq_raw`, one per channel | **numerator = measured (fc, Qtc); denominator = target (fc′, Qtc′)** — 761 Hz Q 2.63 → 650 Hz Q 0.707 | **active** | US12342139B2 |
 | 3 | HF path | `s3neg_*`, `s3hf_*`, `s3dly_*` | `invert` + `mixer` + `delay` | HF = input − LF; delay matches LF branch group delay | high-pass on, delay 0 | CN115442709B |
@@ -45,10 +43,10 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | threshold per band from K = min over orders | bypass (`enabled = 0`) | CN115442709B, US10382857 |
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics; `Gain 2`/`Gain 3` are the crossfade | HF + LF unity, harmonics muted | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
-| 10 | Multiband compressor | `s10mbc` | Calf MultibandCompressor | lowest threshold on the LF band | bypass (`bypass = 1`) | US12342139B2 |
+| 10 | Multiband compressor | `s10mbc` | Calf MultibandCompressor | 120/1000/6000 Hz, `mode = 0`, thresholds −20/−15/−9/−9 dB, `level_out` +4.11 dB | **active** | US12342139B2 |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_raw` estimate → LSP sidechain comp | Hx(s) displacement estimate on the sidechain; x_max unknown | bypass (`enabled = 0`) | US12445775B2, CN115442709B |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −0.3 dBFS, no makeup, ALR and boost off | **always on** | — |
-| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | 0 dB | ITU-R BS.1770 |
+| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **−0.07 dB**, `Mult = 0.991973` | ITU-R BS.1770 |
 
 Signal flow:
 
@@ -238,6 +236,19 @@ Never stack two unverified stages.
 These are 2 W sealed micro-speakers and boosted sub-bass damages them
 mechanically. Stage 12 stays on for every test without exception.
 
+### Calf's per-band bypass defaults to ON
+
+`bypass0`, `bypass1`, `bypass2` and `bypass3` on Calf's MultibandCompressor all
+default to **1.0**, while the master `bypass` defaults to 0.0. Clearing only
+the master leaves every band inactive, and the plugin loads, reports no error,
+and does nothing at all — measured at 0.06 dB of gain reduction on material
+that should have been flattened. With them set to 0 the same settings gave
+−7.71 dB on the LF band.
+
+If a compressor stage appears to have no effect, check the per-band bypasses
+before touching thresholds. `solo0..3` are pinned to 0 in the config for the
+same reason.
+
 ### Tuning live, without reinstalling
 
 Every graph control can be set on the running chain, which is far faster than
@@ -287,7 +298,7 @@ the skeleton is deliberately inaudible — set `s13trim_*:Mult` to `0.25`, and
 | 6 | `s6w<band>x<order>_*` `Gain`, from `ln(n) · R(f)` |
 | 7 | `s7k<band>_*` `enabled` → 1, then set `al` (threshold) per band |
 | 9 | `s9swid` `Gain 1` → 0 for mono bass (done); `Gain 2` above 1 to widen |
-| 10 | `s10mbc` `bypass` → 0, lowest `threshold0`, `makeup0` recovers stage 0 |
+| 10 | `s10mbc` `bypass` → 0 **and `bypass0..3` → 0**, lowest `threshold0`, `level_out` recovers stage 0 (done) |
 | 11 | `s11xcur` `enabled` → 1, `s11hx_*` coefficients from the Hx estimate |
 | 13 | `s13trim_*` `Mult` from `tools/loudness-match.sh` |
 
@@ -618,7 +629,7 @@ now with stage 2 live.
 | `effect_input.speaker-tuning` in `pactl list sinks short` | pass — present, 48000 Hz |
 | No warnings or errors in the PipeWire journal on load | pass — zero filter-chain lines since the restart |
 | Null test residual below −60 dBFS above 30 Hz | pass — **−inf dBFS**, captures bit-identical |
-| Loudness match within 0.1 LU before any trim | pass — **+0.00 LU** as a skeleton. With stages 2 and 9 live it is −0.75 LU by design, trimmed on the raw path |
+| Loudness match within 0.1 LU before any trim | pass — **+0.00 LU** as a skeleton; **+0.07 LU** with stages 0–2, 9, 10 and 13 live, trimmed at stage 13 |
 | Skeleton is bypass-equivalent apart from stage 1 | pass — tracked a stage-1-only prediction to **±0.01 dB** |
 | `tools/lt-coeffs.py` standalone, self-test passes | pass — 15/15 |
 | `sudo sh install.sh uninstall` reverts cleanly | not run — needs sudo. Its five removal paths were checked against what is on disk and cover it exactly, with nothing left behind |

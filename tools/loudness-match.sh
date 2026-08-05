@@ -83,6 +83,8 @@ BEGIN {
         printf "  pactl set-sink-volume %s %.2f%%\n", raw, 100 * 10 ^ (d / 20)
         printf "\nleave stage 13 at Mult = 1.0.\n"
     } else {
-        printf "matched within 0.1 LU. Leave stage 13 at Mult = 1.0.\n"
+        printf "matched within 0.1 LU. No further trim needed -- leave stage 13\n"
+        printf "and the raw path exactly as they are. Note this is the delta\n"
+        printf "WITH any trim already applied, not a reading of a bare chain.\n"
     }
 }'
