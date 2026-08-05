@@ -52,10 +52,68 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 
 ## Signal flow
 
-Node-for-node as wired in `files/50-speaker-tuning.conf`. Every node is now
-live (**●**); nothing in the graph is bypass-equivalent any more.
+### At a glance
 
-### Per channel — stages 0 to 8
+All fourteen stages and what each one is for. Node-level detail follows below.
+
+```
+                            app audio (48 kHz float32)
+                                      │
+     ┌────────────────────────────────┼────────────────────────────────┐
+     │                    PER CHANNEL │ (L and R independent)          │
+     │                                ▼                                │
+     │   [0]  headroom trim      -3.12 dB, returned at stage 10        │
+     │   [1]  subsonic high-pass 20 Hz Q0.707                          │
+     │   [2]  Linkwitz transform 761 Q2.63 -> 650 Q0.707               │
+     │            measured resonance    corrected target               │
+     │                                │                                │
+     │                    split at f1 = 350 Hz                         │
+     │            ┌───────────────────┴───────────────────┐            │
+     │            ▼                                       ▼            │
+     │   [4] LF = LP(350)                    [3] HF = input - LF       │
+     │            │                              delay 0 ms            │
+     │            ├── real bass, kept ──────────────┐    │             │
+     │            ▼                                 │    │             │
+     │   [4] 3 subbands  122.5 / 175 / 252 Hz       │    │             │
+     │   [5] pre-gain x5, then x^n                  │    │             │
+     │            orders 4/5/6, 3/4/5, 2/3/4        │    │             │
+     │   [6] weight  ln(n) x R(f), up to +12 dB     │    │             │
+     │   [7] level   -20 dBFS 20:1  <- tames x^n    │    │             │
+     │            │                                 │    │             │
+     │            └── harmonics, 490-1008 Hz ───┐   │    │             │
+     │                                          ▼   ▼    ▼             │
+     │   [8]  sum        harmonics 0.25 : LF 1.0 : HF 1.0              │
+     └────────────────────────────────┬────────────────────────────────┘
+                                      │  L and R meet from here on
+                                      ▼
+         [9]  mid/side          bass mono below 300 Hz
+         [10] multiband comp    120/1k/6k, lowest threshold on LF,
+                                +4.11 dB makeup returns stage 0
+         [11] excursion limit   sidechain = Hx displacement estimate
+                                (low-pass 761 Hz Q2.63), -3 dBFS 6:1
+         [12] brickwall         -0.3 dBFS, never bypassed
+         [13] A/B trim          -0.07 dB, from the loudness match
+                                      │
+                                      ▼
+                     alsa_output...HiFi__Speaker__sink
+```
+
+Reading it in one line: **flatten the 761 Hz resonance, stand in for the bass
+the driver cannot make with harmonics it can, collapse the stereo image where
+it carries no information, then control dynamics and guard the cone.**
+
+Note the LF path is still at full level alongside the harmonics — stage 8's
+`Gain 2 = 1.0` — so the branch currently *adds* rather than *replaces*. Trading
+`Gain 2` down as `Gain 3` comes up is the virtual-bass crossfade proper, and it
+is where the excursion saving lives.
+
+### Node by node
+
+Every node as actually wired in `files/50-speaker-tuning.conf`, with its real
+control values. All of them are live; nothing in the graph is
+bypass-equivalent any more.
+
+#### Per channel — stages 0 to 8
 
 Left shown; right is `_r` throughout and mechanically identical.
 
@@ -104,7 +162,7 @@ in_L
 The generated harmonics land between 490 and 1008 Hz, chosen so the speaker
 can actually reproduce them — see the `f1` note in the config header.
 
-### Shared — stages 9 to 13
+#### Shared — stages 9 to 13
 
 Stage 9 is the only place the channels meet. Every mixer gain is positive
 because the builtin `mixer` clamps to [0, 10], so each subtraction goes
