@@ -28,7 +28,7 @@ RAW_TRIM_DB=${SPEAKER_DSP_RAW_TRIM_DB:-0.0}
 
 usage() {
     echo "usage: speaker-dsp {on|off|ab|status}" >&2
-    echo "  on      Speaker (Tuning), the 13-stage filter chain" >&2
+    echo "  on      Speaker (Tuning), the 14-stage filter chain" >&2
     echo "  off     raw hardware speaker" >&2
     echo "  ab      toggle between them, carrying the level across" >&2
     echo "  status  which one is currently the default output" >&2

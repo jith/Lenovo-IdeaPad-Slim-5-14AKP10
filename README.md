@@ -45,10 +45,10 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | −20 dBFS, 20:1 — levels the n-th power law | **active** | CN115442709B, US10382857 |
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics; `Gain 2`/`Gain 3` are the crossfade | **active**, `Gain 3 = 0.25` | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
-| 10 | Multiband compressor | `s10mbc` | Calf MultibandCompressor | 120/1000/6000 Hz, `mode = 0`, thresholds −20/−15/−9/−9 dB, `level_out` +4.11 dB | **active** | US12342139B2 |
+| 10 | Multiband compressor | `s10mbc` | Calf MultibandCompressor | 120/1000/6000 Hz, `mode = 0`, thresholds −20/−15/−9/−9 dB, `level_out` +4.86 dB | **active** | US12342139B2 |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → LSP sidechain comp | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate | **active** | US12445775B2, CN115442709B |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −0.3 dBFS, no makeup, ALR and boost off | **always on** | — |
-| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **−0.07 dB**, `Mult = 0.991973` | ITU-R BS.1770 |
+| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left 0.85 LU hot | ITU-R BS.1770 |
 
 ## Signal flow
 
@@ -88,11 +88,12 @@ All fourteen stages and what each one is for. Node-level detail follows below.
                                       ▼
          [9]  mid/side          bass mono below 300 Hz
          [10] multiband comp    120/1k/6k, lowest threshold on LF,
-                                +4.11 dB makeup returns stage 0
+                                +4.86 dB makeup: returns stage 0 and takes
+                                the last of the headroom
          [11] excursion limit   sidechain = Hx displacement estimate
                                 (low-pass 761 Hz Q2.63), -3 dBFS 6:1
          [12] brickwall         -0.3 dBFS, never bypassed
-         [13] A/B trim          -0.07 dB, from the loudness match
+         [13] A/B trim          unity; tuned runs 0.85 LU above raw
                                       │
                                       ▼
                      alsa_output...HiFi__Speaker__sink
@@ -626,6 +627,10 @@ prefer the PulseAudio tools.
 | skeleton (all bypass-equivalent) | −17.45 | −17.45 | **+0.00 LU** |
 | stage 2 live | −17.58 | −17.45 | **−0.13 LU** |
 | stages 2 and 9 live | −18.20 | −17.45 | **−0.75 LU** |
+| all stages, `level_out` 1.605 | −17.75 | −17.46 | **−0.29 LU** |
+| all stages, `level_out` 1.75 | −16.61 | −17.46 | **+0.85 LU** |
+
+The last row is where it is left, on purpose — see "How loud can it go".
 
 Raw is the louder path, so raw is the one attenuated — `speaker-dsp` defaults
 to `SPEAKER_DSP_RAW_TRIM_DB=-0.75`. The 0.13 is the Linkwitz transform's cut
@@ -665,6 +670,69 @@ capture-start jitter rather than level.
 The virtual sink's volume is a different matter: it is software, it sits
 *before* the filter graph, and changing it does change what the
 level-dependent stages see. Leave it at 100%.
+
+## How loud can it go
+
+Short answer: this is it. The hardware is at its electrical maximum and the
+chain now takes everything that is left.
+
+**The ALSA mixer is already at 0 dB.** On card 1 -- card 0 is a different
+codec and has no speaker controls at all -- `Master`, `Speaker` and `PCM` all
+sit at their maximum with 0.00 dB of attenuation. Turning them up in
+`alsamixer` does nothing because there is nothing above 0 dB to reach.
+
+**`alsamixer`'s Master and PipeWire's hardware sink are the same control,
+linked both ways.** Measured:
+
+| action | Master | PipeWire sink |
+|---|---|---|
+| start | 100% | 100% |
+| set Master to 50% in alsamixer | 50% | 24% — follows it |
+| PipeWire sets 100% | 100% — snaps back | 100% |
+
+So a manual `alsamixer` change is not ignored, it is *adopted* by PipeWire and
+then overwritten the next time anything sets the volume — a volume key, a
+stream starting, a route change. That is why it looks intermittent. Set the
+level from PipeWire (GNOME's slider, `pactl`, `speaker-dsp`) and leave the ALSA
+controls at maximum, which is where they already are.
+
+**Beyond the hardware, loudness costs dynamics.** Stage 10's `level_out` is
+the only remaining lever, and the brickwall sets its ceiling. Measured on dense
+material peaking at −1 dBFS:
+
+| `level_out` | makeup | output peak | note |
+|---|---|---|---|
+| 1.605 | +4.11 dB | −1.37 dBFS | previous setting |
+| **1.75** | **+4.86 dB** | **−0.62 dBFS** | **current — 0.32 dB of margin** |
+| 1.80 | +5.11 dB | −0.39 dBFS | limiter starting to touch |
+| 1.85 | +5.34 dB | −0.37 dBFS | pinned — stage 12 clamping |
+| 3.00 | +9.54 dB | −0.37 dBFS | ~3 dB more average, all of it limiting |
+
+1.75 is the last setting where the brickwall stays a safety net rather than a
+working stage. Everything above it trades dynamics for level, and puts more
+sustained heat and excursion into a 2 W driver that is already at its
+electrical maximum. If you want it anyway the knob is there, but that is the
+bargain.
+
+**Stage 13 is left at unity rather than matched.** The loudness match asks for
+`Mult = 0.906776` to bring the tuned path back down to the raw path's level.
+Applying it would hand back the only loudness available, so it is not applied.
+The cost is that `speaker-dsp ab` now favours tuned by 0.85 dB — exactly the
+bias the loudness match exists to remove. For an honest comparison, level it
+for the duration and put it back after:
+
+```sh
+ID=$(pactl list sinks short | awk '/effect_input/{print $1}')
+pw-cli set-param $ID Props '{ params = [ "s13trim_l:Mult" 0.9068 "s13trim_r:Mult" 0.9068 ] }'
+# ... compare ...
+pw-cli set-param $ID Props '{ params = [ "s13trim_l:Mult" 1.0 "s13trim_r:Mult" 1.0 ] }'
+```
+
+**The virtual-bass crossfade costs loudness too.** Trading stage 8's `Gain 2`
+down from 1.0 to 0.6 measured 0.36 LU quieter, because the harmonics replacing
+that content carry less weighted energy than the content itself. Worth knowing
+before deciding how far to take the crossfade: it is a trade of measured
+loudness for perceived depth, not a free win.
 
 ## Null test
 
