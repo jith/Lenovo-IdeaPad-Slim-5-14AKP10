@@ -45,7 +45,7 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | −20 dBFS, 20:1 — levels the n-th power law | **active** | CN115442709B, US10382857 |
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.6`, `Gain 3 = 0.25` | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
-| 10 | Multiband compressor | `s10mbc` | Calf MultibandCompressor | 120/1000/6000 Hz, `mode = 0`, thresholds −20/−15/−9/−9 dB, `level_out` +6.24 dB | **active** | US12342139B2 |
+| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `mode = 1`, downward thresholds −20/−15/−9/−9 dB, `g_out` +6.24 dB | **active** | US12342139B2 |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → LSP sidechain comp | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate | **active** | US12445775B2, CN115442709B |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −0.3 dBFS, no makeup, ALR and boost off | **always on** | — |
 | 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left 1.91 LU hot | ITU-R BS.1770 |
@@ -87,7 +87,7 @@ All fourteen stages and what each one is for. Node-level detail follows below.
                                       │  L and R meet from here on
                                       ▼
          [9]  mid/side          bass mono below 300 Hz
-         [10] multiband comp    120/1k/6k, lowest threshold on LF,
+         [10] multiband comp    GOTT; 120/1k/6k, lowest threshold on LF,
                                 +6.24 dB makeup: returns stage 0, then
                                 buys loudness the hardware cannot
          [11] excursion limit   sidechain = Hx displacement estimate
@@ -194,10 +194,10 @@ Stages 10 to 13 are plain stereo in series.
 
 ```
   s9outl ─┐
-  s9outr ─┴→ ● s10mbc    Calf MultibandCompressor
+  s9outr ─┴→ ● s10mbc    LSP GOTT Compressor
              │           120 / 1000 / 6000 Hz, mode 0
              │           thresholds -20 / -15 / -9 / -9 dB
-             │           bypass0..3 = 0   (they default to 1 -- see below)
+             │           be_1..4 = 1, ru_ = 1 (upward comp off)
              │           level_out +4.11 dB, returning stage 0's trim
              │
              ├─ ● s11hx_l/r  bq_lowpass 761 Hz Q 2.63  displacement estimate
@@ -382,12 +382,23 @@ graph will not clip internally; the hand-off to ALSA will, which is what stage
 |---|---|
 | All builtin nodes (biquads, mixers, `mult`, `invert`, `dcblock`, `linear`) | 0 |
 | Stage 3 `delay`, at `Delay (s) = 0` | 0 |
-| Calf MultibandCompressor (`lv2info`: has latency, no) | 0 |
 | Stage 7 and 11 LSP compressors (`sla = 0`) | 0 |
-| Stage 12 LSP limiter lookahead (`lk = 5`) | **5 ms** |
-| **Total added by the 13 stages** | **≈5 ms** |
+| Stage 10 LSP GOTT, group delay **measured** | **5.0 ms** |
+| Stage 12 LSP limiter lookahead (`lk = 2`) | **2 ms** |
+| **Total added by the stages** | **7.0 ms** |
 | Virtual sink quantum, 1024 @ 48 kHz (already present in the pass-through) | 21.3 ms |
-| **Virtual path total, against playing straight to hardware** | **≈26 ms** |
+| **Virtual path total, against playing straight to hardware** | **28.3 ms** |
+
+This table was wrong until the GOTT swap. Calf's `lv2info` says "has latency:
+no", so stage 10 was recorded as 0 — but measured against the unprocessed
+sweep it delayed 3.7 ms, which put the real total at 30.0 ms rather than the
+26 ms previously claimed. GOTT delays 5.0 ms, which would have taken it to
+31.3 ms and over budget, so the limiter's lookahead came down from 5 ms to 2.
+
+That costs nothing: the ceiling is held at exactly −0.300 dBFS at 5, 2 and even
+1 ms of lookahead, and stage 10 keeps peaks clear of the limiter anyway. GOTT's
+`mode 0` (Classic) is equally transparent but delays 13.5 ms, so `mode 1`
+(Modern) is the one to use.
 
 Under the 30 ms budget, but not by much, and the quantum rather than the DSP is
 what dominates. If you need headroom there, lower `clock.quantum` rather than
@@ -411,18 +422,41 @@ Never stack two unverified stages.
 These are 2 W sealed micro-speakers and boosted sub-bass damages them
 mechanically. Stage 12 stays on for every test without exception.
 
-### Calf's per-band bypass defaults to ON
+### Why stage 10 is GOTT and not Calf
 
-`bypass0`, `bypass1`, `bypass2` and `bypass3` on Calf's MultibandCompressor all
-default to **1.0**, while the master `bypass` defaults to 0.0. Clearing only
-the master leaves every band inactive, and the plugin loads, reports no error,
-and does nothing at all — measured at 0.06 dB of gain reduction on material
-that should have been flattened. With them set to 0 the same settings gave
-−7.71 dB on the LF band.
+Both are four-band multiband compressors. GOTT wins on two measurements and
+one footgun.
 
-If a compressor stage appears to have no effect, check the per-band bypasses
-before touching thresholds. `solo0..3` are pinned to 0 in the config for the
-same reason.
+**Crossover transparency.** Compression disabled, sweep against the
+unprocessed source:
+
+| band | Calf (mode 0) | **GOTT** |
+|---|---|---|
+| 40–150 Hz | +0.99 dB | **0.00 dB** |
+| 150–400 Hz | +0.85 dB | 0.00 dB |
+| 800–1300 Hz | −0.57 dB | 0.00 dB |
+| 1.3–3 kHz | −0.36 dB | 0.00 dB |
+| **worst** | **0.99 dB** | **0.00 dB** |
+
+GOTT's Linkwitz-Riley sections sum flat. Calf's colour the 40–400 Hz region by
+about a decibel, and it cannot be tuned away — mode 1 is worse (1.46 dB notch
+at the freq1 crossover), and moving the crossovers is worse still (2.23 dB).
+
+**The footgun.** Calf's `bypass0..3` default to **1.0** (bypassed) while its
+master `bypass` defaults to 0.0, so it can load, report no error, and do
+nothing — measured at 0.06 dB of gain reduction on material that should have
+been flattened. GOTT's `be_1..4` default to 1 (enabled).
+
+**Upward compression.** GOTT has `tu_`/`ru_` alongside the downward pair, so it
+can lift quiet passages rather than only taming loud ones. Held at `ru_ = 1.0`
+(off) for now so the swap changes the crossover and nothing else; raising it is
+the next loudness lever, and unlike `g_out` it buys level without pushing peaks
+into the brickwall.
+
+The costs: about 1.3 ms more group delay (5.00 ms against Calf's 3.67), taking
+the path to roughly 27 ms of the 30 ms budget; and `ta_`/`tr_` **must** be set
+explicitly, because GOTT defaults to 2 ms attack and 3.5 ms release — fast
+enough to modulate gain inside a bass cycle and manufacture distortion.
 
 ### Tuning live, without reinstalling
 
