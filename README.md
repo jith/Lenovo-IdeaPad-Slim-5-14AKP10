@@ -43,7 +43,7 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 5 | Harmonic generation | `s5pre1..3_*`, `s5h<band>x<order>_*` | `linear` pre-gain + `mult`, order n = x^n | pre-gain ×5, then orders 4/5/6, 3/4/5, 2/3/4 → 490–1008 Hz | **active** | CN115442709B, US5930373A |
 | 6 | Harmonic weighting | `s6w<band>x<order>_*`, `s6sum<band>_*` | `bq_peaking` per order | gain = ln(n)·R(f) scaled to +12 dB max | **active**, +1.9 to +12 dB | CN115442709B |
 | 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | −20 dBFS, 20:1 — levels the n-th power law | **active** | CN115442709B, US10382857 |
-| 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.6`, `Gain 3 = 0.25` | CN115442709B |
+| 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.6`, `Gain 3 = 0.06` | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
 | 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `mode = 1`, downward thresholds −20/−15/−9/−9 dB, `g_out` +6.24 dB | **active** | US12342139B2 |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → LSP sidechain comp | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate | **active** | US12445775B2, CN115442709B |
@@ -82,7 +82,7 @@ All fourteen stages and what each one is for. Node-level detail follows below.
      │            │                                 │    │             │
      │            └── harmonics, 490-1008 Hz ───┐   │    │             │
      │                                          ▼   ▼    ▼             │
-     │   [8]  sum        harmonics 0.25 : LF 0.6 : HF 1.0              │
+     │   [8]  sum        harmonics 0.06 : LF 0.6 : HF 1.0              │
      └────────────────────────────────┬────────────────────────────────┘
                                       │  L and R meet from here on
                                       ▼
@@ -158,7 +158,7 @@ in_L
                                       ● s8sum_l  mixer ────────────┘
                                          Gain 1 = 1     HF
                                          Gain 2 = 1     LF     <- the crossfade:
-                                         Gain 3 = 0.25  harmonics  2 against 3
+                                         Gain 3 = 0.06  harmonics  2 against 3
 ```
 
 The generated harmonics land between 490 and 1008 Hz, chosen so the speaker
@@ -664,7 +664,8 @@ prefer the PulseAudio tools.
 | stages 2 and 9 live | −18.20 | −17.45 | **−0.75 LU** |
 | all stages, `level_out` 1.605 | −17.75 | −17.46 | **−0.29 LU** |
 | all stages, `level_out` 1.75 | −16.61 | −17.46 | **+0.85 LU** |
-| **+ crossfade, `level_out` 2.05** | **−15.55** | −17.46 | **+1.91 LU** |
+| + crossfade, `g_out` 2.05 | −15.55 | −17.46 | +1.91 LU |
+| **+ GOTT, `Gain 3` 0.06** | **−15.37** | −17.46 | **+2.09 LU** |
 
 The last row is where it is left, on purpose — see "How loud can it go".
 
@@ -706,6 +707,41 @@ capture-start jitter rather than level.
 The virtual sink's volume is a different matter: it is software, it sits
 *before* the filter graph, and changing it does change what the
 level-dependent stages see. Leave it at 100%.
+
+## Distortion, and where it comes from
+
+The virtual bass branch synthesises harmonics — it *is* distortion by
+construction, and the only question is how much. Measured electrically at the
+sink monitor with pure tones at −6 dBFS, so this is the DSP's own output and
+not the driver's:
+
+| configuration | 60 Hz | 90 Hz | 120 Hz | 150 Hz |
+|---|---|---|---|---|
+| harmonic branch muted | 0.66% | **0.28%** | 0.11% | 0.09% |
+| branch and stage 10 both out | **0.00%** | 0.00% | 0.00% | 0.00% |
+| Calf, `Gain 3` 0.25 | 10.37% | 34.16% | 15.71% | 8.15% |
+| GOTT, `Gain 3` 0.25 | 25.05% | 48.62% | 13.34% | 6.74% |
+| **GOTT, `Gain 3` 0.06** | **5.99%** | **11.98%** | **3.51%** | **1.90%** |
+
+Three things worth taking from that.
+
+**Every bit of it is stage 5–7.** With the branch muted the chain measures
+0.28% at 90 Hz, and 0.00% with stage 10 out as well. Nothing else in fourteen
+stages contributes measurably.
+
+**Stage 10 cannot fix it, and GOTT made it worse.** Swapping Calf for GOTT
+raised 90 Hz from 34% to 49% at the same injection. A compressor downstream
+cannot remove harmonics synthesised upstream — it only reshapes their
+envelope. GOTT is still the right choice at stage 10 for its crossover, but
+not for this.
+
+**Band selectivity cannot substitute for injection level.** Raising band 1's Q
+from 2 to 6 cut 60 Hz from 25% to 11% but left 90 Hz at 46%, because stage 7's
+20:1 leveller makes up whatever the bandpass takes away. Only `Gain 3` moves
+it, and it does so perfectly linearly.
+
+`Gain 3 = 0.06` puts the worst frequency at 12%, which is where commercial
+virtual bass runs. 0.10 gives more bass at about 20%.
 
 ## How loud can it go
 
