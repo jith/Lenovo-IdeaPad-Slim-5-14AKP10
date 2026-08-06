@@ -35,7 +35,7 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 
 | # | Stage | Nodes | Implementation | Parameters | State as installed | Source |
 |---|---|---|---|---|---|---|
-| 0 | Headroom trim | `s0trim_*` | builtin `linear` | −3.12 dB, returned by stage 10's `level_out` | **active**, `Mult = 0.6983` | US12342139B2 |
+| 0 | Headroom trim | `s0trim_*` | builtin `linear` | −3.12 dB, returned by stage 10's `g_out` | **active**, `Mult = 0.6983` | US12342139B2 |
 | 1 | Subsonic high-pass | `s1sub_*` | builtin `bq_highpass` | 20 Hz, Q 0.707 | **active** | US12445775B2 |
 | 2 | Linkwitz transform | `s2lt_*` | builtin `bq_raw`, one per channel | **numerator = measured (fc, Qtc); denominator = target (fc′, Qtc′)** — 761 Hz Q 2.63 → 650 Hz Q 0.707 | **active** | US12342139B2 |
 | 3 | HF path | `s3neg_*`, `s3hf_*`, `s3dly_*` | `invert` + `mixer` + `delay` | HF = input − LF | **active**, delay 0 — see below | CN115442709B |
@@ -45,10 +45,10 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | −20 dBFS, 20:1 — levels the n-th power law | **active** | CN115442709B, US10382857 |
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.6`, `Gain 3 = 0.06` | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
-| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `mode = 1`, downward thresholds −20/−15/−9/−9 dB, `g_out` +6.24 dB | **active** | US12342139B2 |
-| 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → LSP sidechain comp | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate | **active** | US12445775B2, CN115442709B |
+| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `mode = 1`, downward thresholds −20/−15/−9/−9 dB, `g_out` +7.60 dB | **active** | US12342139B2 |
+| 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → LSP sidechain comp | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate | **active**, and it works on ordinary music | US12445775B2, CN115442709B |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −0.64 dBFS sample → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** | — |
-| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left 1.91 LU hot | ITU-R BS.1770 |
+| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left 3.44 LU hot | ITU-R BS.1770 |
 
 ## Signal flow
 
@@ -88,12 +88,13 @@ All fourteen stages and what each one is for. Node-level detail follows below.
                                       ▼
          [9]  mid/side          bass mono below 300 Hz
          [10] multiband comp    GOTT; 120/1k/6k, lowest threshold on LF,
-                                +6.24 dB makeup: returns stage 0, then
-                                buys loudness the hardware cannot
+                                +7.60 dB makeup: returns stage 0, then
+                                buys loudness the hardware cannot.
+                                The only loudness lever in the chain
          [11] excursion limit   sidechain = Hx displacement estimate
                                 (low-pass 761 Hz Q2.63), -3 dBFS 6:1
          [12] brickwall         -0.2 dBFS TRUE peak, never bypassed
-         [13] A/B trim          unity; tuned runs 1.91 LU above raw
+         [13] A/B trim          unity; tuned runs 3.44 LU above raw
                                       │
                                       ▼
                      alsa_output...HiFi__Speaker__sink
@@ -195,10 +196,11 @@ Stages 10 to 13 are plain stereo in series.
 ```
   s9outl ─┐
   s9outr ─┴→ ● s10mbc    LSP GOTT Compressor
-             │           120 / 1000 / 6000 Hz, mode 0
+             │           120 / 1000 / 6000 Hz, mode 1 (Modern)
              │           thresholds -20 / -15 / -9 / -9 dB
-             │           be_1..4 = 1, ru_ = 1 (upward comp off)
-             │           level_out +4.11 dB, returning stage 0's trim
+             │           be_1..4 = 1, ru_ = 1 (upward comp off, and it
+             │                                 has to stay off -- see below)
+             │           g_out +7.60 dB, returning stage 0's trim
              │
              ├─ ● s11hx_l/r  bq_lowpass 761 Hz Q 2.63  displacement estimate
              │                                 ↓
@@ -241,19 +243,17 @@ but a full-scale tone.
 
 Five places. Each is a decision, not an accident.
 
-1. **Stage 0 is at unity, and the headroom it should take is deferred.** It
-   exists to make room for the Linkwitz transform's boost, with stage 10's
-   makeup returning it. Stage 2 needs −3.12 dB on paper — sized on the 100 Hz
-   square, not the filter's frequency-domain peak of +2.73 dB, because a
-   transient sees the filter's phase as well as its magnitude.
+1. **Stage 0 takes its headroom and stage 10 gives it back.** It exists to make
+   room for the Linkwitz transform's boost. Stage 2 needs −3.12 dB — sized on
+   the 100 Hz square, not the filter's frequency-domain peak of +2.73 dB,
+   because a transient sees the filter's phase as well as its magnitude.
 
-   But stage 10 is bypassed, so taking that headroom is 3.1 dB of pure loss
-   with nothing to give it back. Measured on hardware rather than assumed:
-   at unity, dense pink at −1 dBFS peak comes out at −2.35 dBFS and never
-   touches the limiter, and the 100 Hz square lands at exactly −0.30 dBFS —
-   the stage 12 ceiling — while still keeping the full +3.15 dB of RMS. The
-   brickwall handles the one case that needs handling, which is what it is
-   for. Set stage 0 back to `0.6983` when stage 10's makeup goes live.
+   The trim was deferred while stage 10 was still bypassed, since taking it then
+   would have been 3.1 dB of pure loss with nothing to return it. Both are live
+   now: `Mult = 0.6983` here, `g_out = 2.40` there. Do not treat stage 0 as a
+   loudness control — raising it to 1.0 gains exactly the 3.12 dB it removes,
+   but it does so *before* stages 7, 10 and 11 rather than after, so it changes
+   what all three of them see. `g_out` is the lever; this is not.
 
 2. **The f1 split is complementary, not two independent filters.** `HF = input
    − LP(f1)` via `invert` + `mixer`, rather than an independent `bq_highpass`.
@@ -499,9 +499,11 @@ been flattened. GOTT's `be_1..4` default to 1 (enabled).
 
 **Upward compression.** GOTT has `tu_`/`ru_` alongside the downward pair, so it
 can lift quiet passages rather than only taming loud ones. Held at `ru_ = 1.0`
-(off) for now so the swap changes the crossover and nothing else; raising it is
-the next loudness lever, and unlike `g_out` it buys level without pushing peaks
-into the brickwall.
+(off), and it has to stay there: it was measured as the next loudness lever and
+it is not one — it fights the volume control, because the virtual sink's volume
+is applied before this graph. The numbers are under "Where the loudness is, and
+where it is not". Treat this as a reason to prefer GOTT over Calf only if the
+volume dependence is ever solved.
 
 The costs: about 1.3 ms more group delay (5.00 ms against Calf's 3.67), taking
 the path to roughly 27 ms of the 30 ms budget; and `ta_`/`tr_` **must** be set
@@ -557,7 +559,7 @@ the skeleton is deliberately inaudible — set `s13trim_*:Mult` to `0.25`, and
 | 6 | `s6w<band>x<order>_*` `Gain`, from `ln(n) · R(f)` |
 | 7 | `s7k<band>_*` `enabled` → 1, then set `al` (threshold) per band |
 | 9 | `s9swid` `Gain 1` → 0 for mono bass (done); `Gain 2` above 1 to widen |
-| 10 | `s10mbc` `bypass` → 0 **and `bypass0..3` → 0**, lowest `threshold0`, `level_out` recovers stage 0 (done) |
+| 10 | `s10mbc` `be_1..4` → 1, lowest `td_1`, `g_out` recovers stage 0 and then buys the loudness (done) |
 | 11 | `s11xcur` `enabled` → 1, `s11hx_*` coefficients from the Hx estimate |
 | 13 | `s13trim_*` `Mult` from `tools/loudness-match.sh` |
 
@@ -715,9 +717,12 @@ prefer the PulseAudio tools.
 | all stages, `level_out` 1.605 | −17.75 | −17.46 | **−0.29 LU** |
 | all stages, `level_out` 1.75 | −16.61 | −17.46 | **+0.85 LU** |
 | + crossfade, `g_out` 2.05 | −15.55 | −17.46 | +1.91 LU |
-| **+ GOTT, `Gain 3` 0.06** | **−15.37** | −17.46 | **+2.09 LU** |
+| + GOTT, `Gain 3` 0.06 | −15.37 | −17.46 | +2.09 LU |
+| **+ `g_out` 2.40** | **−14.02** | −17.46 | **+3.44 LU** |
 
 The last row is where it is left, on purpose — see "How loud can it go".
+Raw does not move between rows, which is the check that the tool is measuring
+the chain and not the room.
 
 Raw is the louder path, so raw is the one attenuated — `speaker-dsp` defaults
 to `SPEAKER_DSP_RAW_TRIM_DB=-0.75`. The 0.13 is the Linkwitz transform's cut
@@ -818,43 +823,151 @@ stream starting, a route change. That is why it looks intermittent. Set the
 level from PipeWire (GNOME's slider, `pactl`, `speaker-dsp`) and leave the ALSA
 controls at maximum, which is where they already are.
 
-**Beyond the hardware, loudness costs dynamics.** Stage 10's `level_out` is
-the only remaining lever, and the brickwall sets its ceiling. Measured on dense
-material peaking at −1 dBFS:
+**Beyond the hardware, stage 10's `g_out` is the only lever left**, and what
+bounds it is **true peak**, not how hard the brickwall works. Stage 12 clamps
+sample peaks; on content with energy well up the band the reconstructed
+waveform still overshoots, and that overshoot is what the DAC clips.
 
-Measured with the stage 8 crossfade engaged, dense material peaking at −1 dBFS:
+Worst true peak across all five pieces of test material — pink, pink scaled to
+peak at −1 dBFS, a music track, the sweep and the 100 Hz square — measured by
+exact band-limited reconstruction at 16×:
 
-| `level_out` | output RMS | limiter removes | note |
+| `g_out` | worst true peak | binding signal | |
 |---|---|---|---|
-| 1.75 | −16.14 dBFS | 0.00 dB | last fully clear value |
-| 1.80 | −15.91 | 0.01 dB | |
-| 1.90 | −15.46 | 0.46 dB | |
-| **2.05** | **−14.84** | **1.12 dB** | **current** |
-| 2.20 | −14.30 | 1.74 dB | |
+| 2.05 | −0.54 dBTP | square100 | the old value; 0.34 dB left unused |
+| 2.20 | −0.54 | square100 | |
+| **2.40** | **−0.39** | **sweep** | **current** |
+| 2.60 | **+0.30** | sweep | clips |
+| 2.80 | +0.49 | sweep | clips |
 
-1.12 dB of peak limiting buys 1.3 dB of average level. Drop to 1.80 if you
-would rather the brickwall never worked at all; 2.20 gives another 0.5 dB and
-noticeably more limiting. Past that the cost is thermal as much as dynamic —
-this is sustained power into a 2 W driver already at its electrical maximum.
+2.40 is the largest value that holds the −0.20 dBTP ceiling on every shipped
+test signal. It is worth **+1.37 LU** on pink and **+1.07 LU** on music, with
+THD unchanged (5.96 % at 60 Hz against 5.96 %) and the brickwall working on
+0.5 % of frames.
 
-**The crossfade helps here, it does not just cost.** Sub-350 Hz energy uses
-peak headroom without producing sound on this driver, so turning stage 8's
-`Gain 2` from 1.0 down to 0.6 gained 0.81 dB of output RMS for 0.07 dB of
-peak. Taking it further toward 0 buys more of both.
+2.60 and 2.80 are safe on music, pink and the square, and break only on the
+full-scale 20 kHz sweep. If you decide that constraint is not real they are
+worth another +1.6 and +2.0 LU — but 2.80 is roughly 1.75× the average power of
+2.40 into a 2 W driver already at its electrical maximum, and past there the
+cost is thermal as much as dynamic.
+
+**Do not measure true peak with `loudnorm` here.** On the sweep it over-reports
+by 1.4 dB and `ebur128`'s 4× oversampling under-reports by about as much. All
+three meters agree on music and diverge on high-frequency content — which is
+exactly the case this limit is about. The numbers above come from zero-padding
+the spectrum, which is exact.
 
 **Stage 13 is left at unity rather than matched.** The loudness match asks for
-`Mult = 0.802602` to bring the tuned path back down to the raw path's level.
+`Mult = 0.672977` to bring the tuned path back down to the raw path's level.
 Applying it would hand back the only loudness available, so it is not applied.
-The cost is that `speaker-dsp ab` now favours tuned by 1.91 dB — exactly the
+The cost is that `speaker-dsp ab` now favours tuned by 3.44 dB — exactly the
 bias the loudness match exists to remove. For an honest comparison, level it
 for the duration and put it back after:
 
 ```sh
 ID=$(pactl list sinks short | awk '/effect_input/{print $1}')
-pw-cli set-param $ID Props '{ params = [ "s13trim_l:Mult" 0.8026 "s13trim_r:Mult" 0.8026 ] }'
+pw-cli set-param $ID Props '{ params = [ "s13trim_l:Mult" 0.6730 "s13trim_r:Mult" 0.6730 ] }'
 # ... compare ...
 pw-cli set-param $ID Props '{ params = [ "s13trim_l:Mult" 1.0 "s13trim_r:Mult" 1.0 ] }'
 ```
+
+### Where the loudness is, and where it is not
+
+Every stage was swept for it. Thirteen of the fourteen have nothing to give,
+and three ideas that looked obviously right are measurably wrong. Recorded here
+so they are not tried again.
+
+| Stage | Idea | Measured |
+|---|---|---|
+| 0 | Give back the headroom trim | `Mult` 1.0 = +3.01 LU, which is exactly the 3.12 dB it removes. Pure gain, and it moves the operating point of stages 7, 10 and 11 rather than leaving it alone. |
+| 1 | Raise the subsonic corner — the driver makes nothing down there anyway | **Net loss.** 80 Hz costs 0.45 LU and frees 0.43 dB of peak. Spending that on makeup gives +1.15 LU where leaving stage 1 alone and using the same makeup gives +1.57. |
+| 2 | Ease the Linkwitz target | Tonal, not loudness. It costs 0.13 LU by design, at the frequency K-weighting is most sensitive to. |
+| 5–7 | Push the harmonic branch harder | Stage 7's 20:1 leveller absorbs it. That is what it is for. |
+| 8 | Deepen the crossfade for headroom | **Net loss** — see below. |
+| 8 | More harmonic injection | `Gain 3` 0.10 buys +0.02 LU for +65 % THD. It is a bass-perception control, not a loudness one. |
+| 9 | Widen above 300 Hz | `Gain 2` 1.6 = +2.32 LU, but only on fully decorrelated pink noise, and it raises peaks and moves the image. Not loudness. |
+| 10 | Lower the downward thresholds | −0.09 LU. Compression without makeup is just quieter. |
+| 10 | Per-band makeup instead of global | `mk_2,3` 1.6 = +2.42 LU with a −1.0/+3.3 dB tilt. It buys loudness by cutting bass, not for free. |
+| 10 | Upward compression | **Rejected — it fights the volume control.** See below. |
+| 12 | Raise the brickwall threshold | LUFS moves 0.01 dB across `th` 0.929 to 0.966. It is a ceiling, not a lever. |
+| 13 | Anything | Already at unity. |
+
+**Upward compression is not the next loudness lever.** An earlier note here said
+it was, on the reasoning that lifting quiet passages buys level without pushing
+peaks. It does buy about +1.9 LU. But the virtual sink's volume is applied
+*before* this graph, so upward compression lifts precisely what the volume
+control just lowered. Measured on music, as the error between the volume change
+asked for and the output change delivered:
+
+| volume | `ru_` = 1 (off) | `ru_` 1.5 | `ru_` 2.0 |
+|---|---|---|---|
+| −6 dB | +0.64 dB | +2.82 | +3.41 |
+| −12 dB | +0.59 | **+4.29** | **+5.41** |
+| −30 dB | +0.59 | +4.47 | +5.65 |
+
+Turning it down 30 dB gets you 24. This is the volume dependence
+US12342139B2 is actually about, and the answer to it is per-volume parameters —
+not a static upward compressor.
+
+**The crossfade does not pay for itself in headroom at these settings.** That
+claim held in the regime it was measured, where the brickwall was working hard
+enough for the relief to be worth having. Here it works on 0.1 % of frames, so
+there is nothing to relieve and removing the energy simply removes it:
+
+| `Gain 2` | with `g_out` 2.40 | with `g_out` 2.80 |
+|---|---|---|
+| 0.60 | +1.07 LU | +2.00 LU |
+| 0.45 | +0.88 | +1.81 |
+| 0.30 | +0.78 | +1.72 |
+
+The same is true of every other way of freeing low-frequency headroom: raising
+stage 1, raising GOTT's `sf1` to 200 Hz, turning its band 1 down. All swept, all
+negative.
+
+**Stage 11 is working on ordinary music**, which the note at its node used to
+deny. Its extremes were all taken on the shipped test material, and
+`tests/material/pink.wav` is −20 dBFS RMS — about 12 dB below anything you
+actually listen to. On music at a real level the Hx estimate peaks at
+**+4.41 dBFS**, 7.4 dB over threshold, and the stage removes 0.39 dB, rising to
+0.68 dB at `g_out` 2.40. It is left alone: it is the only thing between a
+boosted bass transient and a 2 W cone, `x_max` is unknown, and raising `al` to
+1.0 recovers only 0.5 LU. That it clamps the 100 Hz square to +0.31 LU across a
+change that gains pink 1.37 is the stage doing its job.
+
+### How this was measured
+
+The sweep was done offline first, on an emulation of the whole chain — numpy for
+the PipeWire builtins, `ffmpeg -af lv2` driving the real LSP binaries for stages
+7, 10, 11 and 12, including stage 11's external sidechain as a four-channel
+input. `lv2apply` segfaults on every LSP plugin on this stack; ffmpeg does not.
+
+That emulation is only worth anything if it tracks the hardware, so it was
+checked against three numbers already in this file before it was used for
+anything:
+
+| Check | Hardware | Offline |
+|---|---|---|
+| LUFS-I, pink, chain as installed | −15.37 | −15.34 |
+| `g_out` table, row-to-row deltas | 0.23 / 0.45 / 0.62 dB | 0.24 / 0.47 / 0.66 dB |
+| THD at 60/90/120/150 Hz | 5.99 / 11.98 / 3.51 / 1.90 % | 5.96 / 10.50 / 3.42 / 1.97 % |
+
+and then again on the change itself, against a fresh capture of the running
+chain:
+
+| | Predicted | Measured on hardware |
+|---|---|---|
+| pink, ΔLU for 2.05 → 2.40 | +1.37 | **+1.37** |
+| pink, true peak at 2.40 | −5.55 dBTP | **−5.55** |
+| square100, ΔLU | +0.20 | +0.31 |
+| null residual against the 2.05 capture | a 1.36 dB gain change | −22.6 dBFS against a −7.2 dBFS baseline, which *is* 1.36 dB |
+
+**The one thing offline could not have told you** is which material to use.
+`tests/material/pink.wav` peaks at −6.8 dBFS, so it is not the "dense material
+peaking at −1 dBFS" the old `g_out` table was measured on, and it is far quieter
+than anything you listen to. Every wrong conclusion above — upward compression,
+the crossfade, stage 11's threshold — comes from a number taken on material that
+is quieter or more stationary than programme. Add real music to
+`tests/material/` before trusting any level-dependent result.
 
 
 
