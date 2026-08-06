@@ -47,7 +47,7 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
 | 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `mode = 1`, downward thresholds −20/−15/−9/−9 dB, `g_out` +6.24 dB | **active** | US12342139B2 |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → LSP sidechain comp | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate | **active** | US12445775B2, CN115442709B |
-| 12 | Brickwall | `s12brick` | LSP Limiter | −0.3 dBFS **true peak** (`ovs = 22`), `lk = 1`, no makeup, ALR and boost off | **always on** | — |
+| 12 | Brickwall | `s12brick` | LSP Limiter | −0.64 dBFS sample → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** | — |
 | 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left 1.91 LU hot | ITU-R BS.1770 |
 
 ## Signal flow
@@ -92,7 +92,7 @@ All fourteen stages and what each one is for. Node-level detail follows below.
                                 buys loudness the hardware cannot
          [11] excursion limit   sidechain = Hx displacement estimate
                                 (low-pass 761 Hz Q2.63), -3 dBFS 6:1
-         [12] brickwall         -0.3 dBFS, never bypassed
+         [12] brickwall         -0.2 dBFS TRUE peak, never bypassed
          [13] A/B trim          unity; tuned runs 1.91 LU above raw
                                       │
                                       ▼
@@ -207,7 +207,7 @@ Stages 10 to 13 are plain stereo in series.
                 │                                max of the two channels
                 │                                threshold -3 dBFS, 6:1
                 │
-                ● s12brick  LSP limiter_stereo   -0.3 dBFS, never bypassed
+                ● s12brick  LSP limiter_stereo   true peak, never bypassed
                 │
                 ● s13trim_l/r  linear  Mult 0.991973   -0.07 dB A/B trim
                 │
@@ -421,6 +421,27 @@ the loud transients where it is audible.
 
 The `Full xN` modes do not hold the sample ceiling at all — measured, not
 assumed. Only 21 and 22 work, and only 22 gets under 0 dBFS.
+
+**The threshold then had to come down on hardware.** The offline plugin test
+suggested a −0.3 dB sample ceiling was enough, but in the real chain the
+limiter sees post-GOTT content with different inter-sample behaviour and it
+measured +0.137 dBFS — still clipping. Measured on the running chain:
+
+| `th` | sample | true peak | |
+|---|---|---|---|
+| 0.96605 | −0.300 | +0.137 | clips |
+| 0.9440 | −0.501 | −0.061 | clean, no margin |
+| **0.9290** | **−0.640** | **−0.199** | **0.2 dB of margin** |
+| 0.9120 | −0.800 | −0.357 | |
+
+0.21 dB of output RMS buys a 0.2 dB true-peak margin. That is inaudible; DAC
+clipping is not. It is also a reminder that plugin behaviour measured in
+isolation does not always survive contact with the signal the chain actually
+produces.
+
+**CPU**, measured with `pw-top` while playing: the filter chain uses 1.3 ms of
+a 21.3 ms period — about 6%, with no xruns. True-peak oversampling is the most
+expensive thing in the graph and there is still plenty of headroom.
 
 **x42's Digital Peak Limiter was measured as an alternative and is not better
 here.** Its true-peak mode has to back the threshold off to −0.6 dB to control
