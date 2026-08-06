@@ -43,12 +43,12 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 5 | Harmonic generation | `s5pre1..3_*`, `s5h<band>x<order>_*` | `linear` pre-gain + `mult`, order n = x^n | pre-gain ×5, then orders 4/5/6, 3/4/5, 2/3/4 → 490–1008 Hz | **active** | CN115442709B, US5930373A |
 | 6 | Harmonic weighting | `s6w<band>x<order>_*`, `s6sum<band>_*` | `bq_peaking` per order | gain = ln(n)·R(f) scaled to +12 dB max | **active**, +1.9 to +12 dB | CN115442709B |
 | 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | −20 dBFS, 20:1 — levels the n-th power law | **active** | CN115442709B, US10382857 |
-| 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics; `Gain 2`/`Gain 3` are the crossfade | **active**, `Gain 3 = 0.25` | CN115442709B |
+| 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.6`, `Gain 3 = 0.25` | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
-| 10 | Multiband compressor | `s10mbc` | Calf MultibandCompressor | 120/1000/6000 Hz, `mode = 0`, thresholds −20/−15/−9/−9 dB, `level_out` +4.86 dB | **active** | US12342139B2 |
+| 10 | Multiband compressor | `s10mbc` | Calf MultibandCompressor | 120/1000/6000 Hz, `mode = 0`, thresholds −20/−15/−9/−9 dB, `level_out` +6.24 dB | **active** | US12342139B2 |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → LSP sidechain comp | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate | **active** | US12445775B2, CN115442709B |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −0.3 dBFS, no makeup, ALR and boost off | **always on** | — |
-| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left 0.85 LU hot | ITU-R BS.1770 |
+| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left 1.91 LU hot | ITU-R BS.1770 |
 
 ## Signal flow
 
@@ -72,7 +72,7 @@ All fourteen stages and what each one is for. Node-level detail follows below.
      │            ▼                                       ▼            │
      │   [4] LF = LP(350)                    [3] HF = input - LF       │
      │            │                              delay 0 ms            │
-     │            ├── real bass, kept ──────────────┐    │             │
+     │            ├── real bass, turned down 4.4 dB ─┐    │             │
      │            ▼                                 │    │             │
      │   [4] 3 subbands  122.5 / 175 / 252 Hz       │    │             │
      │   [5] pre-gain x5, then x^n                  │    │             │
@@ -82,18 +82,18 @@ All fourteen stages and what each one is for. Node-level detail follows below.
      │            │                                 │    │             │
      │            └── harmonics, 490-1008 Hz ───┐   │    │             │
      │                                          ▼   ▼    ▼             │
-     │   [8]  sum        harmonics 0.25 : LF 1.0 : HF 1.0              │
+     │   [8]  sum        harmonics 0.25 : LF 0.6 : HF 1.0              │
      └────────────────────────────────┬────────────────────────────────┘
                                       │  L and R meet from here on
                                       ▼
          [9]  mid/side          bass mono below 300 Hz
          [10] multiband comp    120/1k/6k, lowest threshold on LF,
-                                +4.86 dB makeup: returns stage 0 and takes
-                                the last of the headroom
+                                +6.24 dB makeup: returns stage 0, then
+                                buys loudness the hardware cannot
          [11] excursion limit   sidechain = Hx displacement estimate
                                 (low-pass 761 Hz Q2.63), -3 dBFS 6:1
          [12] brickwall         -0.3 dBFS, never bypassed
-         [13] A/B trim          unity; tuned runs 0.85 LU above raw
+         [13] A/B trim          unity; tuned runs 1.91 LU above raw
                                       │
                                       ▼
                      alsa_output...HiFi__Speaker__sink
@@ -103,10 +103,11 @@ Reading it in one line: **flatten the 761 Hz resonance, stand in for the bass
 the driver cannot make with harmonics it can, collapse the stereo image where
 it carries no information, then control dynamics and guard the cone.**
 
-Note the LF path is still at full level alongside the harmonics — stage 8's
-`Gain 2 = 1.0` — so the branch currently *adds* rather than *replaces*. Trading
-`Gain 2` down as `Gain 3` comes up is the virtual-bass crossfade proper, and it
-is where the excursion saving lives.
+The crossfade is engaged: stage 8's `Gain 2 = 0.6` turns the real sub-350 Hz
+content down 4.4 dB with the harmonics standing in for it. That content is
+17 dB or more below the passband acoustically, so little is heard to go — and
+it pays for itself, since energy that costs peak headroom without making sound
+is exactly what stops stage 10 pushing harder.
 
 ### Node by node
 
@@ -629,6 +630,7 @@ prefer the PulseAudio tools.
 | stages 2 and 9 live | −18.20 | −17.45 | **−0.75 LU** |
 | all stages, `level_out` 1.605 | −17.75 | −17.46 | **−0.29 LU** |
 | all stages, `level_out` 1.75 | −16.61 | −17.46 | **+0.85 LU** |
+| **+ crossfade, `level_out` 2.05** | **−15.55** | −17.46 | **+1.91 LU** |
 
 The last row is where it is left, on purpose — see "How loud can it go".
 
@@ -700,39 +702,41 @@ controls at maximum, which is where they already are.
 the only remaining lever, and the brickwall sets its ceiling. Measured on dense
 material peaking at −1 dBFS:
 
-| `level_out` | makeup | output peak | note |
-|---|---|---|---|
-| 1.605 | +4.11 dB | −1.37 dBFS | previous setting |
-| **1.75** | **+4.86 dB** | **−0.62 dBFS** | **current — 0.32 dB of margin** |
-| 1.80 | +5.11 dB | −0.39 dBFS | limiter starting to touch |
-| 1.85 | +5.34 dB | −0.37 dBFS | pinned — stage 12 clamping |
-| 3.00 | +9.54 dB | −0.37 dBFS | ~3 dB more average, all of it limiting |
+Measured with the stage 8 crossfade engaged, dense material peaking at −1 dBFS:
 
-1.75 is the last setting where the brickwall stays a safety net rather than a
-working stage. Everything above it trades dynamics for level, and puts more
-sustained heat and excursion into a 2 W driver that is already at its
-electrical maximum. If you want it anyway the knob is there, but that is the
-bargain.
+| `level_out` | output RMS | limiter removes | note |
+|---|---|---|---|
+| 1.75 | −16.14 dBFS | 0.00 dB | last fully clear value |
+| 1.80 | −15.91 | 0.01 dB | |
+| 1.90 | −15.46 | 0.46 dB | |
+| **2.05** | **−14.84** | **1.12 dB** | **current** |
+| 2.20 | −14.30 | 1.74 dB | |
+
+1.12 dB of peak limiting buys 1.3 dB of average level. Drop to 1.80 if you
+would rather the brickwall never worked at all; 2.20 gives another 0.5 dB and
+noticeably more limiting. Past that the cost is thermal as much as dynamic —
+this is sustained power into a 2 W driver already at its electrical maximum.
+
+**The crossfade helps here, it does not just cost.** Sub-350 Hz energy uses
+peak headroom without producing sound on this driver, so turning stage 8's
+`Gain 2` from 1.0 down to 0.6 gained 0.81 dB of output RMS for 0.07 dB of
+peak. Taking it further toward 0 buys more of both.
 
 **Stage 13 is left at unity rather than matched.** The loudness match asks for
-`Mult = 0.906776` to bring the tuned path back down to the raw path's level.
+`Mult = 0.802602` to bring the tuned path back down to the raw path's level.
 Applying it would hand back the only loudness available, so it is not applied.
-The cost is that `speaker-dsp ab` now favours tuned by 0.85 dB — exactly the
+The cost is that `speaker-dsp ab` now favours tuned by 1.91 dB — exactly the
 bias the loudness match exists to remove. For an honest comparison, level it
 for the duration and put it back after:
 
 ```sh
 ID=$(pactl list sinks short | awk '/effect_input/{print $1}')
-pw-cli set-param $ID Props '{ params = [ "s13trim_l:Mult" 0.9068 "s13trim_r:Mult" 0.9068 ] }'
+pw-cli set-param $ID Props '{ params = [ "s13trim_l:Mult" 0.8026 "s13trim_r:Mult" 0.8026 ] }'
 # ... compare ...
 pw-cli set-param $ID Props '{ params = [ "s13trim_l:Mult" 1.0 "s13trim_r:Mult" 1.0 ] }'
 ```
 
-**The virtual-bass crossfade costs loudness too.** Trading stage 8's `Gain 2`
-down from 1.0 to 0.6 measured 0.36 LU quieter, because the harmonics replacing
-that content carry less weighted energy than the content itself. Worth knowing
-before deciding how far to take the crossfade: it is a trade of measured
-loudness for perceived depth, not a free win.
+
 
 ## Null test
 
