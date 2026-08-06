@@ -47,7 +47,7 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
 | 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `mode = 1`, downward thresholds −20/−15/−9/−9 dB, `g_out` +6.24 dB | **active** | US12342139B2 |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → LSP sidechain comp | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate | **active** | US12445775B2, CN115442709B |
-| 12 | Brickwall | `s12brick` | LSP Limiter | −0.3 dBFS, no makeup, ALR and boost off | **always on** | — |
+| 12 | Brickwall | `s12brick` | LSP Limiter | −0.3 dBFS **true peak** (`ovs = 22`), `lk = 1`, no makeup, ALR and boost off | **always on** | — |
 | 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left 1.91 LU hot | ITU-R BS.1770 |
 
 ## Signal flow
@@ -384,10 +384,10 @@ graph will not clip internally; the hand-off to ALSA will, which is what stage
 | Stage 3 `delay`, at `Delay (s) = 0` | 0 |
 | Stage 7 and 11 LSP compressors (`sla = 0`) | 0 |
 | Stage 10 LSP GOTT, group delay **measured** | **5.0 ms** |
-| Stage 12 LSP limiter lookahead (`lk = 2`) | **2 ms** |
-| **Total added by the stages** | **7.0 ms** |
+| Stage 12 LSP limiter, true-peak oversampling + `lk = 1` | **3.6 ms** |
+| **Total added by the stages** | **8.6 ms** |
 | Virtual sink quantum, 1024 @ 48 kHz (already present in the pass-through) | 21.3 ms |
-| **Virtual path total, against playing straight to hardware** | **28.3 ms** |
+| **Virtual path total, against playing straight to hardware** | **29.9 ms** |
 
 This table was wrong until the GOTT swap. Calf's `lv2info` says "has latency:
 no", so stage 10 was recorded as 0 — but measured against the unprocessed
@@ -399,6 +399,35 @@ That costs nothing: the ceiling is held at exactly −0.300 dBFS at 5, 2 and eve
 1 ms of lookahead, and stage 10 keeps peaks clear of the limiter anyway. GOTT's
 `mode 0` (Classic) is equally transparent but delays 13.5 ms, so `mode 1`
 (Modern) is the one to use.
+
+Enabling true-peak limiting later took lookahead down again, from 2 ms to 1,
+to pay for the oversampler's 2.16 ms. The path sits at 29.9 ms of the 30 ms
+budget — there is no room left for another latency-bearing stage.
+
+### The brickwall must limit true peak, not sample peak
+
+With `ovs = 0` the LSP limiter controls **sample** peaks only. Measured on the
+chain output with the limiter actively clamping: samples at exactly
+−0.300 dBFS, reconstructed waveform at **+1.785 dBFS**. The codec's DAC
+reconstructs that and clips it — analog clipping into a 2 W driver, on exactly
+the loud transients where it is audible.
+
+| `ovs` | sample pk | true pk | latency | |
+|---|---|---|---|---|
+| 0 | −0.300 | **+1.438** | 2.00 ms | DAC clips |
+| 11 / 15 / 19 (`Full xN`) | **+1.8 to +2.0** | +1.9 to +2.3 | ~1.6 ms | **ceiling broken** |
+| 21 (True Peak/16) | −0.300 | +0.425 | 1.42 ms | still clips |
+| **22 (True Peak/24)** | **−0.300** | **−0.020** | 3.58 ms | **clean** |
+
+The `Full xN` modes do not hold the sample ceiling at all — measured, not
+assumed. Only 21 and 22 work, and only 22 gets under 0 dBFS.
+
+**x42's Digital Peak Limiter was measured as an alternative and is not better
+here.** Its true-peak mode has to back the threshold off to −0.6 dB to control
+inter-sample peaks, costing 0.54 dB of output RMS; LSP holds −0.3 and still
+lands true peak at −0.020. DPL's `truepeak` control also defaults to **0**,
+i.e. off — the same silent-default trap as Calf's per-band bypass. DPL's one
+advantage is latency, 1.33 ms against LSP's 3.58.
 
 Under the 30 ms budget, but not by much, and the quantum rather than the DSP is
 what dominates. If you need headroom there, lower `clock.quantum` rather than
