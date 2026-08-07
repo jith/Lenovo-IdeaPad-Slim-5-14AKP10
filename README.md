@@ -1161,11 +1161,13 @@ Read the claims, not the abstract — the abstract describes the idea, the claim
 describe what was granted, and the description carries the implementable
 detail.
 
-**All four Primary references are implemented, and two of the seven Secondary
-ones are as well.** What is *not* implemented is stated per row below rather
-than left to be inferred from the stage table — in three of the four Primary
-rows something specific was deliberately left out, and each of those omissions
-is a decision recorded elsewhere in this README.
+**Every reference below has work left in it.** References whose implementation
+is complete are not listed here at all — they are cited at their own nodes in
+`files/50-speaker-tuning.conf` and in the Source column of the stage table.
+
+So each Primary entry is live in the graph but has one specific part that was
+deliberately left out, and the Status column says which. Nothing in Secondary
+is built.
 
 ### Primary
 
@@ -1173,25 +1175,20 @@ is a decision recorded elsewhere in this README.
 |---|---|---|---|
 | [US12342139B2](https://patents.justia.com/patent/12342139) | Increasing low frequency extension for microspeakers using a volume dependent Linkwitz transform and multiband compressor — Microsoft | Stages 0, 2, 10. The volume-dependent parameter selection is the part most easily missed. | **Implemented — static half.** Stages 0 (`Mult = 0.6983`), 2 (761 Q2.63 → 650 Q0.707) and 10 (GOTT, `g_out` 2.40) are live. The volume-dependent half is **not** implemented and was decided against: the virtual sink's volume is applied *before* the graph, so the chain necessarily sees post-volume audio and is tuned at one representative level instead. See *Volume dependence*. |
 | [CN115442709B](https://patents.google.com/patent/CN115442709B/en) | Audio processing method, virtual bass enhancement system — Honor | Stages 3–8, 11. Figs 3–6 are four VBE variants, fig 7 the system split, fig 8 the frame flow, figs 9–10 the harmonic generator. The `RR(f,n) ∝ ln(n)·R(f)` derivation and the `K = min(...)` formula are in the description, not the claims. | **Implemented — feed-forward half.** Stages 3–8 and 11 are live; `RR(f,n) ∝ ln(n)·R(f)` is stage 6's peaking gains, +1.9 to +12 dB. Two parts are not literal: `K = min(...)` is applied as the choice of each band's stage 7 threshold rather than as a runtime minimum (departure 5), and the Smart PA feedback loop the patent assumes is unportable — the SN6140 exposes no I/V sense. |
-| [US12445775B2](https://patents.justia.com/patent/12445775) | Processing a digital audio signal to improve rendering of low frequencies — Faurecia Clarion | Stages 1, 11. Fully open-loop: high-pass, low-shelf boost, excursion estimate, gain backoff. The most directly portable of the set. | **Implemented in full.** High-pass at stage 1 (20 Hz Q0.707), excursion estimate at `s11hx_*` (low-pass 761 Hz Q2.63), gain backoff at `s11xcur` (−3 dBFS, 6:1). Its low-shelf boost is served by stage 2's Linkwitz transform rather than by a shelf of its own — the same job, a better-conditioned filter for a known `fc` and `Qtc`. It did prove the most portable: open-loop throughout, nothing needed from the codec. |
 | [US8660271B2](https://patents.google.com/patent/US8660271B2/en) | Stereo image widening system | Stage 9. Drops HRTFs for acoustic dipole features, aimed at closely spaced laptop speakers at low CPU cost. | **Implemented as structure; widening itself not engaged.** The M/S matrix and the 300 Hz side split are live and bass mono is on (`s9swid` `Gain 1 = 0`), but `Gain 2 = 1.0` is unity side gain above 300 Hz — the image is passed at its original width, not widened. The patent's dipole-feature synthesis is not ported; stage 9 is a plain band-split M/S matrix, which is what the null test needed and what the excursion argument for bass mono actually requires. |
 
 ### Secondary
 
-The first two are in the shipped graph, not held in reserve — they are cited at
-their nodes in `files/50-speaker-tuning.conf` and in the stage table above. The
-rest are alternatives and fallbacks: read them when the stage they relate to
-misbehaves.
+Alternatives and fallbacks, none of them built. Read one when the stage it
+relates to misbehaves.
 
-| ID | Relevance | Status |
+| ID | Relevance | Why it is not built |
 |---|---|---|
-| [US5930373A](https://patents.google.com/patent/US5930373A/en) | The original missing-fundamental patent (Waves). Expired. Foundational for stage 5. | **Implemented** — stage 5's `x^n` generator is the missing-fundamental percept applied directly: orders 4/5/6, 3/4/5 and 2/3/4 across the three subbands, landing every harmonic between 490 and 1008 Hz where the driver can reproduce it. |
-| [US10382857](https://patents.justia.com/patent/10382857) | Automatic level control for psychoacoustic bass — normalises the input to the harmonics generator and reapplies the gain after. Read if harmonic character shifts with level. | **Implemented** — stage 5's `Mult = 5` pre-gain normalises into the generator and stage 7's −20 dBFS 20:1 compressor re-levels after it. The pairing is what makes the branch usable at all: `x⁴` on a 122 Hz band of pink noise lands at −77.9 dBFS and on the 100 Hz square at −9.6, and stage 7 turns 89 dB of arrival range into 4.5 dB of output range. |
-| [US11102577B2](https://patents.justia.com/patent/11102577) | Stereo virtual bass — preserves per-channel loudness and interaural level differences under harmonic enhancement. Read if stages 5–7 collapse the image. | Not implemented. Stages 5–7 run per channel and independently, which is the precondition; stage 9 then collapses the side signal below 300 Hz on purpose, so any image collapse traceable to the harmonic branch has to show above that to be worth acting on. |
-| [US9319789B2](https://patents.justia.com/patent/9319789) | Bass substitution filter with variable gain and bandwidth — the no-harmonics alternative to stages 5–7, avoids intermodulation. Fallback if squaring proves too dirty. | Not implemented — mutually exclusive with stages 5–7 as built. Not needed so far: at the shipped `Gain 3 = 0.06` measured THD is 12 % at its worst frequency, in the range commercial virtual bass runs at. |
-| [US6134330A](https://patents.google.com/patent/US6134330A/en) | Ultra bass (Philips). Expired. Alternative nonlinear generator topology. | Not implemented — alternative to the stage 5 generator. |
-| [US20090086982A1](https://patents.google.com/patent/US20090086982A1/en) | Crosstalk cancellation for closely spaced speakers. Alternative to stage 9. | Not implemented — alternative to stage 9. |
-| [US12041433B2](https://patents.google.com/patent/US12041433B2/en) | Audio crosstalk cancellation and stereo widening — boost before the XTC stage. Relevant if stage 9 moves. | Not implemented — stage 9 has not moved. |
+| [US11102577B2](https://patents.justia.com/patent/11102577) | Stereo virtual bass — preserves per-channel loudness and interaural level differences under harmonic enhancement. Read if stages 5–7 collapse the image. | Stages 5–7 already run per channel and independently, which is the precondition; stage 9 then collapses the side signal below 300 Hz on purpose. An image collapse traceable to the harmonic branch has to show above 300 Hz to be worth acting on. |
+| [US9319789B2](https://patents.justia.com/patent/9319789) | Bass substitution filter with variable gain and bandwidth — the no-harmonics alternative to stages 5–7, avoids intermodulation. Fallback if squaring proves too dirty. | Mutually exclusive with stages 5–7 as built, and squaring has not proved too dirty: at the shipped `Gain 3 = 0.06` measured THD is 12 % at its worst frequency, in the range commercial virtual bass runs at. |
+| [US6134330A](https://patents.google.com/patent/US6134330A/en) | Ultra bass (Philips). Expired. Alternative nonlinear generator topology. | Alternative to the stage 5 generator. |
+| [US20090086982A1](https://patents.google.com/patent/US20090086982A1/en) | Crosstalk cancellation for closely spaced speakers. Alternative to stage 9. | Alternative to stage 9. |
+| [US12041433B2](https://patents.google.com/patent/US12041433B2/en) | Audio crosstalk cancellation and stereo widening — boost before the XTC stage. Relevant if stage 9 moves. | Stage 9 has not moved. |
 
 ### Not applicable
 
