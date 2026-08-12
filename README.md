@@ -46,6 +46,7 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.6`, `Gain 3 = 0.06` | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
 | 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, downward thresholds −20/−15/−9/−9 dB, `g_out` +10.63 dB, `mk_2` −1.01 dB, `mk_3` +2.98 dB | **active** — the only loudness lever, and now the only voicing control too | US12342139B2 |
+| 10b | Resonance notch | `s10res_*` | builtin `bq_peaking` | 760 Hz, Q 3.0, −3.0 dB | **active** — third instrument aimed at the 761 Hz resonance, after stage 2 and `mk_2`. Delivers −2.2 dB on programme; stages 11–12 hand the rest back | — |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → LSP sidechain comp | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −1.01 dBFS sample → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** — `th` pays for the sweep so `g_out` can spend | — |
@@ -514,6 +515,58 @@ the self-test can tell the difference. Only measuring what a parameter moves
 can. Note the same class of footgun is already recorded below for Calf's
 `bypass0..3`; this is that footgun in the plugin chosen to avoid it.
 
+### Voicing against a reference speaker
+
+Everything else in this chain is set from this machine's own measurements.
+Four values are not: `g_out` 3.40, `mk_2`, `mk_3`, and stage 10b. They come
+from acoustic A/Bs against an iPhone 13, and they are the only numbers here
+chosen by comparison with another speaker.
+
+**What makes an uncalibrated in-chassis mic able to answer this.** Both
+devices are captured on the same Mic2 at the same position, so the mic's own
+unknown response *cancels in the ratio*. Absolute curves from these captures
+mean nothing; differences between two captures mean a great deal. The phone
+stays physically in place for both takes so the room geometry is identical and
+only the emitting device changes.
+
+| | Session A, 12 Aug 2026 | Session B, 13 Aug 2026 |
+|---|---|---|
+| programme | trailer, −10.26 LUFS | *Bum Baa Diga Diga*, −5.7 LUFS, LRA 3.2 |
+| chain state | before `mk_2`/`mk_3` | after them |
+| set from it | `mk_2`, `mk_3`, `g_out` 3.40 | stage 10b |
+| repeatability | sd 1.4 dB, worst 3.5 (cross-session) | sd 0.77, worst 2.2 (split-half) |
+
+**Session B is what confirms session A.** The 2–3.2 kHz presence deficit that
+`mk_3` was built to fill went from **+6.2 dB to +3.4 dB** against the phone,
+measured on a master with nothing in common with the one the fix was tuned on.
+That is the change landing where it was aimed, on material it never saw.
+
+**And it found one thing left.** At 794 Hz the chain reads 6.5 dB *hotter* than
+the phone. Most of that is the phone rolling off below 1 kHz — its own speaker
+running out, not this one misbehaving — so the number acted on is not 6.5. Fit
+a smooth trend over 397 Hz–4 kHz, remove it, and **4.7 dB** survives as
+narrowband: the 761 Hz resonance, third time it has been measured here. Stage
+10b is the answer, and its centre was fitted independently at 740–760 Hz
+against `tools/lt-coeffs.py`'s sweep-derived 761 Hz Q 2.63.
+
+**Why `mk_2` was not enough.** It went in at session A and the gap got *worse*.
+The resonance is excited by content, not gain; this master is dense through
+600–900 Hz where the trailer was not. The stage 5–8 harmonic branch deposits at
+490–1008 Hz by construction, and this master's energy peaks below 60 Hz, so
+that branch works far harder here and lands straight on the resonance. And GOTT
+gives back 2.8 dB more broadband on dense material, unevenly across its bands
+(−3.4/−3.3/−4.4/−5.0). A band makeup is the wrong place for a *fixed* acoustic
+correction; a bell after the compressor is the right one.
+
+**What neither session licenses.** Nothing above 4.5 kHz. The phone reads
+5.4–7.7 dB brighter across 5–10 kHz and then the sign *flips* to −1.8 and −4.5
+at 12.7 and 16 kHz. Alternating sign across adjacent bands is a path artefact's
+signature, and this mic is inside the chassis — it reproduces every session,
+which establishes it is real for the speaker-to-*internal-mic* path and says
+nothing about what reaches a listener. Settling it needs a mic at the listening
+position. Also nothing below 250 Hz, where this chain's capture sits
+0.5–5.6 dB above the room floor.
+
 ### Why stage 10 is GOTT and not Calf
 
 Both are four-band multiband compressors. GOTT wins on two measurements and
@@ -551,6 +604,43 @@ The costs: about 1.3 ms more group delay (5.00 ms against Calf's 3.67), taking
 the path to roughly 27 ms of the 30 ms budget; and `ta_`/`tr_` **must** be set
 explicitly, because GOTT defaults to 2 ms attack and 3.5 ms release — fast
 enough to modulate gain inside a bass cycle and manufacture distortion.
+
+### Testing a structural change without sudo, and without breaking anything
+
+`pw-cli set-param` covers control values, but adding or rewiring *nodes* needs
+the graph rebuilt, and `install.sh` needs sudo. There is a way to measure such
+a change before it ever touches `/etc`, and one wrong turn on the way there.
+
+**The wrong turn:** dropping a same-named copy in
+`~/.config/pipewire/pipewire.conf.d/` does **not** shadow the one in
+`/etc/pipewire/pipewire.conf.d/`. PipeWire **merges** `conf.d` across config
+dirs rather than replacing by filename, so this yields *two* filter chains both
+claiming `effect_input.speaker-tuning` — verified, two sinks appeared. Back it
+out with `rm` and a restart.
+
+**What works** is to give the test copy its own identity, so both graphs run
+side by side and the real one is untouched:
+
+```sh
+sed -e 's/effect_input\.speaker-tuning"/effect_input.speaker-tuning-TEST"/' \
+    -e 's/effect_output\.speaker-tuning"/effect_output.speaker-tuning-TEST"/' \
+    -e 's/priority.session = 900/priority.session = 1/' \
+    files/50-speaker-tuning.conf \
+    > ~/.config/pipewire/pipewire.conf.d/99-speaker-tuning-test.conf
+systemctl --user restart pipewire pipewire-pulse wireplumber
+```
+
+Dropping `priority.session` keeps the test sink from stealing the default. Both
+feed the same hardware sink, so rendering the same file through each and
+capturing the hardware monitor gives an old-against-new comparison with the
+session, the hardware and the room all held fixed — a better control than
+comparing against a capture from a previous day. This is how stage 10b's
+0.13 dB out-of-band figure was taken. Delete the file and restart to clean up,
+and check `pactl list sinks short` shows one sink again.
+
+Note this leaves a user-level config that will keep shadowing your work if you
+forget it — it is loaded *in addition to* `/etc`, so a stale copy silently adds
+a second chain every boot.
 
 ### Tuning live, without reinstalling
 
@@ -1644,6 +1734,11 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | `mk_3` lifts only the band it is aimed at | **current** | pass — **only after `ebe = 1`**. Before it, `mk_3` reached the top octave and `mk_4` did nothing at all. See *GOTT runs three bands unless you tell it not to* |
 | The change survives `install.sh` and a restart | **current** | pass — installed file byte-identical to the repo, zero filter-chain lines in the journal, and the reloaded graph re-measures **−0.951 dBTP / −1.012 sample**, the same figures the live-tuned graph gave before the restart |
 | Virtual sink at unity after the restart | **current** | **fail, and it is not the graph's fault** — PipeWire restored it at **82%**, which is −5.17 dB *into* the chain on pactl's cubic scale. Restored to 100% by hand. This is the second time a restart has moved it; `assert_unity_volume` catches it in the tools but nothing catches it while listening |
+| Stage 10b changes nothing but the band it is aimed at | **current** | pass — outside 500–1300 Hz the largest third-octave change across five signals is **0.13 dB**. Measured old-against-new in one session, both graphs live at once as separate sinks |
+| Stage 10b costs no headroom | **current** | pass — sample peak **−1.012 to −1.015 dBFS**, unchanged, on the four signals that reach the ceiling, and loudness moves **+0.00 LU** on all three real masters (+0.10 sweep, +0.20 square). Offline, the sweep — the only signal that has ever bound this chain — predicts **−0.396 dBTP** against a −0.398 baseline. A cut before the brickwall is free because the brickwall was already the binding stage |
+| Square-wave capture peak is a capture artefact, not the chain | **current** | noted — `square100` reads −1.013 dBFS on hardware but **−1.864 offline**. The hardware peak lands at t = 1.108 s, 8 ms after audio starts: a `pw-cat` playback transient, identical in both graphs. Steady state is −2.06 (old) / −2.12 (new). Trim 0.3 s from each end before reading a level off any `pw-cat` capture |
+| Stage 10b delivers what it specifies | **current** | **partial, by design and measured** — the filter is −2.81 dB over the 794 Hz third-octave but programme gets **−2.22** (hot track), **−2.05** (music2), **−1.67** (music1), **−1.33** (sweep). Stages 11–12 are dynamic and back off as the notch lowers what they see. Left at −3.0 rather than inflated to chase it, since the give-back is programme-dependent and in the useful direction |
+| The 761 Hz correction reproduces across programme | **current** | pass — measured on a −5.7 LUFS master with LRA 3.2 LU, then confirmed against two trailer tracks and two synthetic signals. Split-half spread on the acoustic A/B it came from: **sd 0.77 dB, worst 2.2 dB** |
 | Worst-case margin not reduced by the loudness change | **current** | pass — **0.371 → 0.463 dB**. Louder and further from the ceiling |
 | Loudness on real programme material | **current** | pass — **+0.78 LU** (music1) and **+0.61 LU** (music2, dialogue at −11.25 LUFS arriving at +0.634 dBTP) |
 | Offline harness predicts hardware on that change | **current** | pass — music2 true peak reproduced to the third decimal on both sides; pink ΔLU +1.24 against a predicted +1.24 |
