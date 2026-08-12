@@ -45,7 +45,7 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | −20 dBFS, 20:1 — levels the n-th power law | **active** | CN115442709B, US10382857 |
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.6`, `Gain 3 = 0.06` | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
-| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `mode = 1`, downward thresholds −20/−15/−9/−9 dB, `g_out` +9.54 dB | **active** — the only loudness lever | US12342139B2 |
+| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, downward thresholds −20/−15/−9/−9 dB, `g_out` +10.63 dB, `mk_2` −1.01 dB, `mk_3` +2.98 dB | **active** — the only loudness lever, and now the only voicing control too | US12342139B2 |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → LSP sidechain comp | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −1.01 dBFS sample → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** — `th` pays for the sweep so `g_out` can spend | — |
@@ -89,9 +89,11 @@ All fourteen stages and what each one is for. Node-level detail follows below.
                                       ▼
          [9]  mid/side          bass mono below 300 Hz
          [10] multiband comp    GOTT; 120/1k/6k, lowest threshold on LF,
-                                +9.54 dB makeup: returns stage 0, then
+                                +10.63 dB makeup: returns stage 0, then
                                 buys loudness the hardware cannot.
-                                The only loudness lever in the chain
+                                The only loudness lever in the chain, and
+                                via mk_2/mk_3 the only voicing control:
+                                -1.01 dB at 120-1k, +2.98 dB at 1-6k
          [11] excursion limit   sidechain = Hx displacement estimate
                                 (low-pass 761 Hz Q2.63), -3 dBFS 6:1
         [12a] band limit        low-pass 22 kHz Q0.707 -- first unblocked g_out
@@ -200,9 +202,13 @@ Stages 10 to 13 are plain stereo in series.
   s9outr ─┴→ ● s10mbc    LSP GOTT Compressor
              │           120 / 1000 / 6000 Hz, mode 1 (Modern)
              │           thresholds -20 / -15 / -9 / -9 dB
+             │           ebe = 1  <- WITHOUT THIS IT RUNS THREE BANDS
+             │                       and every _4 control is inert
              │           be_1..4 = 1, ru_ = 1 (upward comp off, and it
              │                                 has to stay off -- see below)
-             │           g_out +9.54 dB, returning stage 0's trim
+             │           g_out +10.63 dB, returning stage 0's trim
+             │           mk_2 = 0.89 (-1.01 dB), mk_3 = 1.41 (+2.98 dB)
+             │                                 -- voicing, from the iPhone A/B
              │
              ├─ ● s11hx_l/r  bq_lowpass 761 Hz Q 2.63  displacement estimate
              │                                 ↓
@@ -473,6 +479,40 @@ Never stack two unverified stages.
 **Stop and report if any test produces audible buzzing, rattling or scraping.**
 These are 2 W sealed micro-speakers and boosted sub-bass damages them
 mechanically. Stage 12 stays on for every test without exception.
+
+### GOTT runs three bands unless you tell it not to
+
+`ebe` — "Enable extra band" — **defaults to 0**, and at 0 this plugin is a
+three-band compressor. `sf3 = 6000` splits nothing, band 3 runs from 1 kHz to
+Nyquist, and `td_4`, `rd_4`, `ta_4`, `tr_4`, `be_4` and `mk_4` are all inert.
+Every one of those was set in the config from the day stage 10 was built, and
+none of them ever did anything. **This chain ran three bands for its entire
+history while both the config and this file described four.**
+
+It surfaced only because the `mk_3` voicing lift arrived, and the lift showed
+up an octave and a half above where it was aimed. Applying +2.98 dB to one
+makeup control at a time, third-octave, against the same render at unity:
+
+| band | `mk_3` alone | `mk_4` alone |
+|---|---|---|
+| 2 kHz | +2.69 dB | 0.00 dB |
+| 5 kHz | +2.60 | 0.00 |
+| 8 kHz | +2.60 | 0.00 |
+| 16 kHz | +2.61 | 0.00 |
+
+`mk_4` moves nothing anywhere. `mk_3` reaches the top octave. With `ebe = 1`
+the lift lands where it is aimed — +3.0 to +3.6 dB across 1.26–4 kHz, down to
++0.5 dB by 8 kHz, which is `g_out` alone.
+
+It costs 0.06 LU and it *buys* peak margin: −0.928 → −0.951 dBTP on the
+segment, and on the sweep — the one signal that has ever bound this chain —
+the whole voicing change becomes free, −0.398 dBTP against a −0.398 baseline.
+
+The lesson generalises past this plugin. A control that is *set* is not a
+control that is *doing something*, and nothing in the config, the journal or
+the self-test can tell the difference. Only measuring what a parameter moves
+can. Note the same class of footgun is already recorded below for Calf's
+`bypass0..3`; this is that footgun in the plugin chosen to avoid it.
 
 ### Why stage 10 is GOTT and not Calf
 
@@ -1597,7 +1637,11 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | Skeleton is bypass-equivalent apart from stage 1 | **skeleton** | pass — tracked a stage-1-only prediction to **±0.01 dB** |
 | Every capture under the −0.20 dBTP ceiling | `g_out` 2.40 | pass — worst −0.39 dBTP, by `tools/true-peak.py` |
 | Every capture under the ceiling, `g_out` 2.60 + 22 kHz | superseded | pass — worst −0.571 dBTP (square100), 0.37 dB spare |
-| Every capture under the ceiling, `g_out` 3.00 + `th` 0.8900 | **current** | pass — worst **−0.663 dBTP** (sweep), **0.463 dB spare**, on a five-signal set including two real masters |
+| Every capture under the ceiling, `g_out` 3.00 + `th` 0.8900 | superseded | pass — worst −0.663 dBTP (sweep), 0.463 dB spare, on a five-signal set including two real masters |
+| Every signal under the ceiling, `g_out` 3.40 + `mk_2`/`mk_3` + `ebe` | **current** | pass — worst **−0.398 dBTP** (sweep), **0.198 dB spare**, and *identical* to the pre-change baseline: with `ebe = 1` the whole voicing change is free on the one signal that has ever bound this chain. Five signals, three of them real masters |
+| Voicing change confirmed on hardware, not just offline | **current** | pass — monitor capture reads **−0.951 dBTP** against an offline-predicted **−0.951** and sample peak −1.012 against −1.012. Third-octave, hardware against the offline render: **0.075 dB sd, 0.20 dB worst** across 50 Hz–16 kHz |
+| Loudness on real programme after the voicing change | **current** | pass — **+0.79 LU** (trailer segment), **+0.74 LU** (music2), **+0.69 LU** (music1). The two synthetic signals lose level because `mk_2` deliberately cuts the band both sit in |
+| `mk_3` lifts only the band it is aimed at | **current** | pass — **only after `ebe = 1`**. Before it, `mk_3` reached the top octave and `mk_4` did nothing at all. See *GOTT runs three bands unless you tell it not to* |
 | Worst-case margin not reduced by the loudness change | **current** | pass — **0.371 → 0.463 dB**. Louder and further from the ceiling |
 | Loudness on real programme material | **current** | pass — **+0.78 LU** (music1) and **+0.61 LU** (music2, dialogue at −11.25 LUFS arriving at +0.634 dBTP) |
 | Offline harness predicts hardware on that change | **current** | pass — music2 true peak reproduced to the third decimal on both sides; pink ΔLU +1.24 against a predicted +1.24 |
@@ -1647,9 +1691,15 @@ Outstanding work, as distinct from unresolvable questions:
   tracks are from the same trailer, so they share a mastering chain and are not
   really two independent samples. Note `tests/material/` is gitignored, so these
   live only on this machine.
-- **Whether `g_out` 3.40 is worth taking.** Offline says a further +0.63 LU with
-  peak still not binding. It is a listening decision about limiter density,
-  and nothing in `tools/` can make it for you.
+- ~~**Whether `g_out` 3.40 is worth taking.**~~ — **taken, 12 Aug 2026.** It
+  was left as a listening decision about limiter density that nothing in
+  `tools/` could make. What settled it was not a tool but a *reference*: an
+  acoustic A/B against an iPhone 13 on the same programme through the same
+  mic, which reads about **3.5 dB denser** than this chain (400 ms level
+  spread p90−p10, 300 Hz–6 kHz: phone 6.1, chain 9.6, source 9.6) while
+  measuring no quieter. Density was the thing to buy. Taken together with the
+  `mk_2`/`mk_3` voicing from the same measurement — see *Voicing against a
+  reference speaker*.
 - **`sudo sh install.sh uninstall` has never been run.**
 
 ### Volume dependence — decided: the chain sees post-volume audio
