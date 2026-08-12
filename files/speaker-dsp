@@ -77,6 +77,27 @@ warn_slider() {
     echo "      level with: pactl set-sink-volume $RAW <n>%"
 }
 
+# The hardware sink's volume is the only level in the system that nothing
+# measures: it sits after the monitor tap every tool in tools/ captures from,
+# so a chain tuned to the last tenth of a dB plays back quietly and every
+# capture still reads correct. It drifts down on its own -- carry_volume above
+# copies the virtual sink's level onto it, volume keys move it, and pipewire
+# has been seen coming back at 94% after a restart. Found there once, with
+# 1.61 dB missing. Say so rather than let it rot silently.
+warn_hardware_volume() {
+    _hv=$(volume_pct "$RAW")
+    [ -n "$_hv" ] || return 0
+    [ "$_hv" = "100" ] && return 0
+    # pactl's percentage is cubic, so quote the dB it prints alongside it --
+    # 94% is 1.61 dB, and the percentage badly understates that.
+    _hdb=$(pactl get-sink-volume "$RAW" 2>/dev/null \
+        | awk 'NR==1{for(i=1;i<=NF;i++) if($i ~ /dB$/){print $(i-1)" "$i; exit}}')
+    echo "note: the speakers are at ${_hv}% (${_hdb:-below 100%}), and the"
+    echo "      chain is tuned for 100%. Nothing else will tell you --"
+    echo "      captures are taken ahead of this control. Restore with:"
+    echo "        pactl set-sink-volume $RAW 100%"
+}
+
 case "${1:-status}" in
     on|dsp|tuning)
         select_tuned && echo "SPEAKER DSP - Speaker (Tuning) is the default output"
@@ -98,10 +119,11 @@ case "${1:-status}" in
     status)
         current=$(pactl get-default-sink) || exit $?
         case "$current" in
-            "$DSP") echo "state: Speaker (Tuning), 13-stage chain" ;;
+            "$DSP") echo "state: Speaker (Tuning), 14-stage chain" ;;
             "$RAW") echo "state: raw hardware speaker"; warn_slider ;;
             *) echo "state: other output ($current)" ;;
         esac
+        warn_hardware_volume
         ;;
     *) usage ;;
 esac

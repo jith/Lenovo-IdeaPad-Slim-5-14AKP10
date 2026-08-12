@@ -59,7 +59,7 @@ install_filter() {
     install -D -m644 "$FILES_DIR/hide-speaker-tuning.lua" "$HIDE_SCRIPT_DEST"
     install -D -m755 "$FILES_DIR/speaker-dsp" /usr/local/bin/speaker-dsp
 
-    echo "Installed the pass-through Speaker DSP starter."
+    echo "Installed the fourteen-stage Speaker DSP filter chain."
     print_user_restart_instructions
 }
 

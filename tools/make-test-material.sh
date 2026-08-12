@@ -2,25 +2,74 @@
 # Generate the synthetic test material into tests/material/ (gitignored).
 #
 #   tools/make-test-material.sh [dir]
+#   tools/make-test-material.sh --music TRACK [TRACK ...] [--dir tests/material]
 #
 # sox synthesises the signals; ffmpeg measures them, so the RMS printed here
 # is the same measurement the rest of the tooling uses rather than sox's
 # slightly different definition of the same word.
 #
-# Drop your own music tracks alongside these. Three with known low-frequency
-# content is the useful number -- the synthetic signals show what the chain
-# does, music shows whether it is worth doing.
+# MUSIC IS NOT OPTIONAL, and --music is how you add it. The synthetic signals
+# show what the chain does; music is the only thing that shows whether it is
+# doing it at a level you actually listen at. pink.wav is -20 dBFS RMS, roughly
+# 12 dB below programme, and every conclusion in the README that later turned
+# out to be wrong -- upward compression, the stage 8 crossfade, stage 11's
+# threshold -- was drawn from it. Three tracks with real low-frequency content
+# is the useful number, and loud modern masters are the point rather than a
+# problem: they are what the level-dependent stages have to survive.
+#
+# --music converts to the graph format (48 kHz float32 stereo) and takes a
+# 40-second excerpt from 25% into the track, past the intro and into the part
+# with the whole arrangement in it. It does not normalise: the master's own
+# level is the thing being tested.
 set -eu
 
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "$DIR/common.sh"
 
-need sox sox
+OUT=tests/material
+MUSIC=""
+while [ $# -gt 0 ]; do
+    case $1 in
+        --music) shift; MUSIC="$*"; break ;;
+        --dir)   OUT=$2; shift 2 ;;
+        *)       OUT=$1; shift ;;
+    esac
+done
+
+# Requirements depend on the mode: only synthesis needs sox, and demanding it
+# for --music would block the one path that has no synthesis in it.
 need ffmpeg ffmpeg
+if [ -n "$MUSIC" ]; then
+    need ffprobe ffmpeg
+else
+    need sox sox
+fi
 need_report
 
-OUT=${1:-tests/material}
 mkdir -p "$OUT"
+
+# ingest_music -- excerpt each track into music<N>.wav and report its loudness.
+# The LUFS and true peak are printed because they are the numbers that decide
+# whether a track is worth keeping: something mastered at -14 LUFS exercises
+# stages 7, 10 and 11 where the synthetic material never reaches.
+if [ -n "$MUSIC" ]; then
+    n=0
+    for track in $MUSIC; do
+        [ -f "$track" ] || die "no such track: $track"
+        n=$((n + 1))
+        dur=$(ffprobe -v error -show_entries format=duration \
+                      -of csv=p=0 "$track" 2>/dev/null | cut -d. -f1)
+        start=$(( ${dur:-160} / 4 ))
+        ffmpeg -v error -y -ss "$start" -t 40 -i "$track" \
+               -ar $RATE -ac 2 -c:a pcm_f32le "$OUT/music$n.wav"
+        printf '  %-14s from %-28s LUFS-I %7s  ' \
+               "music$n.wav" "$(basename "$track")" "$(lufs "$OUT/music$n.wav")"
+        python3 "$DIR/true-peak.py" "$OUT/music$n.wav" 2>/dev/null \
+            | awk 'NR==2{printf "true peak %s dBTP\n", $3}'
+    done
+    [ "$n" -ge 3 ] || echo "  note: $n track(s). Three is the useful number." >&2
+    exit 0
+fi
 
 # float32, matching what pw-cat and pw-record use, so nothing requantises.
 FMT="-r $RATE -c 2 -b 32 -e float"

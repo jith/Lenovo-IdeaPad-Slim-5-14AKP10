@@ -37,6 +37,73 @@ require_node() {
     die "node '$1' not found. \`pactl list short sinks\` and \`... sources\` show what exists."
 }
 
+# assert_unity_volume <sink> -- refuse to measure through a sink that is not at
+# 100%.
+#
+# The virtual sink's volume is applied BEFORE the filter graph (measured: 50%
+# on the virtual sink drops the hardware monitor by 18.08 dB, which is pactl's
+# cubic 0.125). So a capture taken at 94% is 1.6 dB low, and 1.6 dB is larger
+# than most of the differences this repo measures. It does not look like an
+# error -- it looks like a tuning result, in the wrong direction.
+#
+# That is not hypothetical. A g_out 2.40 -> 2.60 change measured as 1.34 LU
+# QUIETER because pipewire came back at 94% after a restart, and the whole
+# capture set had to be thrown away. Hence a hard failure rather than a warning.
+#
+# Note this is the opposite rule to the HARDWARE sink, whose volume sits after
+# the monitor tap and cannot affect a capture at all -- see record_sink below.
+# Set your listening level there, never here.
+assert_unity_volume() {
+    pactl get-sink-volume "$1" 2>/dev/null | awk -v s="$1" '
+        NR == 1 {
+            for (i = 1; i <= NF; i++)
+                if ($i ~ /^[0-9]+%$/) { v = $i; sub(/%/, "", v); break }
+            if (v == "") {
+                printf "error: could not read the volume of %s\n", s > "/dev/stderr"
+                exit 1
+            }
+            if (v + 0 != 100) {
+                printf "error: %s is at %s%%, not 100%%.\n", s, v > "/dev/stderr"
+                printf "  Its volume is applied BEFORE the filter graph, so every\n" > "/dev/stderr"
+                printf "  level measured through it would be wrong by that much.\n" > "/dev/stderr"
+                printf "  Fix with:  pactl set-sink-volume %s 100%%\n", s > "/dev/stderr"
+                printf "  Set your listening level on the hardware sink instead.\n" > "/dev/stderr"
+                exit 1
+            }
+        }' || exit 1
+}
+
+# warn_hardware_volume -- the level the SPEAKERS are at, which no capture sees.
+#
+# assert_unity_volume above guards the virtual sink because its volume lands
+# inside the measurement. This is the opposite hazard and it is worse, because
+# nothing catches it: the hardware sink's volume sits AFTER the monitor tap, so
+# every capture, null test and loudness match in this repo reads identically at
+# 100% and at 60%. The tooling cannot tell. Only your ears can.
+#
+# Found at 94% -- 1.61 dB down -- with the whole chain tuned as though it were
+# not, which is 1.61 dB larger than most of what this repo argues about. It
+# gets there on its own: `speaker-dsp off` copies the virtual sink's level
+# across, a volume key press moves it, and pipewire has been seen returning to
+# 94% after a restart.
+#
+# 100% is the right setting and there is measured headroom for it. See README,
+# "What the drivers actually take": at 100% the chain's worst band sits 21 dB
+# under the only frequency where these drivers mechanically run out.
+warn_hardware_volume() {
+    pactl get-sink-volume "$SINK_RAW" 2>/dev/null | awk -v s="$SINK_RAW" '
+        NR == 1 {
+            for (i = 1; i <= NF; i++)
+                if ($i ~ /^[0-9]+%$/) { v = $i; sub(/%/, "", v); break }
+            if (v != "" && v + 0 != 100) {
+                printf "note: the speakers are at %s%%, not 100%%.\n", v
+                printf "  This sits after the monitor tap, so no capture in\n"
+                printf "  this repo can see it -- but you can hear it.\n"
+                printf "  Fix with:  pactl set-sink-volume %s 100%%\n", s
+            }
+        }'
+}
+
 # record_sink <sink> <file> -- start capturing a sink's output in the
 # background, setting REC_PID. Caller stops it with stop_record "$REC_PID".
 #

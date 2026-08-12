@@ -38,10 +38,18 @@ if [ "${1:-}" = "--pre-stage1" ]; then HP_ARGS="--hp 20"; shift; fi
 OUTDIR=${1:-}
 [ -n "$OUTDIR" ] || die "usage: $0 $MODE [--pre-stage1] <dir> [material...]"
 shift
-[ $# -gt 0 ] || set -- tests/material/pink.wav tests/material/sweep.wav
+# Default to all three shipped signals. square100 used to be left out, which
+# quietly skipped the one signal that is peak-critical -- it is the material
+# that pins the limiter. Passing paths is then only for adding music, and
+# note that in zsh an unquoted "$MAT" of several paths arrives as ONE argument:
+# use an array, or just take the default.
+[ $# -gt 0 ] || set -- tests/material/pink.wav \
+                       tests/material/sweep.wav \
+                       tests/material/square100.wav
 
 require_node "$SINK_DSP"
 require_node "$SINK_RAW"
+assert_unity_volume "$SINK_DSP"
 mkdir -p "$OUTDIR"
 
 capture() {

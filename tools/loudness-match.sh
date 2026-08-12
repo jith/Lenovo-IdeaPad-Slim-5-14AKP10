@@ -28,6 +28,7 @@ MATERIAL=${1:-tests/material/pink.wav}
 
 require_node "$SINK_DSP"
 require_node "$SINK_RAW"
+assert_unity_volume "$SINK_DSP"
 
 WORK=$(mktemp -d -t loudmatch-XXXXXX)
 trap 'rm -rf "$WORK"' EXIT
