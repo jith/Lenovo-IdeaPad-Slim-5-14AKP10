@@ -2,7 +2,7 @@
 # Generate the synthetic test material into tests/material/ (gitignored).
 #
 #   tools/make-test-material.sh [dir]
-#   tools/make-test-material.sh --music TRACK [TRACK ...] [--dir tests/material]
+#   tools/make-test-material.sh [--dir tests/material] --music TRACK [TRACK ...]
 #
 # sox synthesises the signals; ffmpeg measures them, so the RMS printed here
 # is the same measurement the rest of the tooling uses rather than sox's
@@ -21,16 +21,27 @@
 # 40-second excerpt from 25% into the track, past the intro and into the part
 # with the whole arrangement in it. It does not normalise: the master's own
 # level is the thing being tested.
+#
+# --music is TERMINAL: every argument after it is a track path, so --dir has to
+# come first. That is the price of handling paths with spaces in them, which is
+# most music -- see the note on the parser below.
 set -eu
 
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "$DIR/common.sh"
 
 OUT=tests/material
-MUSIC=""
+MUSIC=0
 while [ $# -gt 0 ]; do
     case $1 in
-        --music) shift; MUSIC="$*"; break ;;
+        # Terminal on purpose, and the tracks stay in "$@" rather than being
+        # collected into a variable. `MUSIC="$*"` followed by `for track in
+        # $MUSIC` re-splits on whitespace, so every path with a space in it
+        # became several nonexistent paths -- which is most music. It failed as
+        # "no such track: /home/you/Music/Some" and read like a missing file.
+        # There are no arrays in POSIX sh; the positional parameters are the
+        # only list that survives a space, so tracks are never copied out.
+        --music) MUSIC=1; shift; break ;;
         --dir)   OUT=$2; shift 2 ;;
         *)       OUT=$1; shift ;;
     esac
@@ -39,7 +50,7 @@ done
 # Requirements depend on the mode: only synthesis needs sox, and demanding it
 # for --music would block the one path that has no synthesis in it.
 need ffmpeg ffmpeg
-if [ -n "$MUSIC" ]; then
+if [ "$MUSIC" = 1 ]; then
     need ffprobe ffmpeg
 else
     need sox sox
@@ -52,9 +63,10 @@ mkdir -p "$OUT"
 # The LUFS and true peak are printed because they are the numbers that decide
 # whether a track is worth keeping: something mastered at -14 LUFS exercises
 # stages 7, 10 and 11 where the synthetic material never reaches.
-if [ -n "$MUSIC" ]; then
+if [ "$MUSIC" = 1 ]; then
+    [ $# -gt 0 ] || die "--music needs at least one track path"
     n=0
-    for track in $MUSIC; do
+    for track in "$@"; do
         [ -f "$track" ] || die "no such track: $track"
         n=$((n + 1))
         dur=$(ffprobe -v error -show_entries format=duration \

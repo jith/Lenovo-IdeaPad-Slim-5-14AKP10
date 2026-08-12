@@ -45,10 +45,10 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | −20 dBFS, 20:1 — levels the n-th power law | **active** | CN115442709B, US10382857 |
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.6`, `Gain 3 = 0.06` | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
-| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `mode = 1`, downward thresholds −20/−15/−9/−9 dB, `g_out` +8.30 dB | **active** | US12342139B2 |
+| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `mode = 1`, downward thresholds −20/−15/−9/−9 dB, `g_out` +9.54 dB | **active** — the only loudness lever | US12342139B2 |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → LSP sidechain comp | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
-| 12 | Brickwall | `s12brick` | LSP Limiter | −0.64 dBFS sample → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** | — |
+| 12 | Brickwall | `s12brick` | LSP Limiter | −1.01 dBFS sample → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** — `th` pays for the sweep so `g_out` can spend | — |
 | 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left hot, by 3.44 LU as measured at `g_out` 2.40 | ITU-R BS.1770 |
 
 ## Signal flow
@@ -89,12 +89,12 @@ All fourteen stages and what each one is for. Node-level detail follows below.
                                       ▼
          [9]  mid/side          bass mono below 300 Hz
          [10] multiband comp    GOTT; 120/1k/6k, lowest threshold on LF,
-                                +8.30 dB makeup: returns stage 0, then
+                                +9.54 dB makeup: returns stage 0, then
                                 buys loudness the hardware cannot.
                                 The only loudness lever in the chain
          [11] excursion limit   sidechain = Hx displacement estimate
                                 (low-pass 761 Hz Q2.63), -3 dBFS 6:1
-        [12a] band limit        low-pass 22 kHz Q0.707 -- pays for g_out 2.60
+        [12a] band limit        low-pass 22 kHz Q0.707 -- first unblocked g_out
          [12] brickwall         -0.2 dBFS TRUE peak, never bypassed
          [13] A/B trim          unity; tuned ran 3.44 LU hot at g_out 2.40
                                       │
@@ -202,7 +202,7 @@ Stages 10 to 13 are plain stereo in series.
              │           thresholds -20 / -15 / -9 / -9 dB
              │           be_1..4 = 1, ru_ = 1 (upward comp off, and it
              │                                 has to stay off -- see below)
-             │           g_out +8.30 dB, returning stage 0's trim
+             │           g_out +9.54 dB, returning stage 0's trim
              │
              ├─ ● s11hx_l/r  bq_lowpass 761 Hz Q 2.63  displacement estimate
              │                                 ↓
@@ -803,10 +803,17 @@ virtual bass runs. 0.10 gives more bass at about 20%.
 ## How loud can it go
 
 Short answer: this is it, plus 1.61 dB that was sitting unclaimed in the one
-control nothing here measures. The amplifier is at its electrical maximum and
-the chain takes what is left of the digital ceiling; the drivers, measured
-separately at the end of this section, turn out not to be the binding
-constraint anywhere the chain actually operates.
+control nothing here measures, plus another 0.78 LU that was being withheld on
+the say-so of a test signal nobody listens to. The amplifier is at its
+electrical maximum and the chain takes what is left of the digital ceiling; the
+drivers, measured separately at the end of this section, turn out not to be the
+binding constraint anywhere the chain actually operates.
+
+Read this section in order — it is three rounds, and each one moved the ceiling
+for a different reason. The band limit (*The ceiling was one signal*) bought
+`g_out` 2.40 → 2.60. The `th` trade (*part two*) bought 2.60 → 3.00. The driver
+measurement (*What the drivers actually take*) bought nothing at all, and is
+the reason the other two are known to be safe.
 
 **The ALSA mixer is already at 0 dB.** On card 1 -- card 0 is a different
 codec and has no speaker controls at all -- `Master`, `Speaker` and `PCM` all
@@ -1006,18 +1013,94 @@ same way. It was measured on something that is no longer in the repo, which is
 the whole argument for the harness below.*
 
 **Stage 13 is left at unity rather than matched.** The loudness match asks for
-`Mult = 0.672977` to bring the tuned path back down to the raw path's level.
+`Mult = 0.6847` to bring the tuned path back down to the raw path's level.
 Applying it would hand back the only loudness available, so it is not applied.
-The cost is that `speaker-dsp ab` now favours tuned by 3.44 dB — exactly the
+The cost is that `speaker-dsp ab` now favours tuned by 3.29 dB — exactly the
 bias the loudness match exists to remove. For an honest comparison, level it
 for the duration and put it back after:
 
 ```sh
 ID=$(pactl list sinks short | awk '/effect_input/{print $1}')
-pw-cli set-param $ID Props '{ params = [ "s13trim_l:Mult" 0.6730 "s13trim_r:Mult" 0.6730 ] }'
+pw-cli set-param $ID Props '{ params = [ "s13trim_l:Mult" 0.6847 "s13trim_r:Mult" 0.6847 ] }'
 # ... compare ...
 pw-cli set-param $ID Props '{ params = [ "s13trim_l:Mult" 1.0 "s13trim_r:Mult" 1.0 ] }'
 ```
+
+Measure that figure on **music, not pink**. It was 3.44 LU on pink at `g_out`
+2.40; it is 3.29 LU on a real master at `g_out` 3.00 — the offset went *down*
+while `g_out` went *up* two steps, because music is limiter-pinned and pink is
+not, so the chain cannot add to music what it adds to pink. Pink overstates the
+offset, and this trim exists to make an A/B honest.
+
+### The ceiling was one signal, part two: it still was
+
+The band limit above bought `g_out` 2.40 → 2.60 and the sweep went back to
+binding at 2.80. That looked like the end of it. It was not — the sweep was
+still the only thing objecting, and there was a second, cheaper way to pay it.
+
+**On programme material, true peak does not respond to `g_out` at all.** The
+limiter absorbs the whole increase:
+
+| `g_out` | music LUFS | ΔLU | music true peak |
+|---|---|---|---|
+| 2.60 | −12.28 | — | −0.633 |
+| 2.80 | −11.84 | +0.44 | −0.625 |
+| 3.00 | −11.45 | +0.83 | −0.625 |
+| 3.20 | −11.11 | +1.17 | −0.625 |
+
+Flat peak, rising loudness. Only the full-scale sweep ever breached, and it
+breached because the limiter holds its *sample* peak at `th` while the
+inter-sample peak overshoots past it.
+
+**`th` is loudness-neutral on music and is not on the sweep.** That asymmetry
+is the whole trick. Swept across its usable range on a real master, `th` moves
+integrated loudness by **+0.02 LU total** — it only ever catches rare
+transients — while moving the sweep's overshoot one-for-one:
+
+| `th` | music LUFS | ΔLU | music TP | sweep TP at `g_out` 3.00 |
+|---|---|---|---|---|
+| 0.8900 | — | — | −0.997 | **−0.398** |
+| 0.9290 | −12.28 | — | −0.633 | −0.009 — clips |
+| 0.9550 | −12.27 | +0.01 | −0.393 | — |
+| 0.9700 | −12.27 | +0.01 | −0.258 | — |
+| 0.9800 | −12.26 | +0.02 | −0.168 | — |
+
+So `th` pays for the sweep and `g_out` collects the loudness. **`th` 0.9290 →
+0.8900 costs music nothing and buys `g_out` 2.60 → 3.00.** They are one
+setting; move them together.
+
+**Confirmed on hardware**, both halves live-switched in one session at unity
+sink volume, with two real masters in the set:
+
+| signal | ΔLU | TP before | TP after | margin |
+|---|---|---|---|---|
+| **music1** — trailer music, −14.76 LUFS | **+0.78** | −0.633 | −0.999 | 0.799 |
+| **music2** — dialogue, −11.25 LUFS | **+0.61** | −0.563 | −0.936 | 0.736 |
+| pink | +1.24 | −5.074 | −3.831 | 3.631 |
+| square100 | −0.10 | −0.571 | −0.943 | 0.743 |
+| sweep | −0.08 | −0.874 | −0.663 | **0.463** |
+
+`music2` is the one that matters. It is the hardest material in the repo —
+trailer audio with dialogue over music, arriving at **+0.634 dBTP**, already
+clipping before the chain sees it, and 3.5 LU hotter than `music1`. It drives
+the limiter hardest and had the most room to go wrong. Hardware reproduced the
+offline true peak to the third decimal on both sides of the A/B.
+
+**The worst-case margin improved.** Before: 0.371 dB, on square100. After:
+0.463 dB, on the sweep. This is louder *and* further from the ceiling, which is
+the only kind of loudness change worth making. Both synthetic signals give up a
+tenth of a LU; neither is programme, and both are limiter-pinned.
+
+**What bounds `g_out` now is limiter workload, not peak.** At 3.00 the limiter
+absorbs about 0.45 dB of the 1.25 dB `g_out` adds; by 3.80 it absorbs 1.35 dB
+and the cost is audible density rather than a number on a meter. Offline, the
+sweep holds about −0.40 dBTP all the way to 3.80 with `th` at 0.8900 — peak
+will not stop you. 3.40 is a further +0.63 LU and is available if you want it.
+Past 3.00, listen before believing the meter.
+
+The drivers are not in this conversation at all: the tightest band still sits
+about 12.8 dB under where they start to compress. See **What the drivers
+actually take**.
 
 ### Where the loudness is, and where it is not
 
@@ -1165,9 +1248,11 @@ is not in the repo.
 
 ### Confirming this on hardware
 
-Both `g_out = 2.60` and the 22 kHz band limit are confirmed; this section is
-kept as the procedure for the next change. The loop below is the whole method —
-two live parameter sets, two captures, one comparison — and it takes minutes.
+`g_out = 3.00`, `th = 0.8900` and the 22 kHz band limit are all confirmed; this
+section is kept as the procedure for the next change. The loop below is the
+whole method — two live parameter sets, two captures, one comparison — and it
+takes minutes. `g_out` and `th` are both live parameters, so **the A/B needs no
+reinstall and no PipeWire restart**; install only once the answer is in.
 
 **First, check the graph loaded, and check the volume.** Both have burned a
 full measurement cycle already:
@@ -1316,12 +1401,18 @@ comparison is 3 dB optimistic:
 only signal that gets near the drivers, and it gets near them at 315–500 Hz,
 where — per above — there is nothing to break.
 
-**What this changes: the hardware volume, and nothing else.** The stage
-levels stay exactly where they were. `g_out` is still bounded by true peak at
-2.60, stage 11's `al` stays at 0.708 — now with a measured reason rather than
-an admission that `x_max` is unknown, and measurably 2.6 dB conservative of
-the driver's own 1 dB point, which is the right side to be on for a peak
-detector with a 5 ms attack.
+**What this changed at the time: the hardware volume, and nothing else.** No
+stage level moved on the strength of this measurement. Stage 11's `al` stays
+at 0.708 — now with a measured reason rather than an admission that `x_max` is
+unknown, and measurably 2.6 dB conservative of the driver's own 1 dB point,
+which is the right side to be on for a peak detector with a 5 ms attack.
+
+`g_out` and `th` did move afterwards, for a reason that has nothing to do with
+the drivers — see *The ceiling was one signal, part two*. That change spends
+about 1.1 dB of the margins in the table above, leaving roughly **20 dB at
+800 Hz and 12.8 dB at 500 Hz**, the tightest band. The conclusion is unchanged
+and the arithmetic is not close: nothing in this chain is limited by the
+speakers.
 
 **What would have to be true for this to be wrong.** The internal mic is
 uncalibrated and inside the chassis, so the absolute THD percentages are
@@ -1430,12 +1521,18 @@ alignment, pass).
 
 ```sh
 tools/make-test-material.sh [dir]     # default tests/material/
+tools/make-test-material.sh [--dir tests/material] --music TRACK [TRACK ...]
 ```
 
 Generates pink noise (60 s, −20 dBFS RMS, independently seeded channels so the
 mid/side stage sees a real side signal), a 30 s log sweep from 20 Hz to 20 kHz,
-and a 5 s 100 Hz square wave for harmonic-branch sanity. Add three music tracks
-with known low-frequency content alongside them.
+and a 5 s 100 Hz square wave for harmonic-branch sanity.
+
+`--music` adds real tracks, and it is not optional if you intend to trust any
+level-dependent result: it takes 40 s from 25 % into each track, converts to
+the graph format, and prints LUFS-I and true peak. It does **not** normalise —
+the master's own level is the thing being tested, and a loud master is the
+point rather than a problem. `--music` is terminal, so `--dir` comes first.
 
 `tests/material/` and `tests/captures/` are gitignored — do not commit audio.
 
@@ -1499,10 +1596,14 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | Loudness match within 0.1 LU before any trim | **skeleton + stages 0–2, 9, 10, 13** | pass — **+0.00 LU** as a skeleton, **+0.07 LU** with those stages |
 | Skeleton is bypass-equivalent apart from stage 1 | **skeleton** | pass — tracked a stage-1-only prediction to **±0.01 dB** |
 | Every capture under the −0.20 dBTP ceiling | `g_out` 2.40 | pass — worst −0.39 dBTP, by `tools/true-peak.py` |
-| Every capture under the ceiling, `g_out` 2.60 + 22 kHz | current | pass — worst **−0.571 dBTP** (square100), 0.37 dB spare |
-| Net loudness against the pre-change chain | current | pass — pink **+0.60 LU** against a predicted +0.60, with true peak 0.69 dB *lower* |
+| Every capture under the ceiling, `g_out` 2.60 + 22 kHz | superseded | pass — worst −0.571 dBTP (square100), 0.37 dB spare |
+| Every capture under the ceiling, `g_out` 3.00 + `th` 0.8900 | **current** | pass — worst **−0.663 dBTP** (sweep), **0.463 dB spare**, on a five-signal set including two real masters |
+| Worst-case margin not reduced by the loudness change | **current** | pass — **0.371 → 0.463 dB**. Louder and further from the ceiling |
+| Loudness on real programme material | **current** | pass — **+0.78 LU** (music1) and **+0.61 LU** (music2, dialogue at −11.25 LUFS arriving at +0.634 dBTP) |
+| Offline harness predicts hardware on that change | **current** | pass — music2 true peak reproduced to the third decimal on both sides; pink ΔLU +1.24 against a predicted +1.24 |
+| Net loudness against the pre-change chain | superseded | pass — pink +0.60 LU against a predicted +0.60, with true peak 0.69 dB *lower* |
 | Stage 12a changes nothing but level (18 kHz corner) | superseded | pass — null residual was a pure 0.695 dB gain change on pink and sweep, to **0.02 dB** |
-| Drivers not the binding constraint at the chain's own output | current | pass — **21 dB of margin** at 800 Hz, the one frequency that compresses, on programme-level pink through the whole graph |
+| Drivers not the binding constraint at the chain's own output | current | pass — **~20 dB of margin** at 800 Hz, the one frequency that compresses, on programme-level pink through the whole graph after the `g_out` 3.00 change |
 | Stage 11's `Hx` centre matches where the drivers actually run out | current | pass — 800 Hz measured, `Hx` peaks at 761 Hz; threshold sits 2.6 dB conservative |
 | Capture chain not the source of the measured distortion | current | pass — mic 20 dB below its own ceiling at the loudest point; a constant probe tone held to **0.18 dB** while the test tone lost 2 dB |
 | `sudo sh install.sh uninstall` reverts cleanly | — | **not run** — needs sudo. Its five removal paths were checked against what is on disk and cover it exactly, with nothing left behind |
@@ -1536,11 +1637,19 @@ rather than deleted so that the reasoning behind the values is not lost.
 
 Outstanding work, as distinct from unresolvable questions:
 
-- **`g_out = 2.60` and stage 12a are not yet confirmed on hardware.** See
-  "Confirming this on hardware".
-- **No music in `tests/material/`.** Every level-dependent number here was taken
-  on synthetic material or on one track that is not in the repo.
-  `tools/make-test-material.sh --music` takes them; three are wanted.
+- ~~**`g_out` and stage 12a are not confirmed on hardware**~~ — **done.**
+  `g_out = 3.00`, `th = 0.8900` and the 22 kHz band limit are all confirmed by
+  live-switched A/B, on a set that now includes two real masters.
+- **A third music track.** Two are in `tests/material/` now — `music1`, trailer
+  music at −14.76 LUFS, and `music2`, dialogue over music at −11.25 LUFS
+  arriving at +0.634 dBTP, which is the hardest thing here. Three is still the
+  useful number, and a track with sustained deep bass is the gap: both current
+  tracks are from the same trailer, so they share a mastering chain and are not
+  really two independent samples. Note `tests/material/` is gitignored, so these
+  live only on this machine.
+- **Whether `g_out` 3.40 is worth taking.** Offline says a further +0.63 LU with
+  peak still not binding. It is a listening decision about limiter density,
+  and nothing in `tools/` can make it for you.
 - **`sudo sh install.sh uninstall` has never been run.**
 
 ### Volume dependence — decided: the chain sees post-volume audio
@@ -1586,7 +1695,7 @@ is built.
 
 | ID | Title / holder | Covers | Status |
 |---|---|---|---|
-| [US12342139B2](https://patents.justia.com/patent/12342139) | Increasing low frequency extension for microspeakers using a volume dependent Linkwitz transform and multiband compressor — Microsoft | Stages 0, 2, 10. The volume-dependent parameter selection is the part most easily missed. | **Implemented — static half.** Stages 0 (`Mult = 0.6983`), 2 (761 Q2.63 → 650 Q0.707) and 10 (GOTT, `g_out` 2.60) are live. The volume-dependent half is **not** implemented and was decided against: the virtual sink's volume is applied *before* the graph, so the chain necessarily sees post-volume audio and is tuned at one representative level instead. See *Volume dependence*. |
+| [US12342139B2](https://patents.justia.com/patent/12342139) | Increasing low frequency extension for microspeakers using a volume dependent Linkwitz transform and multiband compressor — Microsoft | Stages 0, 2, 10. The volume-dependent parameter selection is the part most easily missed. | **Implemented — static half.** Stages 0 (`Mult = 0.6983`), 2 (761 Q2.63 → 650 Q0.707) and 10 (GOTT, `g_out` 3.00) are live. The volume-dependent half is **not** implemented and was decided against: the virtual sink's volume is applied *before* the graph, so the chain necessarily sees post-volume audio and is tuned at one representative level instead. See *Volume dependence*. |
 | [CN115442709B](https://patents.google.com/patent/CN115442709B/en) | Audio processing method, virtual bass enhancement system — Honor | Stages 3–8, 11. Figs 3–6 are four VBE variants, fig 7 the system split, fig 8 the frame flow, figs 9–10 the harmonic generator. The `RR(f,n) ∝ ln(n)·R(f)` derivation and the `K = min(...)` formula are in the description, not the claims. | **Implemented — feed-forward half.** Stages 3–8 and 11 are live; `RR(f,n) ∝ ln(n)·R(f)` is stage 6's peaking gains, +1.9 to +12 dB. Two parts are not literal: `K = min(...)` is applied as the choice of each band's stage 7 threshold rather than as a runtime minimum (departure 5), and the Smart PA feedback loop the patent assumes is unportable — the SN6140 exposes no I/V sense. |
 | [US8660271B2](https://patents.google.com/patent/US8660271B2/en) | Stereo image widening system | Stage 9. Drops HRTFs for acoustic dipole features, aimed at closely spaced laptop speakers at low CPU cost. | **Implemented as structure; widening itself not engaged.** The M/S matrix and the 300 Hz side split are live and bass mono is on (`s9swid` `Gain 1 = 0`), but `Gain 2 = 1.0` is unity side gain above 300 Hz — the image is passed at its original width, not widened. The patent's dipole-feature synthesis is not ported; stage 9 is a plain band-split M/S matrix, which is what the null test needed and what the excursion argument for bass mono actually requires. |
 
