@@ -634,6 +634,66 @@ moving, no headroom cost) was built as a separate `-TEST` sink and A/B'd against
 the installed chain. The uncut chain won. **Do not re-propose cutting
 400–630 Hz — it has been tried and rejected by ear, not just by argument.**
 
+#### How it was measured
+
+Put the same file on **both** devices and align every capture to *it*, rather
+than to each other. Arrange this deliberately — it is what makes the driver
+separable, and sessions A–C could not do any of it.
+
+Three details, each of which produced a wrong answer first:
+
+- **Linear envelope, not log.** A log envelope lets the silent lead-in dominate
+  the correlation; it locked onto the silence, r fell to 0.49 and the lag came
+  out negative.
+- **Match several 40 s chunks and take the median.** A repetitive track
+  false-locks one chunk 61 s from the truth. Envelope r only reaches ~0.7 even
+  when correct, so **r is not the confidence measure — agreement between chunks
+  is.** The phone's chunks agreed to 0.01 s.
+- **Ground-truth it.** The capture script sleeps exactly 6.00 s before playing;
+  alignment recovered 6.15 s.
+
+Noise came from a dedicated 32 s floor capture, never the head of a music
+capture. This room's floor is tonal, not hiss — 45.4 Hz, a 52–56 Hz cluster at
++20 dB, and new this session, discrete components at **402.8 and 439.5 Hz at
++14–16 dB**, sitting inside the band under investigation. Every band was gated
+on measured SNR, and below 125 Hz nothing cleared it for either device.
+
+Repeatability by interleaved analysis blocks: **sd 0.10 dB, worst 0.38**. That
+is the noise floor of one setup and *not* the confidence bound — re-setup
+repeatability is 1.4 dB sd, and that is what a difference has to beat.
+
+#### What the chain is not doing
+
+The listener reported the iPhone better on bass weight, clarity and openness
+simultaneously and level-independently. That combination usually means
+compression or distortion. Both were measured; both came back clean, and the
+negatives are worth keeping so they are not re-investigated.
+
+**Time coherence.** Group delay from a −46 dBFS impulse — low enough that
+nothing in the dynamics path engages, so the result is the chain's linear
+behaviour — is flat within **2.2 ms from 50 Hz to 12.5 kHz**. The one excursion
+is −1.3 ms at 800 Hz, which is stage 10b's notch. Impulse energy spreads 5%–95%
+in **0.1 ms**. There is no transient smearing here.
+
+**Cross-band ducking** — the kick pulling the midrange down on every beat, which
+is what makes a multiband chain sound flat:
+
+| band | its own gain sd | correlation with bass content |
+|---|---|---|
+| 40–120 Hz | 3.13 dB | −0.79 (−2.9 dB per 10 dB) |
+| 120 Hz–1 kHz | 2.57 dB | **−0.04** |
+| 1–6 kHz | 3.50 dB | −0.17 |
+| 6 kHz+ | 4.48 dB | −0.17 |
+
+The bass band compresses itself, which is its job; the midrange is not ducked by
+it at all. **Gate per band or this measurement lies.** Gated only on broadband
+level it read sd 4.4 dB with a 14–17 dB swing — an empty bass band measuring
+noise in the passages where the track has none.
+
+What the chain does do is remove **3.2–4.2 dB** of short-term dynamic range
+(50 ms and 400 ms windows, source against output). No pumping, just flatter.
+Whether that is right for a laptop speaker is taste, not physics.
+
 Still open: a ~6 dB dip at 5–6.3 kHz, real in the data and consistent across
 five adjacent bands, sitting in exactly the band this chassis mic cannot read.
 Settling it needs the lid-angle control, or a mic at the listening position.
@@ -1896,7 +1956,7 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | Loudness on real programme after the voicing change | **current** | pass — **+0.79 LU** (trailer segment), **+0.74 LU** (music2), **+0.69 LU** (music1). The two synthetic signals lose level because `mk_2` deliberately cuts the band both sit in |
 | `mk_3` lifts only the band it is aimed at | **current** | pass — **only after `ebe = 1`**. Before it, `mk_3` reached the top octave and `mk_4` did nothing at all. See *GOTT runs three bands unless you tell it not to* |
 | The change survives `install.sh` and a restart | **current** | pass — installed file byte-identical to the repo, zero filter-chain lines in the journal, and the reloaded graph re-measures **−0.951 dBTP / −1.012 sample**, the same figures the live-tuned graph gave before the restart |
-| Virtual sink at unity after the restart | **current** | **fail, and it is not the graph's fault** — PipeWire restored it at **82%**, which is −5.17 dB *into* the chain on pactl's cubic scale. Restored to 100% by hand. This is the second time a restart has moved it; `assert_unity_volume` catches it in the tools but nothing catches it while listening |
+| Virtual sink at unity after the restart | **current** | **fail, and it is not the graph's fault** — PipeWire restored it at **82%**, which is −5.17 dB *into* the chain on pactl's cubic scale. Restored to 100% by hand. This is the second time a restart has moved it; `assert_unity_volume` catches it in the tools but nothing catches it while listening. **Corrected 13 Aug 2026: restarts were never moving it — the volume keys were.** They target the virtual sink because it is the default, and it was watched changing 76% → 88% between two consecutive reads with no restart in between. Not a failure at all, and not something to fix: see *Volume dependence*, which had already ruled that this sink cannot be pinned to unity |
 | Stage 10b changes nothing but the band it is aimed at | **current** | pass — outside 500–1300 Hz the largest third-octave change across five signals is **0.13 dB**. Measured old-against-new in one session, both graphs live at once as separate sinks |
 | Stage 10b costs no headroom | **current** | pass — sample peak **−1.012 to −1.015 dBFS**, unchanged, on the four signals that reach the ceiling, and loudness moves **+0.00 LU** on all three real masters (+0.10 sweep, +0.20 square). Offline, the sweep — the only signal that has ever bound this chain — predicts **−0.396 dBTP** against a −0.398 baseline. A cut before the brickwall is free because the brickwall was already the binding stage |
 | Square-wave capture peak is a capture artefact, not the chain | **current** | noted — `square100` reads −1.013 dBFS on hardware but **−1.864 offline**. The hardware peak lands at t = 1.108 s, 8 ms after audio starts: a `pw-cat` playback transient, identical in both graphs. Steady state is −2.06 (old) / −2.12 (new). Trim 0.3 s from each end before reading a level off any `pw-cat` capture |
@@ -1913,6 +1973,12 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | Stage 12a changes nothing but level (18 kHz corner) | superseded | pass — null residual was a pure 0.695 dB gain change on pink and sweep, to **0.02 dB** |
 | Drivers not the binding constraint at the chain's own output | current | pass — **~20 dB of margin** at 800 Hz, the one frequency that compresses, on programme-level pink through the whole graph after the `g_out` 3.00 change |
 | Stage 11's `Hx` centre matches where the drivers actually run out | current | pass — 800 Hz measured, `Hx` peaks at 761 Hz; threshold sits 2.6 dB conservative |
+| Stage 10b is aimed at a real driver resonance | **session D, acoustic** | pass — with the source file on both devices the driver separates from the chain, and it peaks **+7.8 dB at 800 Hz** re its own 1.6–4 kHz plateau. The chain cuts 12.8 dB there and the acoustic result matches the iPhone to **−0.2 dB**. First confirmation on material 10b was not tuned on |
+| Stage 10c closes the gap it was built for | **session D, acoustic** | pass — **+0.2 dB** at 2500 Hz and +0.5 at 3150 against the iPhone. Read as "matched": both are inside the 1.4 dB re-setup repeatability, not resolved to 0.2 dB |
+| The 400–630 Hz excess is not a defect | **session D, acoustic + listening** | pass, and **tested** — the iPhone reads 6–12 dB quieter there, but the driver has no resonance at 500 Hz and both curves are clean rolloffs differing only in knee. A −5 dB bell at 500 Hz Q 1.6 was built as a separate `-TEST` sink, verified end to end (delivering −2.9 dB acoustically, nothing above 1.25 kHz moving, no headroom cost) and A/B'd. **The uncut chain won.** Do not re-propose it |
+| The chain is time-coherent | **session D, offline** | pass — group delay flat within **2.2 ms** from 50 Hz to 12.5 kHz on a −46 dBFS impulse, the one excursion being −1.3 ms at 800 Hz where 10b's notch is. Impulse energy spreads 0.1 ms |
+| No cross-band ducking | **session D, offline** | pass — midrange gain against bass content is **r = −0.04** (0.1 dB per 10 dB). The bass band compresses itself at r = −0.79, which is its job. Gate per band: on a broadband gate this reads a spurious 14–17 dB swing |
+| The harmonic branch is inaudible in band power on programme | **session D, offline** | pass — on a bass-heavy EDM master, the fourth source tested, muting stages 5–8 moves 490–1008 Hz by **+0.09 dB** at worst. See *What the harmonic branch actually contributes* |
 | Capture chain not the source of the measured distortion | current | pass — mic 20 dB below its own ceiling at the loudest point; a constant probe tone held to **0.18 dB** while the test tone lost 2 dB |
 | `sudo sh install.sh uninstall` reverts cleanly | — | **not run** — needs sudo. Its five removal paths were checked against what is on disk and cover it exactly, with nothing left behind |
 
