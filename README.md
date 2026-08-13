@@ -577,12 +577,21 @@ against `tools/lt-coeffs.py`'s sweep-derived 761 Hz Q 2.63.
 
 **Why `mk_2` was not enough.** It went in at session A and the gap got *worse*.
 The resonance is excited by content, not gain; this master is dense through
-600–900 Hz where the trailer was not. The stage 5–8 harmonic branch deposits at
-490–1008 Hz by construction, and this master's energy peaks below 60 Hz, so
-that branch works far harder here and lands straight on the resonance. And GOTT
-gives back 2.8 dB more broadband on dense material, unevenly across its bands
-(−3.4/−3.3/−4.4/−5.0). A band makeup is the wrong place for a *fixed* acoustic
-correction; a bell after the compressor is the right one.
+600–900 Hz where the trailer was not. And GOTT gives back 2.8 dB more broadband
+on dense material, unevenly across its bands (−3.4/−3.3/−4.4/−5.0). A band
+makeup is the wrong place for a *fixed* acoustic correction; a bell after the
+compressor is the right one.
+
+> **Correction, 13 Aug 2026.** This paragraph used to carry a third reason —
+> that the stage 5–8 harmonic branch lands at 490–1008 Hz, that this master's
+> energy peaks below 60 Hz, and that the branch therefore "works far harder
+> here and lands straight on the resonance". **Measured, and false.** Isolating
+> the branch by difference (`Gain 3` at 0.06 minus `Gain 3` at 0) puts it
+> **20.5 dB below** the chain's own output at 630 Hz on this master and
+> **14.2 dB below** on the trailer — so it works *less* hard on the bass-heavy
+> master, not more, and either way it cannot account for a 4.7 dB excess. See
+> *What the harmonic branch actually contributes*. Stage 10b is unaffected: it
+> was sized from the measured residual, not from this explanation.
 
 **What neither session licenses.** Nothing above 4.5 kHz. The phone reads
 5.4–7.7 dB brighter across 5–10 kHz and then the sign *flips* to −1.8 and −4.5
@@ -592,6 +601,53 @@ which establishes it is real for the speaker-to-*internal-mic* path and says
 nothing about what reaches a listener. Settling it needs a mic at the listening
 position. Also nothing below 250 Hz, where this chain's capture sits
 0.5–5.6 dB above the room floor.
+
+### What the harmonic branch actually contributes
+
+Stages 5–8 are the largest structure in this graph — 60-odd nodes, most of the
+node count — and until 13 Aug 2026 nobody had measured how much of the output
+they are responsible for on real programme. The answer is: **very little, and
+far less than every explanation in this file assumed.**
+
+Isolate the branch by difference — render with `s8sum Gain 3 = 0.06`, render
+again at `0`, subtract — and measure the branch's own output against the chain
+total in the bands it lands in:
+
+| material | 200 Hz | 250 | 315 | 400 | 500 | 630 | 800 |
+|---|---|---|---|---|---|---|---|
+| hot master (−5.4 LUFS, sub-heavy) | −20.7 | −19.6 | −22.3 | −22.5 | −18.2 | −20.5 | −25.6 |
+| music1 | −20.4 | −16.9 | −21.7 | −23.2 | −18.8 | −14.2 | −24.5 |
+| music2 | −22.3 | −24.0 | −24.8 | −25.5 | −20.1 | −18.3 | −22.6 |
+| **25–150 Hz sweep** | **−0.0** | **−0.2** | **−0.4** | **−1.1** | **+0.0** | **−0.6** | **−0.4** |
+
+dB of branch relative to the chain's total in that band. On music the branch is
+0.5–4% of the power, so switching it **off entirely** moves the 490–1008 Hz
+total by −0.01 dB (hot), −0.02 (music1), +0.00 (music2). On a pure bass sweep
+it is the entire output above 200 Hz, and switching it off drops that region by
+**20.0 dB**.
+
+That single contrast explains a class of error. Every stimulus that makes this
+branch visible is one real programme does not resemble, because real programme
+already has its own content in 490–1008 Hz and drowns it. Two consequences:
+
+- **The branch cannot be tuned from an acoustic A/B on music, and it cannot be
+  blamed for anything measured on one.** Both the session B explanation
+  corrected above and the first reading of session C attributed real excesses
+  to it. Neither survives.
+- **A synthetic stimulus can make a stage look 20 dB more important than it
+  is.** This is the *Test material must match programme* lesson again, one
+  level up: the material was not too quiet this time, it was too *pure*.
+
+What this does not settle is whether the branch is audible. It adds harmonics
+locked to the bass line, which is a different perceptual cue from uncorrelated
+energy at the same level, and −20 dB of correlated harmonic is not −20 dB of
+noise. Band power cannot tell those apart. `Gain 3` was left at 0.06.
+
+Cost of moving it, for whenever that gets decided by ear: across 0.00 to 0.12,
+loudness moves at most 0.04 LU on any of four signals, worst sample peak stays
+pinned at −1.012 dBFS and worst true peak at −0.912 dBTP, and the real low end
+(50–125 Hz, which stage 8's `Gain 2` owns and this does not) moves under
+0.11 dB. It is a free knob in every respect this file can measure.
 
 ### What a boost costs that a cut does not
 
