@@ -602,6 +602,42 @@ nothing about what reaches a listener. Settling it needs a mic at the listening
 position. Also nothing below 250 Hz, where this chain's capture sits
 0.5–5.6 dB above the room floor.
 
+### Session D — both stages confirmed, and one proposal rejected by ear
+
+13 Aug 2026, Crab Rave, 156 s of programme with the **same file on both
+devices**. That is the methodological step: every capture aligns to the source,
+so the comparison runs over identical music, and `driver = laptop − source −
+chain` separates the driver from the chain for the first time. Alignment is
+ground-truthed — the capture script sleeps exactly 6.00 s before playing and
+alignment recovered 6.15 s.
+
+Both shipped stages confirmed, on material neither was tuned on:
+
+| | driver, re its own 1.6–4 kHz plateau | chain does | result vs iPhone |
+|---|---|---|---|
+| **10b** notch @ 761 Hz | **+7.8 dB peak at 800 Hz** | −12.8 dB | −0.2 dB |
+| **10c** bell @ 2650 Hz | flat | +5.4 dB | +0.2 dB at 2500 |
+
+The driver's resonance is measurably where 10b was aimed, and the presence gap
+10c was built for is closed. Read both as "matched" — they are inside the
+re-setup repeatability of 1.4 dB, not resolved to 0.2 dB.
+
+**The remaining large difference is not a defect.** The iPhone reads 6–12 dB
+quieter across 400–630 Hz (worst −12.1 dB at 561 Hz, 1/6 octave). The driver has
+no local resonance at 500 Hz and both devices' curves are clean rolloffs; only
+the knee differs, ours near 400 Hz and the phone's near 800. Cutting it would
+discard real low-mid this speaker has and a phone physically cannot produce.
+
+That was then **tested rather than argued**. A −5 dB bell at 500 Hz Q 1.6
+(delivering −2.9 dB acoustically, verified end to end, nothing above 1.25 kHz
+moving, no headroom cost) was built as a separate `-TEST` sink and A/B'd against
+the installed chain. The uncut chain won. **Do not re-propose cutting
+400–630 Hz — it has been tried and rejected by ear, not just by argument.**
+
+Still open: a ~6 dB dip at 5–6.3 kHz, real in the data and consistent across
+five adjacent bands, sitting in exactly the band this chassis mic cannot read.
+Settling it needs the lid-angle control, or a mic at the listening position.
+
 ### What the harmonic branch actually contributes
 
 Stages 5–8 are the largest structure in this graph — 60-odd nodes, most of the
@@ -1938,8 +1974,21 @@ level, because a static chain is only correct at one drive level.
 **Measured, not inferred.** Setting the virtual sink to pactl's "50%" drops the
 level at the hardware sink's monitor — which is downstream of the whole graph —
 by 18.08 dB. pactl's percentage is a cubic scale, so 50% is 0.125 linear =
-−18.06 dB. The match confirms the virtual sink's volume is applied *inside* the
-DSP path, before the graph.
+−18.06 dB.
+
+> **That proof does not work, 13 Aug 2026.** The conclusion is right and the
+> evidence was not: a volume applied *after* the graph lands ahead of the
+> hardware monitor too, and would have produced the same 18.08 dB. The
+> observation cannot tell the two apart.
+>
+> What does tell them apart is **give-back on loud programme**. A post-graph
+> volume delivers exactly its own attenuation, always. A pre-graph one does not,
+> because the dynamics stop working as hard. At 60% (−11.14 dB) on a −6.3 LUFS
+> master the chain's output fell only **6.91 dB** — 4.2 dB returned by GOTT and
+> the brickwall. That is only possible upstream of them. The 50% reading was
+> taken at a level too low to engage the dynamics, where a pre-graph volume does
+> pass through exactly; both readings are correct and only the loud one is
+> diagnostic.
 
 Keeping a single GNOME entry means that sink is the user's volume control, so
 it cannot be pinned to unity: the chain necessarily sees post-volume audio.
@@ -1950,6 +1999,34 @@ The consequence to design around: **tune at one representative listening
 level.** Stages 7, 10 and 11 are level-dependent, so their thresholds are only
 correct near the level you set them at. Note the level you tuned at in the
 config next to the thresholds.
+
+**How much it actually moves, and which level is representative.** Measured on a
+−6.3 LUFS master, each column referenced to its own 1.6–10 kHz level so this is
+shape and not loudness:
+
+| re 1.6–10 kHz | 93% | 88% | 79% |
+|---|---|---|---|
+| 80 Hz | +0.88 | +1.55 | **+2.78** |
+| 200 Hz | +0.58 | +0.83 | +0.93 |
+| 800 Hz | −0.21 | −0.53 | **−1.41** |
+| 10 kHz | +0.27 | +0.49 | +0.93 |
+
+Quieter is bassier and less mid-forward — accidental loudness compensation, in
+the direction hearing wants, which is an argument for leaving it alone. Percent
+maps to dB as `60·log₁₀(pct)`: 88% is −3.3 dB, 76% is −7.2 dB.
+
+**This machine is listened to at 76–88%, and every acoustic measurement in this
+file was taken at 100%.** That is a caveat on all of them: the voicing measured
+here is 1–3 dB less bassy in the bottom two octaves than the one actually being
+judged by ear. When a measurement and an impression disagree by about that much
+down low, suspect this before concluding either is wrong.
+
+`tools/common.sh` now carries both rules rather than one. `assert_unity_volume`
+still hard-fails, because a **level** comparison in LUFS is destroyed by a 1.6 dB
+offset. `record_operating_point` never fails and prints the volume in dB into
+the graph, because a **voicing** capture is only meaningful at a level someone
+actually listens at — what makes that comparison valid is that every capture in
+it reports the same number, not that the number is 100%.
 
 If that turns out to matter audibly, the remaining option is what
 US12342139B2 actually describes — watch the sink volume and retune at runtime

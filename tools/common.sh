@@ -53,6 +53,41 @@ require_node() {
 # Note this is the opposite rule to the HARDWARE sink, whose volume sits after
 # the monitor tap and cannot affect a capture at all -- see record_sink below.
 # Set your listening level there, never here.
+#
+# ---------------------------------------------------------------------------
+# It is not only a LEVEL error. It is a VOICING error. -- session D, 13 Aug 2026
+# ---------------------------------------------------------------------------
+# Because the attenuation lands ahead of GOTT, the excursion limiter and the
+# brickwall, turning the virtual sink down makes all three work LESS, and the
+# delivered shape changes. Measured on a -6.3 LUFS master, each column re its
+# own 1.6-10 kHz level:
+#
+#     re 1.6-10 kHz     93%      88%      79%
+#     80 Hz           +0.88    +1.55    +2.78
+#     200 Hz          +0.58    +0.83    +0.93
+#     800 Hz          -0.21    -0.53    -1.41
+#     10 kHz          +0.27    +0.49    +0.93
+#
+# Quieter is bassier and less mid-forward -- accidental loudness compensation,
+# in the direction hearing wants. Percent maps to dB as 60*log10(pct): 88% is
+# -3.3 dB and 76% is -7.2 dB, not "a bit down".
+#
+# THE DECISIVE TEST, if this is ever doubted again. A post-graph volume delivers
+# exactly its own attenuation. A pre-graph one does not, because the dynamics
+# give some back. At 60% (-11.14 dB) on loud programme the chain's output fell
+# only 6.91 dB -- 4.2 dB of give-back. (The older 50% -> -18.08 dB observation
+# above does NOT distinguish the two: it was taken at a level too low to engage
+# the dynamics, where a pre-graph volume passes through exactly. Both readings
+# are correct and only the loud one is diagnostic.)
+#
+# WHAT THIS COSTS THE MEASUREMENTS, and it is not nothing: unity is the right
+# setting for REPRODUCIBILITY and the wrong one for REPRESENTATIVENESS. This
+# machine is listened to at 76-88%, so a voicing measured here at 100% is 1-3 dB
+# less bassy than the one the listener actually judges. When a measurement and
+# an ear disagree by about that much in the bass, suspect this before concluding
+# either is wrong. Take voicing captures at the listening volume, note it in the
+# capture log, and keep both sides of any A/B at the SAME volume -- that, not
+# unity as such, is what makes a comparison valid.
 assert_unity_volume() {
     pactl get-sink-volume "$1" 2>/dev/null | awk -v s="$1" '
         NR == 1 {
@@ -71,6 +106,33 @@ assert_unity_volume() {
                 exit 1
             }
         }' || exit 1
+}
+
+# record_operating_point <sink> -- for VOICING captures, where unity is not
+# required but knowing the number is.
+#
+# assert_unity_volume above is the right guard for a LEVEL measurement, where
+# two renditions are compared in LUFS and a 1.6 dB offset is fatal. It is the
+# wrong guard for a response measurement taken at the listening volume, which is
+# the only kind that can be compared against an ear. This one never fails: it
+# prints the operating point so it lands in the capture log, and every capture
+# in one comparison must show the same line or the comparison is void.
+record_operating_point() {
+    pactl get-sink-volume "$1" 2>/dev/null | awk -v s="$1" '
+        NR == 1 {
+            for (i = 1; i <= NF; i++)
+                if ($i ~ /^[0-9]+%$/) { v = $i; sub(/%/, "", v); break }
+            if (v == "") {
+                printf "operating point: UNKNOWN -- could not read %s\n", s
+                exit 0
+            }
+            db = 60 * log(v / 100) / log(10)
+            printf "operating point: %s at %s%% (%+.2f dB into the graph)%s\n",
+                   s, v, db, (v + 0 == 100 ? " -- unity" : "")
+            if (v + 0 != 100)
+                printf "  valid for voicing work as long as EVERY capture in this\n" \
+                       "  comparison reports this same number. Not valid for level work.\n"
+        }'
 }
 
 # warn_hardware_volume -- the level the SPEAKERS are at, which no capture sees.
