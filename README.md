@@ -47,6 +47,7 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
 | 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, downward thresholds −20/−15/−9/−9 dB, `g_out` +10.63 dB, `mk_2` −1.01 dB, `mk_3` +2.98 dB | **active** — the only loudness lever, and now the only voicing control too | US12342139B2 |
 | 10b | Resonance notch | `s10res_*` | builtin `bq_peaking` | 760 Hz, Q 3.0, −3.0 dB | **active** — third instrument aimed at the 761 Hz resonance, after stage 2 and `mk_2`. Delivers −2.2 dB on programme; stages 11–12 hand the rest back | — |
+| 10c | Presence lift | `s10pres_*` | builtin `bq_peaking` | 2650 Hz, Q 1.2, +3.0 dB | **active** — finishes what `mk_3` started against the iPhone 13. Delivers +2.6 to +2.8 dB on programme. Sized below its own fit (+4.0) for two-tone IMD margin | — |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → LSP sidechain comp | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −1.01 dBFS sample → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** — `th` pays for the sweep so `g_out` can spend | — |
@@ -93,8 +94,12 @@ All fourteen stages and what each one is for. Node-level detail follows below.
                                 +10.63 dB makeup: returns stage 0, then
                                 buys loudness the hardware cannot.
                                 The only loudness lever in the chain, and
-                                via mk_2/mk_3 the only voicing control:
+                                via mk_2/mk_3 a voicing control too:
                                 -1.01 dB at 120-1k, +2.98 dB at 1-6k
+        [10b] resonance notch   bq_peaking 760 Hz Q3.0 -3.0 dB
+        [10c] presence lift     bq_peaking 2650 Hz Q1.2 +3.0 dB
+                                both fixed, both from the iPhone 13 A/B,
+                                both after GOTT so no makeup can drift them
          [11] excursion limit   sidechain = Hx displacement estimate
                                 (low-pass 761 Hz Q2.63), -3 dBFS 6:1
         [12a] band limit        low-pass 22 kHz Q0.707 -- first unblocked g_out
@@ -210,6 +215,14 @@ Stages 10 to 13 are plain stereo in series.
              │           g_out +10.63 dB, returning stage 0's trim
              │           mk_2 = 0.89 (-1.01 dB), mk_3 = 1.41 (+2.98 dB)
              │                                 -- voicing, from the iPhone A/B
+             │
+             ● s10res_l/r   bq_peaking  760 Hz Q 3.0  -3.0 dB
+             │                                 761 Hz cone resonance
+             ● s10pres_l/r  bq_peaking 2650 Hz Q 1.2  +3.0 dB
+             │                                 presence, same A/B
+             │           fixed corrections, after GOTT so no band makeup
+             │           can drift them, before 11 so its detector sees
+             │           them, before 12 so the brickwall keeps the ceiling
              │
              ├─ ● s11hx_l/r  bq_lowpass 761 Hz Q 2.63  displacement estimate
              │                                 ↓
@@ -518,7 +531,7 @@ can. Note the same class of footgun is already recorded below for Calf's
 ### Voicing against a reference speaker
 
 Everything else in this chain is set from this machine's own measurements.
-Four values are not: `g_out` 3.40, `mk_2`, `mk_3`, and stage 10b. They come
+Five values are not: `g_out` 3.40, `mk_2`, `mk_3`, stage 10b and stage 10c. They come
 from acoustic A/Bs against an iPhone 13, and they are the only numbers here
 chosen by comparison with another speaker.
 
@@ -533,13 +546,26 @@ only the emitting device changes.
 |---|---|---|
 | programme | trailer, −10.26 LUFS | *Bum Baa Diga Diga*, −5.7 LUFS, LRA 3.2 |
 | chain state | before `mk_2`/`mk_3` | after them |
-| set from it | `mk_2`, `mk_3`, `g_out` 3.40 | stage 10b |
+| set from it | `mk_2`, `mk_3`, `g_out` 3.40 | stages 10b and 10c |
 | repeatability | sd 1.4 dB, worst 3.5 (cross-session) | sd 0.77, worst 2.2 (split-half) |
 
 **Session B is what confirms session A.** The 2–3.2 kHz presence deficit that
 `mk_3` was built to fill went from **+6.2 dB to +3.4 dB** against the phone,
 measured on a master with nothing in common with the one the fix was tuned on.
 That is the change landing where it was aimed, on material it never saw.
+
+**Stage 10c finishes that one.** What `mk_3` left is still +4.5 dB at 2520 Hz
+and +3.5 at 3175, and four criteria say it is safe to act on where 5–10 kHz is
+not: it is inside the licensed window, it is twice the worst-case
+repeatability, it holds one sign across four adjacent bands, and dividing the
+chain's own contribution out leaves the *driver* 7.6 dB down with the chain
+already adding 3.0 back. `mk_3` is aimed correctly and too shallow, which is
+the same position stage 10b was in. The instrument is a bell rather than more
+`mk_3` because GOTT band 3 runs to 6000 Hz: buying +3 dB at 2520 through the
+makeup costs the same +3 dB at 5040, in the region three sessions have now
+declined to touch, and another +3 dB at 1000 Hz where the chain is already too
+hot. See *What a boost costs that a cut does not*, below — the gain shipped is
+below the gain the fit wants, and distortion is why.
 
 **And it found one thing left.** At 794 Hz the chain reads 6.5 dB *hotter* than
 the phone. Most of that is the phone rolling off below 1 kHz — its own speaker
@@ -566,6 +592,51 @@ which establishes it is real for the speaker-to-*internal-mic* path and says
 nothing about what reaches a listener. Settling it needs a mic at the listening
 position. Also nothing below 250 Hz, where this chain's capture sits
 0.5–5.6 dB above the room floor.
+
+### What a boost costs that a cut does not
+
+Stage 10b was free. Stage 10c is a boost of similar size in the same slot, and
+the naive expectation is that it costs true peak. It does not — stage 12 was
+already the binding stage, so a pre-limiter boost turns into density, and the
+sweep's true peak actually *improves* from −0.396 to −0.447 dBTP with it in.
+
+What it costs instead is **intermodulation**, and single-tone THD cannot see
+it. SMPTE 60 + 2650 Hz at 4:1, sidebands to the fifth order, this graph against
+the one before it:
+
+| stimulus peak | before | **+3.0 shipped** | +4.0 fitted | +2.0 |
+|---|---|---|---|---|
+| −12 dBFS | 0.008 % | 0.008 | 0.008 | 0.008 |
+| −9 | 0.069 | 0.071 | 0.072 | 0.070 |
+| −6 | 0.142 | **0.329** | 1.988 | 0.143 |
+| −3 | 1.320 | **8.135** | 9.876 | 5.644 |
+
+The knee is stage 12, not the squaring branch — muting stage 8's `Gain 3`
+leaves it unchanged at 2.085 and 9.847. A 60 Hz sine carrying 80% of the
+amplitude drives the limiter into periodic gain reduction at 60 Hz, which
+amplitude-modulates everything else present, and raising 2650 Hz gives it more
+to modulate.
+
+**Real programme does not do this, and that is what licensed shipping it.**
+Take `music2`, renormalise to −6.3 LUFS and clip it at 0 dBFS — harder than
+anything that plays here — band-pass 2–4 kHz, and measure the gain the chain
+applies to that band moment to moment on 5 ms envelopes:
+
+| graph | mean | sd | p95−p5 |
+|---|---|---|---|
+| before | +4.52 dB | 4.786 | 13.159 |
+| **+3.0 shipped** | **+5.95** | **4.850** | **13.410** |
+| +4.0 fitted | +6.44 | 4.879 | 13.529 |
+
+1.3% more gain modulation for 1.4 dB more presence. Music is broadband and
+never hands the limiter one dominant bass sine, so the two-tone knee is a
+stress result rather than a defect — but it is a real régime, the master this
+was measured on does peak below 60 Hz, and +3.0 sits six times lower on it than
++4.0 for 0.5 dB less delivered gain. That is a cheap margin, so it was taken.
+
+The general rule this leaves: **in a chain that ends in a limiter, test a boost
+for intermodulation and a cut for headroom.** Each is nearly free on the other's
+measurement, which is exactly how one of them gets shipped unmeasured.
 
 ### Why stage 10 is GOTT and not Calf
 
@@ -1721,7 +1792,7 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | `effect_input.speaker-tuning` in `pactl list sinks short` | current | pass — present, 48000 Hz |
 | No warnings or errors in the PipeWire journal on load | current | pass — zero filter-chain lines since the restart |
 | `tools/lt-coeffs.py` standalone, self-test passes | current | pass — 15/15 |
-| `tools/offline-chain.py --self-test` | current | pass — 21/21, and it re-reads the config each run |
+| `tools/offline-chain.py --self-test` | current | pass — 23/23, and it re-reads the config each run |
 | Null test residual below −60 dBFS above 30 Hz | **skeleton** | pass — **−inf dBFS**, captures bit-identical. Says nothing about the tuned chain |
 | Loudness match within 0.1 LU before any trim | **skeleton + stages 0–2, 9, 10, 13** | pass — **+0.00 LU** as a skeleton, **+0.07 LU** with those stages |
 | Skeleton is bypass-equivalent apart from stage 1 | **skeleton** | pass — tracked a stage-1-only prediction to **±0.01 dB** |
@@ -1738,6 +1809,10 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | Stage 10b costs no headroom | **current** | pass — sample peak **−1.012 to −1.015 dBFS**, unchanged, on the four signals that reach the ceiling, and loudness moves **+0.00 LU** on all three real masters (+0.10 sweep, +0.20 square). Offline, the sweep — the only signal that has ever bound this chain — predicts **−0.396 dBTP** against a −0.398 baseline. A cut before the brickwall is free because the brickwall was already the binding stage |
 | Square-wave capture peak is a capture artefact, not the chain | **current** | noted — `square100` reads −1.013 dBFS on hardware but **−1.864 offline**. The hardware peak lands at t = 1.108 s, 8 ms after audio starts: a `pw-cat` playback transient, identical in both graphs. Steady state is −2.06 (old) / −2.12 (new). Trim 0.3 s from each end before reading a level off any `pw-cat` capture |
 | Stage 10b delivers what it specifies | **current** | **partial, by design and measured** — the filter is −2.81 dB over the 794 Hz third-octave but programme gets **−2.22** (hot track), **−2.05** (music2), **−1.67** (music1), **−1.33** (sweep). Stages 11–12 are dynamic and back off as the notch lowers what they see. Left at −3.0 rather than inflated to chase it, since the give-back is programme-dependent and in the useful direction |
+| Stage 10c adds no distortion | **current** | pass — THD through the whole graph moves **+0.021 pp** at 400 Hz (1.049 → 1.071) and **≤ 0.001 pp** on 2650 Hz tones at −20, −12 and −3 dBFS. Intermodulation needed a separate instrument and found a real limiter knee, which is why the gain shipped is +3.0 and not the fitted +4.0 — see *What a boost costs that a cut does not* |
+| Stage 10c costs no headroom | **current** | pass — sample peak **−1.012 dBFS**, unchanged, on all four signals that reach the ceiling. Worst true peak **−0.447 dBTP** (sweep) against −0.396 before, so the margin to the −0.20 ceiling *widens* from 0.196 to 0.247 dB. Loudness **+0.31** (music1), **+0.33** (music2), **+0.38** (pink); the sweep and square lose 0.08–0.10 |
+| Stage 10c changes little but the band it is aimed at | **current** | pass, with one honest exception — on real programme the largest change outside 1.6–4 kHz is **0.73 dB** (music1) and **0.63** (music2), and both of those sit at 5 kHz, which is the bell's own skirt doing what it is shaped to do. Below 1 kHz nothing moves more than **0.13 dB**. The exception is `pink-prog`, which drops **0.8 dB broadband**: a stationary full-band signal makes stage 12 work harder, and that is the limiter, not the filter |
+| Stage 10c delivers what it specifies | **current** | **partial, by design and measured** — ideal over the 2500 Hz third-octave is +2.88 dB; programme gets **+2.78** (music1, 97%), **+2.56** (music2, 89%), **+2.09** (pink, 73%). A boost survives the dynamic stages better than 10b's cut did, because what they take back is broadband where the correction is narrow. The sweep goes *negative* (−0.32), the same pathology 10b showed on it |
 | The 761 Hz correction reproduces across programme | **current** | pass — measured on a −5.7 LUFS master with LRA 3.2 LU, then confirmed against two trailer tracks and two synthetic signals. Split-half spread on the acoustic A/B it came from: **sd 0.77 dB, worst 2.2 dB** |
 | Worst-case margin not reduced by the loudness change | **current** | pass — **0.371 → 0.463 dB**. Louder and further from the ceiling |
 | Loudness on real programme material | **current** | pass — **+0.78 LU** (music1) and **+0.61 LU** (music2, dialogue at −11.25 LUFS arriving at +0.634 dBTP) |
@@ -1896,7 +1971,7 @@ the config rather than a transcription of it, so none of it can quietly drift.
 
 | Tool | What it does |
 |---|---|
-| `tools/offline-chain.py` | Runs the installed graph over a wav without reinstalling. `--sweep` for parameter searches, `--measure` for LUFS / peaks / THD, `--self-test` for 21 checks that need no hardware. |
+| `tools/offline-chain.py` | Runs the installed graph over a wav without reinstalling. `--sweep` for parameter searches, `--measure` for LUFS / peaks / THD, `--self-test` for 23 checks that need no hardware. |
 | `tools/dsp_offline.py` | The machinery behind it: config parser, PipeWire builtins in numpy, LSP plugins through `ffmpeg -af lv2`, and the measurement functions. Imported, not run. |
 | `tools/true-peak.py` | Exact inter-sample peak, and `--compare` against the two ffmpeg meters that get it wrong. Exits non-zero above the ceiling, so it can gate a change. |
 | `tools/lt-coeffs.py` | Linkwitz transform coefficients for stage 2, with `--self-test`. |
