@@ -694,9 +694,51 @@ What the chain does do is remove **3.2–4.2 dB** of short-term dynamic range
 (50 ms and 400 ms windows, source against output). No pumping, just flatter.
 Whether that is right for a laptop speaker is taste, not physics.
 
-Still open: a ~6 dB dip at 5–6.3 kHz, real in the data and consistent across
-five adjacent bands, sitting in exactly the band this chassis mic cannot read.
-Settling it needs the lid-angle control, or a mic at the listening position.
+#### The 5–6.3 kHz dip — closed, and not the way the test intended
+
+Session D left one thing open: a ~6 dB dip at 5–6.3 kHz, consistent across five
+adjacent bands, sitting in the band this chassis mic is least able to read. The
+control for it is **lid angle** — the mic is in the display bezel and the
+speakers are on the deck, so the lid is the one part of the speaker→mic geometry
+that can be varied without moving the mic relative to the room. Three captures
+of the same excerpt, everything else held: same file, same sink, same 100%
+operating point, same room.
+
+| | normal vs upright | all three angles |
+|---|---|---|
+| 5 kHz | **0.1 dB** | **9.0 dB** |
+| 6.3 kHz | 0.5 | 3.3 |
+| 4 kHz | 0.6 | 7.5 |
+| 8 kHz | 2.4 | 8.0 |
+| mean, 4 kHz and up | 1.17 | 6.10 |
+| mean, 200 Hz–2.5 kHz | 1.57 | 3.37 |
+
+**The result is not the clean one the test was designed for.** Two angles agree
+at 5 kHz to 0.1 dB; the third disagrees with both by 9 dB, more than the dip
+itself. SNR was 26–30 dB above the floor in all three, so noise subtraction is
+not producing it. That ambiguity cannot be resolved with this microphone,
+because it cannot be moved independently of the drivers — normal and upright
+agreeing may mean the dip belongs to the driver, or only that two similar
+geometries are similar.
+
+**The decision does not need it resolved.** A band whose measured level moves
+9 dB with lid angle cannot be corrected by a fixed filter aimed at what this mic
+hears: the listener sits at a third position, and under either reading the
+correction would be wrong there. No EQ, and the question is closed on that
+ground rather than on a verdict about the driver.
+
+What the test is worth beyond its own question: it is the first measurement of
+**how much of any acoustic result here belongs to the geometry rather than to
+the speaker** — ±1.6 dB in the midrange between two ordinary lid angles, ±3.4 dB
+across the full range. That arrives next to the 1.4 dB re-setup repeatability by
+a completely independent route, and it is the bar a finding must clear before it
+is a property of the speaker at all.
+
+It also sorts session D's own results retroactively. 10b's **+7.8 dB** driver
+peak at 800 Hz against 2.1 dB of path variability survives. The 400–630 Hz
+excess at **6–12 dB** against 3.4–4.6 dB survives. The 5–6.3 kHz dip at
+**6–8 dB** against 9.0 dB does not — and it was the one finding already declined
+on the strength of the note that this mic cannot read above 4.5 kHz.
 
 ### What the harmonic branch actually contributes
 
@@ -1979,6 +2021,8 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | The chain is time-coherent | **session D, offline** | pass — group delay flat within **2.2 ms** from 50 Hz to 12.5 kHz on a −46 dBFS impulse, the one excursion being −1.3 ms at 800 Hz where 10b's notch is. Impulse energy spreads 0.1 ms |
 | No cross-band ducking | **session D, offline** | pass — midrange gain against bass content is **r = −0.04** (0.1 dB per 10 dB). The bass band compresses itself at r = −0.79, which is its job. Gate per band: on a broadband gate this reads a spurious 14–17 dB swing |
 | The harmonic branch is inaudible in band power on programme | **session D, offline** | pass — on a bass-heavy EDM master, the fourth source tested, muting stages 5–8 moves 490–1008 Hz by **+0.09 dB** at worst. See *What the harmonic branch actually contributes* |
+| The 5–6.3 kHz dip is not an EQ target | **session D, acoustic** | closed — three lid angles, everything else held. 5 kHz moves **9.0 dB** across them, more than the dip, while two of the three agree to 0.1 dB. That ambiguity is unresolvable with a mic that cannot move independently of the drivers, and does not need resolving: no fixed filter can correct a band geometry moves by 9 dB |
+| How much of an acoustic result is the geometry, not the speaker | **session D, acoustic** | measured — **±1.6 dB** across 200 Hz–2.5 kHz between two ordinary lid angles, **±3.4 dB** across the full range, **±6.1 dB** above 4 kHz. Independent agreement with the 1.4 dB re-setup repeatability. This is the bar a finding clears before it is a property of the speaker |
 | Capture chain not the source of the measured distortion | current | pass — mic 20 dB below its own ceiling at the loudest point; a constant probe tone held to **0.18 dB** while the test tone lost 2 dB |
 | `sudo sh install.sh uninstall` reverts cleanly | — | **not run** — needs sudo. Its five removal paths were checked against what is on disk and cover it exactly, with nothing left behind |
 
@@ -2020,7 +2064,10 @@ Outstanding work, as distinct from unresolvable questions:
   useful number, and a track with sustained deep bass is the gap: both current
   tracks are from the same trailer, so they share a mastering chain and are not
   really two independent samples. Note `tests/material/` is gitignored, so these
-  live only on this machine.
+  live only on this machine. **Partly addressed by session D**, which ran on a
+  −6.33 LUFS sustained-deep-bass EDM master from an unrelated mastering chain —
+  the exact gap named here — but played from `~/Music`, so it is a third
+  *sample* and not yet a third *fixture*.
 - ~~**Whether `g_out` 3.40 is worth taking.**~~ — **taken, 12 Aug 2026.** It
   was left as a listening decision about limiter density that nothing in
   `tools/` could make. What settled it was not a tool but a *reference*: an
