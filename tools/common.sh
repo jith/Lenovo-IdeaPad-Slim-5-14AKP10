@@ -88,6 +88,17 @@ require_node() {
 # either is wrong. Take voicing captures at the listening volume, note it in the
 # capture log, and keep both sides of any A/B at the SAME volume -- that, not
 # unity as such, is what makes a comparison valid.
+#
+# BUT IT SATURATES, so this does not apply to every kind of material. The table
+# above stops right where the curve flattens. Measured offline over four input
+# attenuations, the voicing is fixed to 0.02 dB below -26 LUFS at the graph
+# input and within 0.4 dB below -20 LUFS -- all the movement is above that, and
+# the chain stops compressing too (0.89 dB of gain returns in the first 6 dB,
+# 0.04 dB over the next 14). So the level caveat is a MUSIC caveat. Film,
+# television and streaming video arrive near -21 to -23 LUFS after PipeWire's
+# 5.1 downmix and land in the flat region, where one fixed voicing applies and
+# the operating point stops mattering. See README, "Volume dependence" and
+# "Channel count is pinned too".
 assert_unity_volume() {
     pactl get-sink-volume "$1" 2>/dev/null | awk -v s="$1" '
         NR == 1 {

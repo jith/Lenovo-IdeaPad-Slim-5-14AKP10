@@ -391,6 +391,84 @@ add a second block rather than replacing the first.
 `bq_raw` also clamps every coefficient to ±10 at load and at runtime.
 `tools/lt-coeffs.py` warns when a value would be truncated.
 
+## Channel count is pinned too — multichannel is downmixed before the graph
+
+`capture.props` advertises `audio.position = [ FL FR ]`, and the sink cannot be
+anything else: every stage is duplicated per channel and stage 9 crosses the
+two. A 5.1 source is converted in the client adapter *upstream* of the filter
+chain, so the graph only ever sees two channels. This matters for streaming
+video, and none of it was documented until 13 Aug 2026.
+
+**The downmix matrix, measured.** A 5.1 probe carrying one distinct tone per
+channel, played to the virtual sink and tapped twice — at
+`effect_input.speaker-tuning`'s monitor (post-downmix, pre-graph) and at the
+hardware monitor (post-graph). One tone per channel means each coefficient is
+read directly off its own DFT bin, with no matrix to solve:
+
+| source channel | → L | → R |
+|---|---|---|
+| FL, FR | **1.0000** | — |
+| FC | 0.7071 (−3.01 dB) | 0.7071 |
+| BL, BR | 0.7071 | — |
+| LFE | 0.3536 (−9.03 dB) | 0.3536 |
+
+Front channels pass at **unity**. PipeWire 1.6.2 defaults `channelmix.normalize`
+to false and nothing on this machine overrides it, so there is no protective
+scaling: the L coefficients sum to 2.768, which is **+8.84 dB** were every
+channel coherent and **+3.27 dB** as a power sum for uncorrelated content. That
+gain lands in exactly the place the volume keys land — ahead of GOTT, the
+excursion limiter and the brickwall.
+
+**It does not bite, and the reason is level, not headroom.** Film and television
+are mastered far below music; Netflix's delivery spec is −27 LKFS dialog-gated,
+which for a full mix puts integrated programme somewhere near −24 to −26 LUFS.
+Add the downmix gain and it reaches the graph at roughly **−21 to −23 LUFS** —
+inside the region where this chain's voicing has stopped moving, though near its
+upper edge, so call it within a few tenths of a dB of fully settled rather than
+deep inside it. *Volume dependence* measures that region. Streaming therefore
+gets very nearly the chain's **linear** voicing, stable regardless of content and
+about 3.5 dB bassier in the bottom two octaves than a loud music master gets. The
+risk runs the opposite way to the one the coefficient sum suggests, and it is
+benign.
+
+**Two second-order effects, both real and both small.** LFE folds in at −9.03 dB
+and then meets stage 2's Linkwitz boost, whose measured gain at 60 Hz is
+**+5.99 dB** — so LFE reaches the drivers quieter than it sat in the mix, not
+louder. And the surround channels arrive **hard-panned** (BL only to L, BR only
+to R), which makes them pure side content, where stage 9's bass-mono acts on
+them. Measured against centred content of the same frequency: a hard-panned tone
+is **4.24 dB down at 300 Hz**, 1.26 dB at 500 Hz, 0.86 dB at 1250 Hz. Correct
+behaviour for a laptop speaker — but surround-only bass effects lose more of
+themselves than centre bass does.
+
+**A cross-validation worth keeping.** Chain gain measured on hardware and
+predicted offline agree to **0.04 dB at 60 Hz and 0.00 dB at 200 Hz** — but only
+once the virtual sink's 94% (−1.61 dB) is added *between* the two taps. That
+agreement is an independent confirmation that the sink volume is applied after
+the monitor tap and before the graph, by a route not used elsewhere in this file.
+The 800 Hz tone is **not** part of that evidence: it sits on the 760 Hz notch,
+where a tone and a third-octave band average legitimately disagree.
+
+**What actually reaches this sink is probably always stereo.** Netflix and
+Hotstar in a Linux browser deliver stereo AAC; multichannel and Atmos need their
+Windows or macOS apps. That is not verified here and cannot be from this machine,
+so check rather than assume — while something is streaming:
+
+```sh
+pactl list sink-inputs | grep -E "Channel Map|application.name"
+```
+
+`front-left,front-right` means none of the above ever engages. The path that
+would engage it is a local 5.1 file in mpv or VLC. Bitstream passthrough
+(Dolby, DTS) cannot traverse a filter chain at all, which is moot for internal
+speakers.
+
+**Untested, and worth watching:** `alsa_card.pci-0000_04_00.1` is the HDMI audio
+card, currently `off` with no display attached. The virtual sink carries
+`priority.session = 900` against the raw sink's 100, so when a display is
+plugged in it is not known whether an HDMI sink outranks it or whether audio
+stays on the internal speakers. Needs a cable to settle.
+
 ## Headroom budget
 
 Kept in a comment block at the top of `files/50-speaker-tuning.conf`. Keep it
@@ -2023,6 +2101,10 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | The harmonic branch is inaudible in band power on programme | **session D, offline** | pass — on a bass-heavy EDM master, the fourth source tested, muting stages 5–8 moves 490–1008 Hz by **+0.09 dB** at worst. See *What the harmonic branch actually contributes* |
 | The 5–6.3 kHz dip is not an EQ target | **session D, acoustic** | closed — three lid angles, everything else held. 5 kHz moves **9.0 dB** across them, more than the dip, while two of the three agree to 0.1 dB. That ambiguity is unresolvable with a mic that cannot move independently of the drivers, and does not need resolving: no fixed filter can correct a band geometry moves by 9 dB |
 | How much of an acoustic result is the geometry, not the speaker | **session D, acoustic** | measured — **±1.6 dB** across 200 Hz–2.5 kHz between two ordinary lid angles, **±3.4 dB** across the full range, **±6.1 dB** above 4 kHz. Independent agreement with the 1.4 dB re-setup repeatability. This is the bar a finding clears before it is a property of the speaker |
+| A 5.1 source reaches the speakers intact | **current** | pass — PipeWire downmixes upstream of the graph, matrix measured exactly: fronts at **unity**, FC and surrounds **0.7071**, LFE **0.3536**, no normalisation. Nothing fails, nothing is dropped. See *Channel count is pinned too* |
+| The downmix gain is not a headroom hazard | **current** | pass — worst case **+8.84 dB** coherent, **+3.27 dB** uncorrelated, landing pre-graph. Harmless because streaming arrives at −21 to −23 LUFS, in the flat voicing region, ~7 dB below the material this chain was tuned on |
+| The level-dependent voicing settles | **current, offline** | measured — fixed to **0.02 dB below −26 LUFS** at the graph input, within 0.4 dB below −20 LUFS, all movement above that. Extends the 93/88/79% table, which stops exactly where the curve flattens |
+| Sink volume is pre-graph — third, independent proof | **current** | pass — hardware and offline chain gain agree to **0.04 dB at 60 Hz and 0.00 dB at 200 Hz**, but only with the sink's 94% (−1.61 dB) inserted *between* the two taps. Neither the 50% reading nor the give-back test is involved |
 | Capture chain not the source of the measured distortion | current | pass — mic 20 dB below its own ceiling at the loudest point; a constant probe tone held to **0.18 dB** while the test tone lost 2 dB |
 | `sudo sh install.sh uninstall` reverts cleanly | — | **not run** — needs sudo. Its five removal paths were checked against what is on disk and cover it exactly, with nothing left behind |
 
@@ -2127,6 +2209,41 @@ shape and not loudness:
 Quieter is bassier and less mid-forward — accidental loudness compensation, in
 the direction hearing wants, which is an argument for leaving it alone. Percent
 maps to dB as `60·log₁₀(pct)`: 88% is −3.3 dB, 76% is −7.2 dB.
+
+**It is not a slope — it saturates, and that table stops right where it flattens.**
+Measured 13 Aug 2026 by running `tests/material/music1.wav` through
+`tools/offline-chain.py` at four input attenuations, silently and with no system
+change. These are **transfer** figures — output band minus input band, then
+referenced to their own 1.6–10 kHz level — so only the *movement across columns*
+compares to the table above, not the absolute values, which carry the chain's
+own shape rather than a master's:
+
+| transfer, re 1.6–10 kHz | −14.25 LUFS | −20.24 | −26.22 | −34.22 |
+|---|---|---|---|---|
+| 50 Hz | −8.05 | −4.85 | −4.47 | −4.46 |
+| 63 Hz | −7.76 | −4.56 | −4.28 | −4.30 |
+| 80 Hz | −5.90 | −4.26 | −4.18 | −4.17 |
+| 800 Hz | −13.35 | −12.93 | −12.86 | −12.85 |
+| 2500 Hz | +2.35 | +2.31 | +2.31 | +2.31 |
+| **absolute gain, 1.6–10 kHz** | **+9.40** | **+10.25** | **+10.29** | **+10.29** |
+
+Everything happens in the first 6 dB. Below about **−26 LUFS at the graph input
+the voicing is fixed to 0.02 dB**, and below −20 LUFS it is within 0.4 dB of
+fixed. The chain also stops compressing: 0.89 dB of gain returns between the
+first two columns and 0.04 dB over the remaining 14 dB.
+
+The two tables agree where they can be compared. Over 80 Hz the first moves
+**1.90 dB** across its 4.2 dB span and the second **1.64 dB** across its first
+6 dB step — different material, different method, same effect. They also do not
+overlap: the first spans −8.2 to −12.4 LUFS at the graph input, the second
+−14.25 to −34.22. Together they cover −8 to −34 LUFS, and the movement is all
+above −20.
+
+The practical consequence is that **the representative-level caveat applies to
+music and to almost nothing else.** Anything mastered quieter than about
+−26 LUFS — film, television, streaming video, see *Channel count is pinned too* —
+reaches the graph in the flat region and gets one fixed voicing, so a measurement
+taken there needs no level caveat at all.
 
 **This machine is listened to at 76–88%, and every acoustic measurement in this
 file was taken at 100%.** That is a caveat on all of them: the voicing measured
