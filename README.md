@@ -45,8 +45,8 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | −20 dBFS, 20:1 — levels the n-th power law | **active** | CN115442709B, US10382857 |
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.6`, `Gain 3 = 0.06` | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
-| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, downward thresholds −20/−15/−9/−9 dB, `g_out` +10.63 dB, `mk_2` −1.01 dB, `mk_3` +1.48 dB, `mk_4` −1.50 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry a matched −1.5 dB **tilt** correction, shipped 14 Aug 2026 | US12342139B2 |
-| 10b | Resonance notch | `s10res_*` | builtin `bq_peaking` | 760 Hz, Q 3.0, −3.0 dB | **active** — third instrument aimed at the 761 Hz resonance, after stage 2 and `mk_2`. Delivers −2.2 dB on programme; stages 11–12 hand the rest back | — |
+| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, downward thresholds −20/−15/−9/−9 dB, `g_out` +10.63 dB, `mk_2` **0.00 dB**, `mk_3` +1.48 dB, `mk_4` −1.50 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry a matched −1.5 dB **tilt** correction; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b | US12342139B2 |
+| 10b | Resonance notch | `s10res_*` | builtin `bq_peaking` | 760 Hz, Q 3.0, **−3.7 dB** | **active** — since 14 Aug 2026 the *second and last* instrument aimed at the 761 Hz resonance, after stage 2. Deepened from −3.0 to absorb `mk_2`'s share so that flat band cut could be removed. Stages 11–12 hand some back | — |
 | 10c | Presence lift | `s10pres_*` | builtin `bq_peaking` | 2650 Hz, Q 1.2, +3.0 dB | **active** — finishes what `mk_3` started against the iPhone 13. Delivers +2.6 to +2.8 dB on programme. Sized below its own fit (+4.0) for two-tone IMD margin | — |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → LSP sidechain comp | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
@@ -673,7 +673,7 @@ Asked to look for gaps of the same shape before shipping, four more:
 
 | finding | verdict |
 |---|---|
-| **`mk_2` taxes 160–630 Hz by 0.5–0.7 dB** to fix a narrow 761 Hz excess that stage 10b now handles with a bell. Its own comment calls a flat band cut "blunt", and the region it taxes is one the same A/B records as *deficient* (iPhone +5.2 to +9.8 dB at 157–250 Hz) | **real, under listening test.** `mk_2 = 1.0` with `s10res` deepened to **−3.7 dB** holds 800 Hz to **+0.06 dB on music1 and +0.01 on music2** while returning +0.47 to +0.68 dB over 160–630. Costs ~0.2 dB at 40–100 Hz, which is the trade. Built as a `-TEST` sink; not shipped until it wins by ear |
+| **`mk_2` taxes 160–630 Hz by 0.5–0.7 dB** to fix a narrow 761 Hz excess that stage 10b now handles with a bell. Its own comment calls a flat band cut "blunt", and the region it taxes is one the same A/B records as *deficient* (iPhone +5.2 to +9.8 dB at 157–250 Hz) | **closed and shipped.** `mk_2 = 1.0` with `s10res` deepened to **−3.7 dB** holds 800 Hz to +0.06 dB on music1 and +0.01 on music2 while returning the low-mid. Hardware through a `-TEST` sink: **+0.79 dB over 160–630 Hz, 800 Hz held to +0.25**. A/B'd by ear and kept. Costs ~0.2 dB at 40–100 Hz — see *The low-mid the band cut was taking* |
 | **Stage 8's `Gain 2` was optimised in one direction only** — 0.60/0.45/0.30 were swept and 0.60 kept, but 0.7–1.0 were never tried. "Deepening is a loss in both directions" is a claim about deepening | **closed by measurement, 0.60 stays.** Swept upward: it is the largest bass lever here (+2.59 dB at 40 Hz, +2.22 at 100 by `Gain 2 = 1.0`) and still refused — the chain's *own* THD at 90 Hz goes 0.48% → 0.89% and IMD rises 32%, and that is only the part offline can see. See the node comment |
 | **Stage 9 applies no widening at all.** `Gain 2 = 1.0` is unity; measured side-minus-mid moves −0.53 to +0.17 dB above 400 Hz. The bass-mono half works (−28.7 dB at 40 Hz) | **closed as a doc bug, deliberately not shipped.** Quantified at the node: 1.5 buys 3.5 dB more side energy for 8 mdB of true peak, costing 0.9 dB of mono-sum. Taste, not a defect |
 | **No whole-chain instrument existed** — the root cause of all of this | **closed** — `offline-chain.py --bands` prints the third-octave transfer and the bass-to-presence tilt, with three self-test checks. Run it before shipping a voicing change |
@@ -684,6 +684,44 @@ three instruments aimed at 761 Hz (stage 2, `mk_2`, 10b) are additive at 800 Hz
 with no hidden stacking; the channels are **bit-identical** on a mono input; and
 the 1.8 dB dip at 50 Hz is programme-dependent, absent on pink, so it is GOTT
 band 1 compressing where the music has energy rather than a defect.
+
+#### The low-mid the band cut was taking
+
+`mk_2` was the second gap and the only one that shipped. It was −1.01 dB flat
+across GOTT's band 2, 120–1000 Hz, installed to hold down the residual 761 Hz
+resonance. Two things were wrong with it, and this file had already written both
+down without joining them:
+
+- **It is the wrong instrument, by this repo's own conclusion.** *"A band makeup
+  is the wrong place for a fixed acoustic correction; a bell after the
+  compressor is the right one."* Stage 10b **is** that bell — but 10b was sized
+  against the residual *after* `mk_2`, and `mk_2` was then never removed.
+- **Its collateral lands where the chain is already short.** The flat cut buys
+  −0.46 dB of useful work at 800 Hz and costs **−0.5 to −0.7 dB across
+  160–630 Hz** — a region the same iPhone A/B records as *deficient*, the phone
+  reading +5.2 to +9.8 dB louder at 157–250 Hz.
+
+**The swap:** `mk_2` to 1.0, `s10res` from −3.0 to −3.7 dB. The bell absorbs
+what the band cut was doing at the resonance, and the low-mid is returned.
+
+| | 160 Hz | 250 | 400 | 630 | **800** |
+|---|---|---|---|---|---|
+| offline, music1 | +0.51 | +0.67 | +0.67 | +0.53 | **+0.06** |
+| **hardware, `-TEST` sink** | **+0.73** | **+0.80** | **+0.80** | **+0.67** | **+0.25** |
+
+−3.7 was chosen over −3.6 by fitting **both** tracks rather than one: the 800 Hz
+residual is +0.06 dB on music1 and +0.01 on music2. On hardware 800 Hz holds to
++0.25 dB, inside the 1.4 dB re-setup repeatability, so the resonance correction
+survives intact. The hardware column reads about 0.18 dB high throughout because
+the capture is a 20 s excerpt and GOTT compresses it differently from the full
+file — a uniform offset, not a disagreement about shape.
+
+**The cost is real and it is in the deep bass:** about **0.2 dB at 40–100 Hz**,
+GOTT redistributing once band 2 stops being held down. Warmth up, sub very
+slightly down. A/B'd on a `-TEST` sink at matched volume and kept.
+
+With both changes in, the chain reads **+6.08 dB of tilt** against the +7.66 it
+started the day at, and the low-mid is +6.05 dB against a bass of +3.38.
 
 ### Voicing against a reference speaker
 
@@ -2167,7 +2205,10 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | The HF tilt correction is a shelf, not a reshaping | **current** | pass — matched −1.5 dB on `mk_3` and `mk_4` delivers **−1.43 dB at 2.5 kHz and −1.45 at 16 kHz**, flat to 0.05 dB across 1.25–16 kHz. The presence and top summaries are **unchanged** (+1.61 and −1.64 re the 1.6–10 kHz mean in every variant) — only the tilt moves |
 | The tilt correction leaves bass alone | **current** | pass — **50 Hz moves +0.02 dB**, and the whole 50–400 Hz region moves +0.03 to +0.11. Confirmed on hardware through a `-TEST` sink at matched volume: **−0.03 dB over 50–400 Hz** against **−1.47 dB over 1.6–12.5 kHz**, versus −1.41 predicted offline |
 | The tilt correction adds no distortion | **current** | pass, and it **reduces** it — THD identical to two decimals at 90, 400 and 2650 Hz at both −12 and −3 dBFS; SMPTE 60 + 2650 Hz IMD at −3 dBFS falls **8.18% → 4.38%** and at −6 dBFS **0.317% → 0.145%**, its value before 10c. True peak improves on all four signals. It is a cut, so this is the expected direction — measured because the constraint is explicit |
-| The shipped config is what was listened to | **current** | pass — the edited `files/50-speaker-tuning.conf` renders **bit-identical** (max sample difference 0.000e+00) to the variant built for the `-TEST` sink and approved by ear. Self-test 23/23 |
+| The shipped config is what was listened to | **current** | pass — for **both** changes. The edited `files/50-speaker-tuning.conf` renders **bit-identical** (max sample difference 0.000e+00) to the variant built for the `-TEST` sink and approved by ear, checked again after every comment edit. Self-test 26/26 |
+| Removing `mk_2` does not weaken the 761 Hz correction | **current** | pass — `s10res` at −3.7 dB holds 800 Hz to **+0.06 dB (music1)** and **+0.01 (music2)** offline, and **+0.25 dB** on hardware, against a re-setup repeatability of 1.4 dB. The depth was fitted to two tracks, not one; −3.6 left +0.12/+0.08 and −3.8 overshot to 0.00/−0.06 |
+| Removing `mk_2` returns the low-mid it was taxing | **current** | pass — **+0.79 dB mean over 160–630 Hz** measured at the hardware monitor through a `-TEST` sink at matched volume, against +0.61 predicted offline. The uniform ~0.18 dB offset is the 20 s excerpt compressing differently from the full file |
+| The `mk_2` swap's cost is known and accepted | **current** | **measured, and it is not free** — about **−0.2 dB at 40–100 Hz**, GOTT redistributing once band 2 is no longer held down. Warmth up, sub slightly down. Recorded rather than elided because it is the one thing a listener might later notice and mis-attribute |
 | The 761 Hz correction reproduces across programme | **current** | pass — measured on a −5.7 LUFS master with LRA 3.2 LU, then confirmed against two trailer tracks and two synthetic signals. Split-half spread on the acoustic A/B it came from: **sd 0.77 dB, worst 2.2 dB** |
 | Worst-case margin not reduced by the loudness change | **current** | pass — **0.371 → 0.463 dB**. Louder and further from the ceiling |
 | Loudness on real programme material | **current** | pass — **+0.78 LU** (music1) and **+0.61 LU** (music2, dialogue at −11.25 LUFS arriving at +0.634 dBTP) |
