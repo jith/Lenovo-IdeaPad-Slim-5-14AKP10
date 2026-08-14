@@ -3,6 +3,7 @@
 
     tools/offline-chain.py IN.wav OUT.wav [--set node:control=value ...]
     tools/offline-chain.py --measure IN.wav [--set ...]
+    tools/offline-chain.py --bands IN.wav [--set ...]
     tools/offline-chain.py --sweep s10mbc:g_out=2.05,2.20,2.40,2.60,2.80 IN.wav
     tools/offline-chain.py --self-test
     tools/offline-chain.py --verify            # against the committed captures
@@ -18,6 +19,12 @@ the drivers, and it cannot tell you which material to test. Every wrong
 conclusion recorded in README.md came from testing on material quieter or more
 stationary than programme, and offline would have reproduced all of them
 faithfully.
+
+AND USE --bands BEFORE SHIPPING A VOICING CHANGE. Every other mode here
+answers "what did this one parameter move", which cannot see an accumulation.
+A 10.1 dB bass-to-presence tilt survived four tuning sessions that way -- two
+boosts, each measured alone, each nearly free alone, both pushing the same
+direction, sum never taken. --bands prints the total.
 
 ACCURACY, as checked by --verify: within 0.03 LU on integrated loudness, 0.04
 dB on g_out row-to-row deltas, and 1.5 percentage points on THD at 90 Hz. Trust
@@ -195,6 +202,70 @@ def measure(y, tmp="/tmp/offline-chain-measure.wav", tone=None):
     return row
 
 
+# ISO third-octave centres. 25 Hz because stage 1 is at 20 and the subsonic
+# corner has to be visible; 16 kHz because stage 12a is at 22.
+CENTRES = [25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500,
+           630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300,
+           8000, 10000, 12500, 16000]
+
+
+def band_power(x):
+    """Third-octave power, summed across channels.
+
+    Summed as POWER per channel rather than taken off the mono sum, because
+    stage 9 moves energy between mid and side: a mid-only read makes its
+    widening invisible, and power is what reaches the two drivers.
+    """
+    nfft, acc = 16384, np.zeros(16384 // 2 + 1)
+    win, n = np.hanning(nfft), 0
+    for c in range(x.shape[1]):
+        ch = x[:, c]
+        for i in range(0, len(ch) - nfft, nfft // 2):
+            acc += np.abs(np.fft.rfft(ch[i:i + nfft] * win)) ** 2
+            n += 1
+    if n == 0:
+        raise SystemExit("--bands needs at least 0.35 s of audio")
+    acc /= n / x.shape[1]
+    freqs = np.fft.rfftfreq(nfft, 1 / RATE)
+    out = {}
+    for fc in CENTRES:
+        sel = (freqs >= fc / 2 ** (1 / 6)) & (freqs < fc * 2 ** (1 / 6))
+        out[fc] = acc[sel].sum() if sel.any() else np.nan
+    return out
+
+
+def bands(x, y):
+    """Print the WHOLE chain's transfer, third-octave, out over in.
+
+    This exists because nothing here had it. Every other mode answers "what
+    did this one parameter move" or "what is the level, peak and THD", and a
+    per-change measurement cannot see an accumulation: mk_3 and stage 10c were
+    each measured alone, each nearly free alone, and their sum -- 5.65 dB, all
+    one direction -- went unnoticed until a listener reported it. Print the
+    total, not the change.
+    """
+    pin, pout = band_power(x), band_power(y)
+    t = {c: 10 * np.log10(pout[c] / pin[c]) for c in CENTRES}
+
+    def mean(lo, hi):
+        return float(np.mean([t[c] for c in CENTRES if lo <= c <= hi]))
+
+    print(f"  {'band':>7} {'gain dB':>9}")
+    for c in CENTRES:
+        bar = "#" * max(0, min(40, int(round(t[c] + 10))))
+        print(f"  {c:>7.0f} {t[c]:>9.2f}  {bar}")
+    bass, pres = mean(50, 125), mean(2000, 4000)
+    print(f"\n  bass 50-125 Hz   {bass:+.2f} dB")
+    print(f"  low-mid 160-400  {mean(160, 400):+.2f} dB")
+    print(f"  presence 2-4 kHz {pres:+.2f} dB")
+    print(f"  top 5-12.5 kHz   {mean(5000, 12500):+.2f} dB")
+    print(f"\n  TILT (presence - bass)  {pres - bass:+.2f} dB")
+    if pres - bass > 8.0:
+        print("  ^ over 8 dB. Check this is intended -- a reference-device A/B\n"
+              "    cannot see a tilt, and neither can a detrended measurement.")
+    return 0
+
+
 def self_test():
     """Everything that can be checked without hardware or LSP binaries."""
     ok = fail = 0
@@ -222,6 +293,23 @@ def self_test():
     check("bq_bandpass 0 dB at centre", mag_db(*_rbj("bq_bandpass", 1000, 2.0), 1000), 0.0, 0.02)
     check("bq_peaking +6 dB at centre", mag_db(*_rbj("bq_peaking", 1000, 1.0, 6.0), 1000), 6.0, 0.02)
     check("bq_lowpass 18k passband at 10k", mag_db(*_rbj("bq_lowpass", 18000, 0.707), 10000), -0.04, 0.02)
+
+    # --bands: a known gain applied to a known band must come back. Uses two
+    # tones so a band-indexing error cannot pass by coincidence.
+    t = np.arange(4 * RATE) / RATE
+    probe = np.column_stack([np.sin(2 * np.pi * 100 * t) + np.sin(2 * np.pi * 2500 * t)] * 2)
+    gained = probe.copy()
+    b, a = _rbj("bq_peaking", 2500, 4.0, 6.0)
+    for c in range(2):
+        gained[:, c] = _biquad_fast(gained[:, c], b, a)
+    pin, pout = band_power(probe), band_power(gained)
+    check("--bands reads a +6 dB bell at 2500 Hz",
+          10 * np.log10(pout[2500] / pin[2500]), 6.0, 0.15)
+    check("--bands leaves an untouched band alone",
+          10 * np.log10(pout[100] / pin[100]), 0.0, 0.05)
+    check("--bands sums both channels, not the mid",
+          10 * np.log10(band_power(np.column_stack([probe[:, 0], -probe[:, 1]]))[100]
+                        / pin[100]), 0.0, 0.05)
 
     # True peak: a 0 dBFS sine exactly at Nyquist/2 offset overshoots by a
     # known amount, and a DC signal cannot overshoot at all.
@@ -371,6 +459,10 @@ def main():
                     help="run once per value and print a comparison table")
     ap.add_argument("--measure", action="store_true",
                     help="print LUFS / sample peak / true peak instead of writing")
+    ap.add_argument("--bands", action="store_true",
+                    help="print the whole chain's third-octave transfer and its "
+                         "bass-to-presence tilt -- run this before shipping any "
+                         "voicing change")
     ap.add_argument("--tone", type=float, metavar="HZ",
                     help="also report THD, for a pure-tone input at HZ")
     ap.add_argument("--config", default=CONFIG)
@@ -411,6 +503,9 @@ def main():
 
     nodes, links = build_graph(args.config, args.set)
     y = process(x, nodes, links, verbose=True)
+
+    if args.bands:
+        return bands(x, y)
 
     if args.measure or not args.outfile:
         r = measure(y, tone=args.tone)
