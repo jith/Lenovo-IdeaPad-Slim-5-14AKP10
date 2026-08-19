@@ -1065,6 +1065,36 @@ the path to roughly 27 ms of the 30 ms budget; and `ta_`/`tr_` **must** be set
 explicitly, because GOTT defaults to 2 ms attack and 3.5 ms release — fast
 enough to modulate gain inside a bass cycle and manufacture distortion.
 
+**The package is gone, and that takes down all audio on old commits.**
+`calf-plugins` was uninstalled on 20 Aug 2026. Nothing in the shipped chain
+referenced it — every remaining "Calf" in this file and in
+`files/50-speaker-tuning.conf` is prose explaining this swap. But `0a8dc2b`, and
+anything before `e291531` (6 Aug 2026), loads
+`http://calf.sourceforge.net/plugins/MultibandCompressor` at stage 10.
+
+Install one of those and the failure is not local to this sink. `filter-chain`
+is loaded as a **mandatory** module, so a plugin it cannot resolve aborts
+context creation and `pipewire` itself refuses to start — every sink gone,
+`pactl` answering "Connection failure: Connection terminated". Verified 20 Aug
+2026, both on the live session and in a throwaway daemon.
+
+The log does name the culprit, but only if you read the right log. `systemctl
+--user status pipewire` shows nothing but `Dependency failed`; the useful lines
+come from the daemon:
+
+```
+[W] plugin_lv2.c: can't load plugin http://calf.sourceforge.net/plugins/MultibandCompressor
+[E] filter-graph.c: can't load graph: Invalid argument
+[E] conf.c: could not load mandatory module "libpipewire-module-filter-chain"
+[E] pipewire.c: failed to create context: Invalid argument
+```
+
+Fix is `sudo apt install calf-plugins`, not debugging the config. The general
+lesson outlives Calf: **any** unresolvable plugin in this graph is a total audio
+outage, not a degraded chain, so probe a new plugin in a throwaway daemon
+(`PIPEWIRE_CONFIG_DIR` + `XDG_RUNTIME_DIR` to a scratch path) before it ever
+reaches `/etc`.
+
 ### Testing a structural change without sudo, and without breaking anything
 
 `pw-cli set-param` covers control values, but adding or rewiring *nodes* needs
