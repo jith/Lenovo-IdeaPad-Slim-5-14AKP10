@@ -106,7 +106,8 @@ def main():
                       'node.name = "effect_input.tuned-%s"\n'
                       '                speaker-dsp.device = "%s"' % (sid, name))
         m = m.replace('node.name = "effect_output.external-tuning"',
-                      'node.name = "effect_output.tuned-%s"' % sid)
+                      'node.name = "effect_output.tuned-%s"\n'
+                      '                speaker-dsp.device = "%s"' % (sid, name))
         m = m.replace("node.link-group = external-tuning",
                       "node.link-group = tuned-%s" % sid)
         # Pin the target. Without a resolvable one PipeWire routes the chain's
