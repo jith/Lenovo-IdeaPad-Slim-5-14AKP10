@@ -14,6 +14,16 @@ if [ "$(id -u)" = "0" ] && [ -n "${SUDO_UID:-}" ]; then
 fi
 
 DSP=effect_input.external-tuning
+INT=effect_input.speaker-tuning
+
+# The mirror of the guard in speaker-dsp: 'off' and 'ab' mean "bypass the DSP
+# on what I am listening to". If the built-in speaker is the active output,
+# that is speaker-dsp's job -- switching to the external device here would move
+# the sound to a different physical device.
+internal_is_active() {
+    [ "$(pactl get-default-sink 2>/dev/null)" = "$INT" ] || return 1
+    command -v speaker-dsp >/dev/null 2>&1
+}
 
 usage() {
     echo "usage: external-dsp {on|off|ab|status|level N}" >&2
@@ -61,6 +71,11 @@ case "${1:-status}" in
             echo "EXTERNAL DSP - External (Tuning) is the default output"
         ;;
     off|raw)
+        if internal_is_active; then
+            echo "note: the built-in speaker is the active output, so bypassing THAT."
+            echo "      Use 'external-dsp on' to move to the external device instead."
+            exec speaker-dsp off
+        fi
         _d=$(raw_device)
         [ -n "$_d" ] || { echo "no external device connected" >&2; exit 1; }
         # Carry the level across so the A/B is a comparison and not a loudness
@@ -74,6 +89,10 @@ case "${1:-status}" in
         }
         ;;
     ab)
+        if internal_is_active; then
+            echo "note: the built-in speaker is the active output, so toggling THAT."
+            exec speaker-dsp ab
+        fi
         _cur=$(pactl get-default-sink) || exit $?
         if [ "$_cur" = "$DSP" ]; then exec "$0" off; else exec "$0" on; fi
         ;;
@@ -89,6 +108,7 @@ case "${1:-status}" in
         case "$_cur" in
             "$DSP") echo "state: External (Tuning), six-stage chain" ;;
             "$_d")  echo "state: raw device, no processing" ;;
+            "$INT") echo "state: built-in speaker -- run 'speaker-dsp status'" ;;
             *)      echo "state: other output ($_cur)" ;;
         esac
         echo "device: ${_d:-none connected}"

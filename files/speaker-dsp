@@ -8,6 +8,7 @@ fi
 
 DSP=effect_input.speaker-tuning
 RAW=alsa_output.pci-0000_04_00.6.HiFi__Speaker__sink
+EXT=effect_input.external-tuning
 
 # Loudness trim for the raw path, in dB, from tools/loudness-match.sh.
 # Attenuation only: the louder path is trimmed at its own output, never the
@@ -25,6 +26,16 @@ RAW=alsa_output.pci-0000_04_00.6.HiFi__Speaker__sink
 # decorrelated, bass mono costs 0.62 LU, where material cut with mono bass
 # gives 0.52.
 RAW_TRIM_DB=${SPEAKER_DSP_RAW_TRIM_DB:-0.0}
+
+# 'off' and 'ab' mean "bypass the DSP on what I am listening to". When the
+# active output is External (Tuning) -- a Bluetooth speaker, earbuds,
+# headphones, a USB speaker -- that is external-dsp's job. Without this,
+# 'speaker-dsp off' moved the sound to the built-in speaker, which is a
+# different physical device and never what was meant.
+external_is_active() {
+    [ "$(pactl get-default-sink 2>/dev/null)" = "$EXT" ] || return 1
+    command -v external-dsp >/dev/null 2>&1
+}
 
 usage() {
     echo "usage: speaker-dsp {on|off|ab|status}" >&2
@@ -103,12 +114,21 @@ case "${1:-status}" in
         select_tuned && echo "SPEAKER DSP - Speaker (Tuning) is the default output"
         ;;
     off|raw)
+        if external_is_active; then
+            echo "note: External (Tuning) is the active output, so bypassing THAT."
+            echo "      Use 'speaker-dsp on' to move to the built-in speaker instead."
+            exec external-dsp off
+        fi
         select_raw && {
             echo "RAW SPEAKER - the hardware speaker is the default output"
             warn_slider
         }
         ;;
     ab)
+        if external_is_active; then
+            echo "note: External (Tuning) is the active output, so toggling THAT."
+            exec external-dsp ab
+        fi
         current=$(pactl get-default-sink) || exit $?
         if [ "$current" = "$DSP" ]; then
             select_raw && { echo "A/B -> RAW SPEAKER"; warn_slider; }
@@ -121,6 +141,7 @@ case "${1:-status}" in
         case "$current" in
             "$DSP") echo "state: Speaker (Tuning), 14-stage chain" ;;
             "$RAW") echo "state: raw hardware speaker"; warn_slider ;;
+            "$EXT") echo "state: External (Tuning) -- run 'external-dsp status'" ;;
             *) echo "state: other output ($current)" ;;
         esac
         warn_hardware_volume
