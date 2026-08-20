@@ -7,6 +7,8 @@
 #   external-dsp off     bypass the DSP, staying on the same device
 #   external-dsp ab      toggle, carrying the level across
 #   external-dsp unity   set the device PCM to 100%, which the chain assumes
+#   external-dsp devices list the connected external devices
+#   external-dsp device N pick one of them by number or name
 #   external-dsp status  which one is active, and what it is pointed at
 #   external-dsp level N set the listening level, 0-100
 
@@ -81,7 +83,7 @@ internal_is_active() {
 }
 
 usage() {
-    echo "usage: external-dsp {on|off|ab|status|unity|level N}" >&2
+    echo "usage: external-dsp {on|off|ab|status|unity|level N|devices|device N}" >&2
     exit 2
 }
 
@@ -171,6 +173,40 @@ case "${1:-status}" in
         pin_pregraph_unity
         echo "External (Tuning) pre-graph level: $(volume_pct "$DSP")% (must be 100)"
         echo "set loudness with: external-dsp level N"
+        ;;
+    devices)
+        _cur=$(raw_device)
+        pactl list sinks short | awk '$2 ~ /^(alsa_output|bluez_output)/ &&
+            $2 !~ /HiFi__Speaker__sink/ { print $2 }' | nl -w2 -s'  ' | \
+        while read -r _n _name; do
+            _mark="  "
+            [ "$_name" = "$_cur" ] && _mark="->"
+            _desc=$(pactl list sinks | awk -v n="$_name" '
+                $1=="Name:" && $2==n { found=1 }
+                found && $1=="Description:" { $1=""; sub(/^ /,""); print; exit }')
+            echo "$_mark $_n  ${_desc:-$_name}"
+        done
+        ;;
+    device)
+        [ -n "${2:-}" ] || usage
+        _list=$(pactl list sinks short | awk '$2 ~ /^(alsa_output|bluez_output)/ &&
+            $2 !~ /HiFi__Speaker__sink/ { print $2 }')
+        case "$2" in
+            [0-9]*) _pick=$(echo "$_list" | sed -n "${2}p") ;;
+            *)      _pick=$(echo "$_list" | grep -i -- "$2" | head -1) ;;
+        esac
+        [ -n "$_pick" ] || { echo "no such device: $2" >&2; echo "try: external-dsp devices" >&2; exit 1; }
+        _oid=$(pw-dump 2>/dev/null | python3 -c "
+import json,sys
+for o in json.load(sys.stdin):
+    p=(o.get('info') or {}).get('props') or {}
+    if p.get('node.name')=='effect_output.external-tuning': print(o['id']); break
+")
+        [ -n "$_oid" ] || { echo "External (Tuning) not loaded" >&2; exit 1; }
+        pw-metadata "$_oid" target.object "$_pick" >/dev/null 2>&1
+        sleep 1
+        echo "External (Tuning) -> $_pick"
+        echo "note: level is per-device; set it with 'external-dsp level N'."
         ;;
     status)
         _cur=$(pactl get-default-sink) || exit $?

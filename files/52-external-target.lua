@@ -58,6 +58,16 @@ local function pick ()
   return best
 end
 
+-- Is this name still a connected external sink?
+local function still_present (name)
+  if name == nil or name == UNSET then return false end
+  for node in sinks_om:iterate () do
+    local props = node.properties
+    if is_external (props) and props["node.name"] == name then return true end
+  end
+  return false
+end
+
 local function apply ()
   local md = metadata_om:lookup ()
   if md == nil then return end
@@ -65,6 +75,15 @@ local function apply ()
   if out == nil then return end
   local id = out["bound-id"]
   if id == nil then return end
+
+  -- Keep whatever is already selected as long as it is still connected. With
+  -- more than one external device attached -- a USB speaker and earbuds, say --
+  -- GNOME cannot choose between them, because this branch hides the raw
+  -- devices; `external-dsp device` is the chooser, and re-picking by priority
+  -- on every event would silently undo the listener's choice. Only when the
+  -- selected device goes away does priority decide the replacement.
+  local current = md:find (id, "target.object")
+  if still_present (current) then return end
 
   local target = pick ()
   if target == nil then
