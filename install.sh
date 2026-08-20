@@ -20,9 +20,6 @@ HIDE_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/hide-speaker-tuning.lua
 EXT_FILTER_DEST=/etc/pipewire/pipewire.conf.d/52-external-tuning.conf
 EXT_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/52-external-target.conf
 EXT_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/52-external-target.lua
-EXT_FILTER_OLD=/etc/pipewire/pipewire.conf.d/52-external-tuning.conf
-EXT_CONF_OLD=/etc/wireplumber/wireplumber.conf.d/52-external-target.conf
-EXT_SCRIPT_OLD=/usr/local/share/wireplumber/scripts/52-external-target.lua
 EXT_UNIT_OLD=/etc/systemd/user/external-dsp.service
 
 print_user_restart_instructions() {
@@ -36,10 +33,11 @@ uninstall() {
         "$HIDE_CONF_DEST" \
         "$PRIORITY_CONF_DEST" \
         "$HIDE_SCRIPT_DEST" \
-        "$EXT_FILTER_OLD" \
-        "$EXT_CONF_OLD" \
-        "$EXT_SCRIPT_OLD" \
+        "$EXT_FILTER_DEST" \
+        "$EXT_CONF_DEST" \
+        "$EXT_SCRIPT_DEST" \
         "$EXT_UNIT_OLD" \
+        /etc/systemd/user/external-dsp.service \
         /usr/local/bin/gen-external-chains.py \
         /usr/local/bin/external-dsp-watch \
         /etc/systemd/user/external-dsp-watch.service \
@@ -117,10 +115,12 @@ install_filter() {
     SPEAKER_DSP_TEMPLATE="$FILES_DIR/52-external-tuning.conf" \
         python3 "$FILES_DIR/gen-external-chains.py" "$EXT_FILTER_DEST"
     chmod 644 "$EXT_FILTER_DEST"
-    # Retire the previous single-chain setup, or its "External (Tuning)" sink
-    # loads alongside the generated per-device ones and every stream is
-    # processed twice.
-    rm -f "$EXT_FILTER_OLD" "$EXT_CONF_OLD" "$EXT_SCRIPT_OLD" "$EXT_UNIT_OLD"
+    # Retire the watcher service from an earlier version. Only the unit is
+    # removed here: the other "old" paths are now the SAME paths this function
+    # has just written, so deleting them removed the files it had installed a
+    # few lines earlier -- and still reported success, which is exactly how two
+    # installs in a row appeared to do nothing at all.
+    rm -f "$EXT_UNIT_OLD"
     install -D -m755 "$FILES_DIR/external-dsp" /usr/local/bin/external-dsp
 
     echo "Installed the fourteen-stage Speaker DSP filter chain (internal)"
