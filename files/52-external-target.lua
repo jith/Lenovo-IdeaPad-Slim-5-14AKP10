@@ -139,40 +139,60 @@ local function chain_for (device)
   return nil
 end
 
+local function default_sink ()
+  local md = metadata_om:lookup ()
+  if md == nil then return nil end
+  local def = md:find (0, "default.audio.sink")
+  if def == nil then return nil end
+  local json = Json.Raw (def)
+  if not json:is_object () then return nil end
+  local parsed = json:parse ()
+  return parsed and parsed["name"] or nil
+end
+
+-- Redirect app streams into the chain for the currently selected device, and
+-- just as importantly, LET THEM GO again when the selection changes.
+--
+-- Writing target.object pins a stream: an explicit target beats the default
+-- sink. So a stream redirected into a chain stays there when the listener
+-- picks a different output in GNOME -- selecting the built-in speaker while a
+-- song was playing left the audio coming out of the USB speaker, with GNOME
+-- showing the built-in one as selected. Reported from real use; the earlier
+-- test missed it because a stream started AFTER the switch follows the default
+-- normally and only an already-playing one is pinned.
+--
+-- So every stream is repointed on every pass: to the chain when an external
+-- device is selected, and to the selection itself when it is not.
 local function redirect ()
   local md = metadata_om:lookup ()
   if md == nil then return end
+  local def = default_sink ()
+  if def == nil then return end
+
+  local want = nil
+  if not def:match ("^effect_") and not def:match (INTERNAL) then
+    want = chain_for (def)
+  end
+
   for stream in streams_om:iterate () do
     local props = stream.properties
     local name = props["node.name"] or ""
+    local group = props["node.link-group"]
+    -- Never touch a chain's own output stream: it would feed itself.
     if not name:match ("^effect_output%.")
-        and props["node.link-group"] == nil then
+        and (group == nil or not group:match ("^tuned%-")) then
       local id = stream["bound-id"]
-      -- A stream that simply follows the default output carries no
-      -- target.object at all, which is the ordinary case for every app -- the
-      -- first version only looked at explicit targets and so redirected
-      -- nothing. Fall back to whatever the default sink currently is.
-      local want_dev = nil
       if id ~= nil then
-        want_dev = md:find (id, "target.object")
-        if want_dev == nil then
-          local def = md:find (0, "default.audio.sink")
-          if def ~= nil then
-            local json = Json.Raw (def)
-            if json:is_object () then
-              local parsed = json:parse ()
-              want_dev = parsed and parsed["name"] or nil
-            end
+        local cur = md:find (id, "target.object")
+        if want ~= nil then
+          if cur ~= want then
+            md:set (id, "target.object", "Spa:String", want)
+            log:info ("stream " .. name .. " -> " .. want)
           end
-        end
-      end
-      if id ~= nil and want_dev ~= nil
-          and not want_dev:match ("^effect_")
-          and not want_dev:match (INTERNAL) then
-        local chain = chain_for (want_dev)
-        if chain ~= nil then
-          md:set (id, "target.object", "Spa:String", chain)
-          log:info ("stream " .. name .. " -> " .. chain)
+        elseif cur ~= nil and cur:match ("^effect_input%.tuned%-") then
+          -- We pinned this one; hand it back to the current selection.
+          md:set (id, "target.object", "Spa:String", def)
+          log:info ("stream " .. name .. " released -> " .. def)
         end
       end
     end
@@ -180,6 +200,15 @@ local function redirect ()
 end
 
 streams_om:connect ("object-added", function () redirect () end)
+
+-- The selection changing is the event that matters most here, and it arrives
+-- on the metadata rather than on any node.
+metadata_om:connect ("object-added", function (_, md)
+  md:connect ("changed", function (_, subject, key)
+    if key == "default.audio.sink" then redirect () end
+  end)
+  redirect ()
+end)
 sinks_om:connect ("object-added", function () apply () end)
 sinks_om:connect ("object-removed", function () apply () end)
 chains_om:connect ("object-added", function () apply () end)
