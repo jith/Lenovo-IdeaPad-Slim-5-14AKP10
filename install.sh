@@ -17,6 +17,9 @@ HIDE_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/hide-speaker-tuning.lua
 # 'external-dsp generate', so nothing external is installed system-wide except
 # the generator and the template it reads. The old single-chain config and its
 # target-tracking script are removed here if an earlier version left them.
+EXT_FILTER_DEST=/etc/pipewire/pipewire.conf.d/52-external-tuning.conf
+EXT_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/52-external-target.conf
+EXT_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/52-external-target.lua
 EXT_FILTER_OLD=/etc/pipewire/pipewire.conf.d/52-external-tuning.conf
 EXT_CONF_OLD=/etc/wireplumber/wireplumber.conf.d/52-external-target.conf
 EXT_SCRIPT_OLD=/usr/local/share/wireplumber/scripts/52-external-target.lua
@@ -25,8 +28,6 @@ EXT_UNIT_OLD=/etc/systemd/user/external-dsp.service
 print_user_restart_instructions() {
     echo "For each logged-in user, run:"
     echo "  systemctl --user restart pipewire pipewire-pulse wireplumber"
-    echo "  external-dsp generate     # one tuned sink per connected device"
-    echo "  systemctl --user enable --now external-dsp-watch.service"
 }
 
 uninstall() {
@@ -77,16 +78,16 @@ install_filter() {
         echo "missing external filter config: $FILES_DIR/52-external-tuning.conf" >&2
         exit 1
     }
-    [ -f "$FILES_DIR/external-dsp-watch" ] || {
-        echo "missing device watcher: $FILES_DIR/external-dsp-watch" >&2
-        exit 1
-    }
-    [ -f "$FILES_DIR/external-dsp-watch.service" ] || {
-        echo "missing watcher unit: $FILES_DIR/external-dsp-watch.service" >&2
-        exit 1
-    }
     [ -f "$FILES_DIR/gen-external-chains.py" ] || {
         echo "missing chain generator: $FILES_DIR/gen-external-chains.py" >&2
+        exit 1
+    }
+    [ -f "$FILES_DIR/52-external-target.lua" ] || {
+        echo "missing target script: $FILES_DIR/52-external-target.lua" >&2
+        exit 1
+    }
+    [ -f "$FILES_DIR/52-external-target.conf" ] || {
+        echo "missing target config: $FILES_DIR/52-external-target.conf" >&2
         exit 1
     }
     [ -f "$FILES_DIR/external-dsp" ] || {
@@ -104,13 +105,18 @@ install_filter() {
     install -D -m644 "$FILES_DIR/51-speaker-sink-priority.conf" "$PRIORITY_CONF_DEST"
     install -D -m644 "$FILES_DIR/hide-speaker-tuning.lua" "$HIDE_SCRIPT_DEST"
     install -D -m755 "$FILES_DIR/speaker-dsp" /usr/local/bin/speaker-dsp
-    install -D -m755 "$FILES_DIR/gen-external-chains.py" \
-        /usr/local/bin/gen-external-chains.py
-    install -D -m755 "$FILES_DIR/external-dsp-watch" /usr/local/bin/external-dsp-watch
-    install -D -m644 "$FILES_DIR/external-dsp-watch.service" \
-        /etc/systemd/user/external-dsp-watch.service
     install -D -m644 "$FILES_DIR/52-external-tuning.conf" \
         /usr/local/share/speaker-dsp/52-external-tuning.conf
+    install -D -m644 "$FILES_DIR/52-external-target.conf" "$EXT_CONF_DEST"
+    install -D -m644 "$FILES_DIR/52-external-target.lua" "$EXT_SCRIPT_DEST"
+
+    # The chains are per CLASS of output, not per device, so this expands to the
+    # same file every time and can be generated here rather than by hand or by
+    # the user. One copy of 150 lines of measured settings, two chains built
+    # from it.
+    SPEAKER_DSP_TEMPLATE="$FILES_DIR/52-external-tuning.conf" \
+        python3 "$FILES_DIR/gen-external-chains.py" "$EXT_FILTER_DEST"
+    chmod 644 "$EXT_FILTER_DEST"
     # Retire the previous single-chain setup, or its "External (Tuning)" sink
     # loads alongside the generated per-device ones and every stream is
     # processed twice.
