@@ -13,10 +13,20 @@ nodes_om = ObjectManager {
   }
 }
 
+-- Every REAL output device: the built-in speaker and headphone jack, USB
+-- speakers, Bluetooth, HDMI. GNOME should offer the two tuned sinks and
+-- nothing else, so that whatever is selected is always processed. The devices
+-- are still there -- pactl and pavucontrol show them, and External (Tuning)
+-- follows whichever one is active via 52-external-target.lua.
 raw_om = ObjectManager {
   Interest { type = "node",
-    Constraint { "node.name", "matches", "*HiFi__Speaker__sink" },
-  }
+    Constraint { "media.class", "=", "Audio/Sink" },
+    Constraint { "node.name", "matches", "alsa_output.*" },
+  },
+  Interest { type = "node",
+    Constraint { "media.class", "=", "Audio/Sink" },
+    Constraint { "node.name", "matches", "bluez_output.*" },
+  },
 }
 
 -- GNOME also derives output entries from card ports, so hide this onboard
