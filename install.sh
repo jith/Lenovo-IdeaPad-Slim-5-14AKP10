@@ -13,6 +13,9 @@ FILTER_DEST=/etc/pipewire/pipewire.conf.d/50-speaker-tuning.conf
 HIDE_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/50-hide-speaker-tuning.conf
 PRIORITY_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/51-speaker-sink-priority.conf
 HIDE_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/hide-speaker-tuning.lua
+EXT_FILTER_DEST=/etc/pipewire/pipewire.conf.d/52-external-tuning.conf
+EXT_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/52-external-target.conf
+EXT_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/52-external-target.lua
 
 print_user_restart_instructions() {
     echo "For each logged-in user, run:"
@@ -25,6 +28,9 @@ uninstall() {
         "$HIDE_CONF_DEST" \
         "$PRIORITY_CONF_DEST" \
         "$HIDE_SCRIPT_DEST" \
+        "$EXT_FILTER_DEST" \
+        "$EXT_CONF_DEST" \
+        "$EXT_SCRIPT_DEST" \
         /usr/local/bin/speaker-dsp
 
     echo "Removed the system-wide Speaker DSP files."
@@ -52,14 +58,35 @@ install_filter() {
         echo "missing speaker switch helper: $FILES_DIR/speaker-dsp" >&2
         exit 1
     }
+    [ -f "$FILES_DIR/52-external-tuning.conf" ] || {
+        echo "missing external filter config: $FILES_DIR/52-external-tuning.conf" >&2
+        exit 1
+    }
+    [ -f "$FILES_DIR/52-external-target.conf" ] || {
+        echo "missing external WirePlumber config: $FILES_DIR/52-external-target.conf" >&2
+        exit 1
+    }
+    [ -f "$FILES_DIR/52-external-target.lua" ] || {
+        echo "missing external target script: $FILES_DIR/52-external-target.lua" >&2
+        exit 1
+    }
+
+    # The target script is not optional. Without it the external chain has no
+    # resolved target, and PipeWire routes its output into the INTERNAL chain --
+    # everything processed twice, by two chains tuned for different speakers.
+    # Refuse to install the filter without its script.
 
     install -D -m644 "$FILES_DIR/50-speaker-tuning.conf" "$FILTER_DEST"
     install -D -m644 "$FILES_DIR/50-hide-speaker-tuning.conf" "$HIDE_CONF_DEST"
     install -D -m644 "$FILES_DIR/51-speaker-sink-priority.conf" "$PRIORITY_CONF_DEST"
     install -D -m644 "$FILES_DIR/hide-speaker-tuning.lua" "$HIDE_SCRIPT_DEST"
     install -D -m755 "$FILES_DIR/speaker-dsp" /usr/local/bin/speaker-dsp
+    install -D -m644 "$FILES_DIR/52-external-tuning.conf" "$EXT_FILTER_DEST"
+    install -D -m644 "$FILES_DIR/52-external-target.conf" "$EXT_CONF_DEST"
+    install -D -m644 "$FILES_DIR/52-external-target.lua" "$EXT_SCRIPT_DEST"
 
-    echo "Installed the fourteen-stage Speaker DSP filter chain."
+    echo "Installed the fourteen-stage Speaker DSP filter chain (internal)"
+    echo "and the six-stage External (Tuning) chain for every other output."
     print_user_restart_instructions
 }
 

@@ -2503,3 +2503,91 @@ The rule the harness exists to enforce: **sweep it offline, confirm the one
 value you chose on hardware.** Offline is fast enough to be exhaustive and
 faithful enough to trust for differences. It cannot tell you which material to
 test, and that is where every wrong answer in this file came from.
+
+## External (Tuning): one chain for everything that is not the internal speaker
+
+Bluetooth speakers, earbuds, wired headphones, HDMI and USB speakers share a
+second, much shorter chain: `files/52-external-tuning.conf`. The internal chain
+is untouched by it and the two run side by side.
+
+### Why it is six stages and not fourteen
+
+The internal chain is tuned to **one measured driver**. Its Linkwitz transform
+comes from that driver's Fs and Q, stage 10b notches that driver's 761 Hz
+resonance, and stages 3–8 synthesise harmonics to stand in for bass a sealed
+micro-speaker cannot radiate. None of that transfers. Earbuds and a Bluetooth
+speaker have their own responses and real low end, so those stages would not be
+a correction there — they would be damage.
+
+So this chain does not voice. It protects and controls dynamics, which are the
+only things that are right on hardware you have not measured. Every GOTT makeup
+is pinned at 1.0 for exactly that reason.
+
+| stage | what | value |
+|---|---|---|
+| X0 | input trim | 1.0 |
+| X1 | subsonic high-pass | 30 Hz, Q 0.707 |
+| X2 | GOTT multiband | `sf 120/1000/6000`, `ebe = 1`, all `mk_ = 1.0`, `ru_ = 1.0` |
+| X3 | band limit | 20 kHz |
+| X4 | true-peak brickwall | `th = 0.8414`, `ovs = 22` |
+| X5 | output trim | 1.0 |
+
+The audible win is X4. Lossy Bluetooth codecs clip on inter-sample peaks that a
+sample-peak meter never shows, and material mastered to 0 dBFS is full of them.
+
+### Measured
+
+Offline, on 30 s of −5.70 LUFS programme, and on hardware through a USB speaker:
+
+| check | result |
+|---|---|
+| tilt (presence − bass) | **+0.34 dB** — flat, against +5.15 dB for the internal chain |
+| band transfer, hardware vs offline | **mean 0.02 dB, max 0.04 dB** across 14 bands |
+| sample peak / true peak | −1.500 dBFS / −1.394 dBTP, offline and hardware alike |
+| THD | 0.02 % at 90 Hz, 0.00 % at 1 kHz |
+| internal chain, with this loaded | −44.47 dBFS against a −44.52 baseline |
+
+`th` was swept rather than guessed. True peak lands a consistent 0.107 dB above
+`th`, and 0.8414 buys 1.4 dB of headroom for 0.25 LU — far below audibility, and
+worth it because an SBC or AAC encoder can overshoot by about a decibel, which
+would put the codec's own output back at clipping.
+
+### WirePlumber smart filters link correctly and do not process
+
+`filter.smart` is the feature built for exactly this job, and it was the first
+design. WirePlumber 0.5.13 splices it correctly — `pw-link` shows
+stream → `effect_input` → `effect_output` → device with no bypass link anywhere
+— but **the DSP is not applied**. Found by compiling a −20 dB output trim into
+the graph and capturing a 1 kHz tone off the target's monitor:
+
+| configuration | captured | verdict |
+|---|---|---|
+| `filter.smart`, target via metadata | −38.05 | bypassed |
+| `filter.smart`, target static in the file | −38.05 | bypassed |
+| `filter.smart`, stream targeted explicitly | −38.05 | bypassed |
+| no `filter.smart`, `target.object` pinned | **−58.05** | DSP runs |
+| no `filter.smart` + `node.link-group`, pinned | **−58.05** | DSP runs |
+
+Source was −38.05 dBFS, so −58.05 is exactly the 20 dB the trim asks for. The
+links look identical either way, so nothing short of measuring the audio catches
+this. Do not re-add `filter.smart` without repeating that measurement.
+
+### The double-DSP hazard, and why the script is not optional
+
+With no target resolved, PipeWire routes the external chain's playback stream to
+the default sink — which is `effect_input.speaker-tuning`, the **internal
+chain**. Audio would be processed twice, by two chains tuned for different
+speakers. Three guards were tried:
+
+| guard | result |
+|---|---|
+| `node.dont-reconnect = true` | still fell through to the internal chain |
+| `node.autoconnect = false` | safe, but blocked the script's retarget too |
+| placeholder `target.object` | still fell through |
+| **`52-external-target.lua` sets the target** | correct target, no fallback window |
+
+So the script is a safety component, not a convenience. `install.sh` refuses to
+install the filter without it. The script never selects a node whose name starts
+with `effect_` or that carries `node.link-group`, so it cannot target either
+chain; verified by mis-pointing it at the internal speaker and watching it
+correct itself on the next device event.
