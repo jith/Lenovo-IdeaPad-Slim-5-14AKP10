@@ -191,9 +191,21 @@ case "${1:-status}" in
         [ -n "${2:-}" ] || usage
         _list=$(pactl list sinks short | awk '$2 ~ /^(alsa_output|bluez_output)/ &&
             $2 !~ /HiFi__Speaker__sink/ { print $2 }')
+        # Match on the DESCRIPTION as well as the node name. A Bluetooth node is
+        # named bluez_output.F0:BE:25:17:71:00 -- the make and model live only
+        # in the description, so 'external-dsp device oppo' matched nothing and
+        # failed silently.
         case "$2" in
             [0-9]*) _pick=$(echo "$_list" | sed -n "${2}p") ;;
-            *)      _pick=$(echo "$_list" | grep -i -- "$2" | head -1) ;;
+            *)      _pick=$(echo "$_list" | while read -r _n; do
+                        _dsc=$(pactl list sinks | awk -v n="$_n" '
+                            $1=="Name:" && $2==n { f=1 }
+                            f && $1=="Description:" { $1=""; sub(/^ /,""); print; exit }')
+                        case "$_n $_dsc" in
+                            *[Nn]"$2"*|*"$2"*) echo "$_n"; break ;;
+                        esac
+                        echo "$_n $_dsc" | grep -qi -- "$2" && { echo "$_n"; break; }
+                    done | head -1) ;;
         esac
         [ -n "$_pick" ] || { echo "no such device: $2" >&2; echo "try: external-dsp devices" >&2; exit 1; }
         _oid=$(pw-dump 2>/dev/null | python3 -c "

@@ -97,14 +97,26 @@ local function apply ()
   -- devices; `external-dsp device` is the chooser, and re-picking by priority
   -- on every event would silently undo the listener's choice. Only when the
   -- selected device goes away does priority decide the replacement.
+  -- The remembered choice wins outright whenever that device is present, and
+  -- is checked BEFORE the current target. Bluetooth takes several seconds to
+  -- reconnect after a restart, so the first pass runs with the earbuds absent,
+  -- falls back to priority, and settles on whatever else is attached -- and a
+  -- "keep the current target while it is still valid" rule then locks that in
+  -- for good, exactly when the earbuds finally appear. Checking the file first
+  -- makes the listener's choice authoritative rather than a race.
   local current = md:find (id, "target.object")
+  local want = remembered ()
+  if still_present (want) then
+    if current ~= want then
+      md:set (id, "target.object", "Spa:String", want)
+      log:info ("External (Tuning) -> " .. want .. " (remembered)")
+    end
+    return
+  end
+
   if still_present (current) then return end
 
-  -- Prefer the remembered choice over priority. With a USB speaker and earbuds
-  -- both connected, priority picked the earbuds and the listener wanted the
-  -- speaker; re-deciding that on every restart is worse than not deciding.
-  local target = remembered ()
-  if not still_present (target) then target = pick () end
+  local target = pick ()
   if target == nil then
     -- Nothing external connected. Park on a name that resolves to nothing
     -- rather than leaving a stale device pinned.
