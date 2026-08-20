@@ -4,12 +4,13 @@
 
 log = Log.open_topic ("s-hide-speaker-tuning")
 
--- Both chains' output streams: effect_output.speaker-tuning (internal) and
--- effect_output.external-tuning (Bluetooth, headphones, HDMI, USB). These are
--- plumbing -- the sinks apps actually pick, effect_input.*, stay visible.
+-- Every chain's output stream: effect_output.speaker-tuning for the internal
+-- speaker, and one effect_output.tuned-<device> per external device. These are
+-- plumbing -- the sinks apps actually pick, effect_input.*, stay visible, and
+-- those now carry the real device names.
 nodes_om = ObjectManager {
   Interest { type = "node",
-    Constraint { "node.name", "matches", "effect_output.*-tuning" },
+    Constraint { "node.name", "matches", "effect_output.*" },
   }
 }
 

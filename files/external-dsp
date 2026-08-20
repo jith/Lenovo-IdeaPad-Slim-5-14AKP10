@@ -83,7 +83,7 @@ internal_is_active() {
 }
 
 usage() {
-    echo "usage: external-dsp {on|off|ab|status|unity|level N|devices|device N}" >&2
+    echo "usage: external-dsp {generate|on|off|ab|status|unity|level N|devices|device N}" >&2
     exit 2
 }
 
@@ -173,6 +173,34 @@ case "${1:-status}" in
         pin_pregraph_unity
         echo "External (Tuning) pre-graph level: $(volume_pct "$DSP")% (must be 100)"
         echo "set loudness with: external-dsp level N"
+        ;;
+    generate)
+        # One tuned sink per connected device, written to the user's own conf.d
+        # so no sudo is needed. PipeWire loads filter chains at startup, and
+        # modules loaded at runtime with pw-cli die with the client (verified),
+        # so a new device needs this re-run and a restart -- there is no way to
+        # conjure a chain on hotplug without a process that stays running.
+        _gen=$(command -v gen-external-chains.py || echo \
+            /home/sreejith/speaker-dsp/files/gen-external-chains.py)
+        _d=${XDG_CONFIG_HOME:-$HOME/.config}/pipewire/pipewire.conf.d
+        mkdir -p "$_d"
+        _tmp=$(mktemp) || exit 1
+        if ! python3 "$_gen" "$_tmp"; then rm -f "$_tmp"; exit 1; fi
+        # Never leave a half-written config in place: PipeWire refuses to start
+        # at all if a chain fails to parse, taking every sink with it.
+        if ! grep -q "libpipewire-module-filter-chain" "$_tmp"; then
+            echo "generator produced nothing usable; leaving config alone" >&2
+            rm -f "$_tmp"; exit 1
+        fi
+        mv "$_tmp" "$_d/52-external-tuning.conf"
+        chmod 644 "$_d/52-external-tuning.conf"
+        echo "wrote $_d/52-external-tuning.conf"
+        grep -c "libpipewire-module-filter-chain" "$_d/52-external-tuning.conf" \
+            | sed 's/^/chains: /'
+        echo "restarting pipewire..."
+        systemctl --user restart pipewire pipewire-pulse wireplumber
+        sleep 4
+        pactl list sinks short | awk '$2 ~ /^effect_input/ { print "  " $2 }'
         ;;
     devices)
         _cur=$(raw_device)
