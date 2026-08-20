@@ -1,0 +1,84 @@
+#!/bin/sh
+# Generate a tuned chain for a device the first time it is ever connected.
+#
+# PipeWire reads filter chains only at startup, and every way round that is
+# closed: modules loaded at runtime with pw-cli die with the client,
+# pipewire-pulse has no module-filter-chain, WirePlumber's Lua sandbox blocks
+# os.execute, and nodes cannot be renamed at runtime. So a new device's chain
+# cannot exist until the config is rewritten and PipeWire restarted, and
+# something has to notice. That is this.
+#
+# It is deliberately dull: it does nothing at all unless a sink appears that has
+# no chain in the generated config. Connecting, disconnecting and rebooting with
+# known devices never trigger it -- those already work by themselves.
+#
+# udev was the obvious hook and does not work: it sees the USB speaker but not
+# the Bluetooth earbuds. PipeWire's own event stream sees both.
+set -eu
+
+CONF=${XDG_CONFIG_HOME:-$HOME/.config}/pipewire/pipewire.conf.d/52-external-tuning.conf
+GEN=$(command -v gen-external-chains.py || echo /usr/local/bin/gen-external-chains.py)
+
+log() { echo "external-dsp-watch: $*"; }
+
+# Every connected sink that should have a chain.
+# The trailing-digit filter matters. PipeWire appends ".1" when a node name
+# collides, which happens on a Bluetooth reconnect while the old node is still
+# being torn down -- the sink appears briefly as
+# bluez_output.F0_BE_25_17_71_00.1 and settles back to
+# bluez_output.F0:BE:25:17:71:00. Without this the watcher generates a chain
+# for the transient name and restarts PipeWire a second time for nothing.
+# Measured doing exactly that.
+external_sinks() {
+    pactl list sinks short 2>/dev/null | awk '$2 ~ /^(alsa_output|bluez_output)/ &&
+        $2 !~ /HiFi__Speaker__sink/ && $2 !~ /\.[0-9]+$/ { print $2 }'
+}
+
+# A device is "known" when the generated config already names it as a target.
+# Checking the config rather than a separate list means the two cannot drift.
+missing_chain() {
+    [ -f "$CONF" ] || { external_sinks | head -1; return; }
+    external_sinks | while read -r s; do
+        grep -qF "target.object = \"$s\"" "$CONF" || echo "$s"
+    done
+}
+
+regenerate() {
+    tmp=$(mktemp) || return 1
+    if ! python3 "$GEN" "$tmp" 2>/dev/null; then rm -f "$tmp"; return 1; fi
+    # Never install a config that would not load: PipeWire refuses to start at
+    # all if a chain fails to parse, which takes every sink with it.
+    if ! grep -q "libpipewire-module-filter-chain" "$tmp"; then
+        rm -f "$tmp"; return 1
+    fi
+    mkdir -p "$(dirname "$CONF")"
+    mv "$tmp" "$CONF"; chmod 644 "$CONF"
+    log "wrote a chain for the new device; restarting pipewire"
+    # This kills our own pactl subscribe, which is why the unit restarts us.
+    systemctl --user restart pipewire pipewire-pulse wireplumber
+}
+
+check() {
+    new=$(missing_chain | head -1)
+    [ -n "$new" ] || return 0
+    # Confirm it is still there after the settle delay rather than acting on a
+    # sink that has already gone again.
+    external_sinks | grep -qxF "$new" || return 0
+    log "no chain for $new"
+    regenerate || log "regeneration failed; leaving the config alone"
+}
+
+# Catch anything paired while this was not running.
+sleep 5
+check
+
+pactl subscribe 2>/dev/null | while read -r line; do
+    case "$line" in
+        *"'new'"*sink*|*"'new'"*card*)
+            # Let the device settle: a Bluetooth sink is announced before its
+            # profile is chosen, and generating too early names it wrongly.
+            sleep 4
+            check
+            ;;
+    esac
+done

@@ -1,0 +1,19 @@
+# Generate a tuned chain when a device is connected for the first time.
+#
+#   systemctl --user enable --now external-dsp-watch.service
+#
+# Restart=always is load-bearing rather than defensive: generating a chain
+# requires restarting PipeWire, which kills this service's own connection to it.
+[Unit]
+Description=Generate External (Tuning) chains for newly seen devices
+After=pipewire.service wireplumber.service
+Wants=pipewire.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/external-dsp-watch
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

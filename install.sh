@@ -26,6 +26,7 @@ print_user_restart_instructions() {
     echo "For each logged-in user, run:"
     echo "  systemctl --user restart pipewire pipewire-pulse wireplumber"
     echo "  external-dsp generate     # one tuned sink per connected device"
+    echo "  systemctl --user enable --now external-dsp-watch.service"
 }
 
 uninstall() {
@@ -39,6 +40,8 @@ uninstall() {
         "$EXT_SCRIPT_OLD" \
         "$EXT_UNIT_OLD" \
         /usr/local/bin/gen-external-chains.py \
+        /usr/local/bin/external-dsp-watch \
+        /etc/systemd/user/external-dsp-watch.service \
         /usr/local/share/speaker-dsp/52-external-tuning.conf \
         /etc/wireplumber/wireplumber.conf.d/53-hide-absent-tuned.conf \
         /usr/local/share/wireplumber/scripts/53-hide-absent-tuned.lua \
@@ -74,6 +77,14 @@ install_filter() {
         echo "missing external filter config: $FILES_DIR/52-external-tuning.conf" >&2
         exit 1
     }
+    [ -f "$FILES_DIR/external-dsp-watch" ] || {
+        echo "missing device watcher: $FILES_DIR/external-dsp-watch" >&2
+        exit 1
+    }
+    [ -f "$FILES_DIR/external-dsp-watch.service" ] || {
+        echo "missing watcher unit: $FILES_DIR/external-dsp-watch.service" >&2
+        exit 1
+    }
     [ -f "$FILES_DIR/gen-external-chains.py" ] || {
         echo "missing chain generator: $FILES_DIR/gen-external-chains.py" >&2
         exit 1
@@ -95,6 +106,9 @@ install_filter() {
     install -D -m755 "$FILES_DIR/speaker-dsp" /usr/local/bin/speaker-dsp
     install -D -m755 "$FILES_DIR/gen-external-chains.py" \
         /usr/local/bin/gen-external-chains.py
+    install -D -m755 "$FILES_DIR/external-dsp-watch" /usr/local/bin/external-dsp-watch
+    install -D -m644 "$FILES_DIR/external-dsp-watch.service" \
+        /etc/systemd/user/external-dsp-watch.service
     install -D -m644 "$FILES_DIR/52-external-tuning.conf" \
         /usr/local/share/speaker-dsp/52-external-tuning.conf
     # Retire the previous single-chain setup, or its "External (Tuning)" sink
