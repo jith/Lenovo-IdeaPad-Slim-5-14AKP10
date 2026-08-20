@@ -38,12 +38,37 @@ external_is_active() {
 }
 
 usage() {
-    echo "usage: speaker-dsp {on|off|ab|status}" >&2
+    echo "usage: speaker-dsp {on|off|ab|status|unity}" >&2
     echo "  on      Speaker (Tuning), the 14-stage filter chain" >&2
     echo "  off     raw hardware speaker" >&2
     echo "  ab      toggle between them, carrying the level across" >&2
     echo "  status  which one is currently the default output" >&2
+    echo "  unity   put every gain below the DSP back to 100%" >&2
     exit 2
+}
+
+# The card's own mixer. These sit BELOW PipeWire -- below even the raw sink's
+# volume, and far below the monitor tap every tool in tools/ captures from --
+# so an attenuation here is invisible to every measurement in this repo while
+# quietly making the speakers quieter than the chain assumes. There are three
+# of them and any one will do it.
+ALSA_CARD=1
+ALSA_CTLS="Master Speaker PCM"
+
+alsa_pct() {
+    amixer -c "$ALSA_CARD" sget "$1" 2>/dev/null \
+        | awk -F'[][]' '/Playback [0-9]+ \[/ { print $2; exit }' | tr -d '%'
+}
+
+warn_alsa_volume() {
+    for _c in $ALSA_CTLS; do
+        _p=$(alsa_pct "$_c")
+        [ -n "$_p" ] || continue
+        [ "$_p" = "100" ] && continue
+        echo "note: ALSA '$_c' on card $ALSA_CARD is at ${_p}%. This is below"
+        echo "      PipeWire, so nothing in tools/ can see it. 'speaker-dsp unity'"
+        echo "      restores it."
+    done
 }
 
 # Volume as a percentage, read from the first channel; both are kept equal.
@@ -136,6 +161,19 @@ case "${1:-status}" in
             select_tuned && echo "A/B -> SPEAKER DSP (Speaker (Tuning))"
         fi
         ;;
+    unity)
+        for _c in $ALSA_CTLS; do
+            amixer -c "$ALSA_CARD" sset "$_c" 100% >/dev/null 2>&1 && \
+                echo "ALSA '$_c': 100%"
+        done
+        pactl set-sink-volume "$RAW" 100% 2>/dev/null && echo "$RAW: 100%"
+        echo
+        echo "Not touched: effect_input.speaker-tuning, currently $(volume_pct "$DSP")%."
+        echo "That is GNOME's slider and the only volume you have left -- it is"
+        echo "applied BEFORE the graph, so it changes the voicing as well as the"
+        echo "level. Pinning it to 100% too would mean no volume control at all."
+        echo "Run 'alsactl store' as root to make the ALSA settings survive a reboot."
+        ;;
     status)
         current=$(pactl get-default-sink) || exit $?
         case "$current" in
@@ -145,6 +183,8 @@ case "${1:-status}" in
             *) echo "state: other output ($current)" ;;
         esac
         warn_hardware_volume
+        warn_alsa_volume
+        for _c in $ALSA_CTLS; do echo "  ALSA $_c: $(alsa_pct "$_c")%"; done
         ;;
     *) usage ;;
 esac
