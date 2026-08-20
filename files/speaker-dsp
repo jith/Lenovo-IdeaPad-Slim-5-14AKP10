@@ -99,6 +99,17 @@ carry_volume() {
 # loudness continuous, which is what an A/B needs anyway.
 select_tuned() {
     carry_volume "$RAW" "$DSP" "$(awk -v t="$RAW_TRIM_DB" 'BEGIN{print -t}')"
+    # 'off' moved the listening level onto the raw sink, and PipeWire maps that
+    # onto the card's ALSA 'Speaker' control -- so an off/on round trip used to
+    # leave the hardware sitting at whatever percentage had been carried across
+    # (66-86% in practice) with nothing saying so. The level now lives on the
+    # DSP sink again, so the hardware belongs back at unity, which is what the
+    # chain is tuned for.
+    #
+    # Loudness is preserved, not changed: in raw mode the level was RAW's
+    # percentage; in tuned mode it is the DSP sink's, with RAW at 100% behind
+    # it, and carry_volume has just copied one onto the other.
+    pactl set-sink-volume "$RAW" 100% >/dev/null 2>&1
     pactl set-default-sink "$DSP"
 }
 
