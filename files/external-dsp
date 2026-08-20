@@ -66,6 +66,12 @@ set_bypass() {
 
 # Bypass is a live control change, so it leaves no trace in any config file and
 # does not survive a restart. Recorded here so status can report it.
+# Cap the device. This speaker is uncomfortably loud at 100%, and the level now
+# lives here rather than on the virtual sink, so an accidental full-scale set is
+# a real hazard rather than a slider position. Override with the environment
+# variable if a quieter device is ever used.
+MAX_LEVEL=${EXTERNAL_DSP_MAX_LEVEL:-60}
+
 STATE_DIR=${XDG_RUNTIME_DIR:-/tmp}
 BYPASS_FLAG=$STATE_DIR/external-dsp.bypassed
 
@@ -109,19 +115,21 @@ volume_pct() {
 # matches speaker-dsp, which warns about the same drift on the built-in speaker
 # rather than overriding a level the listener chose. 'external-dsp unity' sets
 # it deliberately.
-warn_device_volume() {
-    _d=$(raw_device)
-    [ -n "$_d" ] || return 0
-    _v=$(volume_pct "$_d")
+# The pre-graph sink is the one that must stay at unity now: anything less and
+# the chain stops seeing full scale and stops working. The device is where the
+# level belongs, so it is deliberately NOT pinned.
+pin_pregraph_unity() {
+    _v=$(volume_pct "$DSP")
     [ "$_v" = "100" ] && return 0
-    echo "note: $_d PCM is at ${_v}%, and X4's threshold was swept against a"
-    echo "      full-scale signal. Nothing downstream reports this -- monitor"
-    echo "      captures are taken ahead of it. 'external-dsp unity' sets 100%,"
-    echo "      then use 'external-dsp level N' for loudness."
+    pactl set-sink-volume "$DSP" 100% 2>/dev/null && \
+        echo "note: External (Tuning) was at ${_v}% -- that sits BEFORE the graph and"
+        echo "      switches the DSP off. Restored to 100%; set loudness with"
+        echo "      'external-dsp level N'."
 }
 
 case "${1:-status}" in
     on|dsp|tuning)
+        pin_pregraph_unity
         set_bypass off && rm -f "$BYPASS_FLAG"
         pactl set-default-sink "$DSP" && \
             echo "EXTERNAL DSP - External (Tuning) is the default output"
@@ -146,13 +154,22 @@ case "${1:-status}" in
         ;;
     level)
         [ -n "${2:-}" ] || usage
-        pactl set-sink-volume "$DSP" "${2}%" && \
-            echo "External (Tuning) level: ${2}%"
-        ;;
-    unity)
+        _n=$2
+        case "$_n" in *[!0-9]*) echo "level must be a whole number" >&2; exit 2 ;; esac
+        if [ "$_n" -gt "$MAX_LEVEL" ]; then
+            echo "capping at ${MAX_LEVEL}% -- this speaker is too loud above that."
+            echo "raise the ceiling with EXTERNAL_DSP_MAX_LEVEL=<n> if you mean it."
+            _n=$MAX_LEVEL
+        fi
         _d=$(raw_device)
         [ -n "$_d" ] || { echo "no external device connected" >&2; exit 1; }
-        pactl set-sink-volume "$_d" 100% && echo "$_d PCM set to 100%"
+        pin_pregraph_unity
+        pactl set-sink-volume "$_d" "${_n}%" && \
+            echo "level: ${_n}% (on the device, after the graph)"
+        ;;
+    unity)
+        pin_pregraph_unity
+        echo "External (Tuning) pre-graph level: $(volume_pct "$DSP")% (must be 100)"
         echo "set loudness with: external-dsp level N"
         ;;
     status)
@@ -169,8 +186,14 @@ case "${1:-status}" in
             *)      echo "state: other output ($_cur)" ;;
         esac
         echo "device: ${_d:-none connected}"
-        [ -n "$_d" ] && echo "  PCM: $(volume_pct "$_d")%   (chain sized for 100)"
-        echo "  level (External (Tuning)): $(volume_pct "$DSP")%"
+        [ -n "$_d" ] && echo "  level (device, after the graph): $(volume_pct "$_d")%   (max $MAX_LEVEL)"
+        _pg=$(volume_pct "$DSP")
+        if [ "$_pg" = "100" ]; then
+            echo "  pre-graph sink: 100%   (correct -- chain sees full scale)"
+        else
+            echo "  pre-graph sink: ${_pg}%   WRONG -- the DSP is being bypassed by volume."
+            echo "                        run 'external-dsp unity'"
+        fi
         ;;
     *) usage ;;
 esac
