@@ -40,6 +40,8 @@ uninstall() {
         "$EXT_UNIT_OLD" \
         /usr/local/bin/gen-external-chains.py \
         /usr/local/share/speaker-dsp/52-external-tuning.conf \
+        /etc/wireplumber/wireplumber.conf.d/53-hide-absent-tuned.conf \
+        /usr/local/share/wireplumber/scripts/53-hide-absent-tuned.lua \
         /usr/local/bin/speaker-dsp \
         /usr/local/bin/external-dsp
 
@@ -72,6 +74,14 @@ install_filter() {
         echo "missing external filter config: $FILES_DIR/52-external-tuning.conf" >&2
         exit 1
     }
+    [ -f "$FILES_DIR/53-hide-absent-tuned.lua" ] || {
+        echo "missing absent-sink script: $FILES_DIR/53-hide-absent-tuned.lua" >&2
+        exit 1
+    }
+    [ -f "$FILES_DIR/53-hide-absent-tuned.conf" ] || {
+        echo "missing absent-sink config: $FILES_DIR/53-hide-absent-tuned.conf" >&2
+        exit 1
+    }
     [ -f "$FILES_DIR/gen-external-chains.py" ] || {
         echo "missing chain generator: $FILES_DIR/gen-external-chains.py" >&2
         exit 1
@@ -95,6 +105,10 @@ install_filter() {
         /usr/local/bin/gen-external-chains.py
     install -D -m644 "$FILES_DIR/52-external-tuning.conf" \
         /usr/local/share/speaker-dsp/52-external-tuning.conf
+    install -D -m644 "$FILES_DIR/53-hide-absent-tuned.conf" \
+        /etc/wireplumber/wireplumber.conf.d/53-hide-absent-tuned.conf
+    install -D -m644 "$FILES_DIR/53-hide-absent-tuned.lua" \
+        /usr/local/share/wireplumber/scripts/53-hide-absent-tuned.lua
     # Retire the previous single-chain setup, or its "External (Tuning)" sink
     # loads alongside the generated per-device ones and every stream is
     # processed twice.

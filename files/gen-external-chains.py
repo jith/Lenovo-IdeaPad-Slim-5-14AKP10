@@ -16,11 +16,19 @@ and there must be one copy per device, identical except for its identity and
 target. Generating them keeps a single source of truth: edit the template, run
 this, and every device picks the change up.
 
-WHY IT IS NOT AUTOMATIC. PipeWire loads filter chains from config at startup.
-Modules loaded at runtime with pw-cli die with the client -- verified -- so
-creating a chain when a device appears needs a process that stays running, and
-the point of dropping external-dsp.service was to stop having one. Re-run this
-after pairing something new; connecting an already-known device needs nothing.
+WHY IT IS NOT FULLY AUTOMATIC. PipeWire loads filter chains from config at
+startup, and modules loaded at runtime with pw-cli die with the client
+(verified), so a chain cannot be conjured when a device appears without a
+process that stays running.
+
+What IS automatic: a chain is generated for every device known at the time, and
+53-hide-absent-tuned.lua hides the ones whose device is not currently connected.
+So connecting any device this has already seen makes its entry appear in GNOME
+by itself, with no regeneration and no restart. Only a genuinely new device --
+one paired since the last run -- needs this run again.
+
+Each chain carries speaker-dsp.device naming the device it belongs to, which is
+how that script knows which sink to hide.
 """
 import re
 import subprocess
@@ -95,7 +103,8 @@ def main():
         m = m.replace('node.description = "External (Tuning)"',
                       'node.description = "%s"' % desc.replace('"', "'"))
         m = m.replace('node.name = "effect_input.external-tuning"',
-                      'node.name = "effect_input.tuned-%s"' % sid)
+                      'node.name = "effect_input.tuned-%s"\n'
+                      '                speaker-dsp.device = "%s"' % (sid, name))
         m = m.replace('node.name = "effect_output.external-tuning"',
                       'node.name = "effect_output.tuned-%s"' % sid)
         m = m.replace("node.link-group = external-tuning",
