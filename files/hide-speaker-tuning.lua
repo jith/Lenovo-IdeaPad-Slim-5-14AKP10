@@ -14,40 +14,33 @@ nodes_om = ObjectManager {
   }
 }
 
--- Every REAL output device: the built-in speaker and headphone jack, USB
--- speakers, Bluetooth, HDMI. GNOME should offer the two tuned sinks and
--- nothing else, so that whatever is selected is always processed. The devices
--- are still there -- pactl and pavucontrol show them, and External (Tuning)
--- follows whichever one is active via 52-external-target.lua.
+-- GNOME lists the REAL devices -- "OPPO Enco Buds", "Creative Stage SE mini" --
+-- and the tuned sinks are hidden behind them: 52-external-target.lua moves any
+-- stream sent to an external device into that device's chain instead. So the
+-- names are the devices' own, and everything is still processed.
+--
+-- Hidden here: the built-in speaker (owned by 50-speaker-tuning.conf, which
+-- GNOME shows as "Speaker (Tuning)"), and the external chains' own input sinks,
+-- which are plumbing and would otherwise appear alongside the devices.
 raw_om = ObjectManager {
   Interest { type = "node",
     Constraint { "media.class", "=", "Audio/Sink" },
-    Constraint { "node.name", "matches", "alsa_output.*" },
+    Constraint { "node.name", "matches", "*HiFi__Speaker__sink" },
   },
   Interest { type = "node",
     Constraint { "media.class", "=", "Audio/Sink" },
-    Constraint { "node.name", "matches", "bluez_output.*" },
+    Constraint { "node.name", "matches", "effect_input.tuned-*" },
   },
 }
 
 -- GNOME derives output entries from card PORTS as well as from sink nodes, so
--- hiding the sinks alone is not enough -- a USB speaker still shows up as
--- "Analog Output" and "Digital Output" entries from its card. Hide every audio
--- card for the same reason the sinks are hidden: the two tuned sinks are the
--- only outputs that should be selectable, so that whatever is chosen is always
--- processed.
---
--- This covers the onboard card, HDMI, USB and Bluetooth. An earlier version
--- named the onboard card alone and deliberately left HDMI visible; that made
--- sense when only the internal speaker was tuned, and stopped making sense once
--- External (Tuning) covered everything else.
+-- the onboard card is hidden too -- otherwise the built-in speaker reappears as
+-- a card port even with its sink hidden. Other cards stay visible: their
+-- devices are what GNOME should be listing.
 card_om = ObjectManager {
   Interest { type = "device",
-    Constraint { "device.name", "matches", "alsa_card.*" },
-  },
-  Interest { type = "device",
-    Constraint { "device.name", "matches", "bluez_card.*" },
-  },
+    Constraint { "device.name", "equals", "alsa_card.pci-0000_04_00.6" },
+  }
 }
 
 clients_om = ObjectManager {
