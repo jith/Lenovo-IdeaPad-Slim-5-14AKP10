@@ -84,7 +84,6 @@ internal_is_active() {
 
 usage() {
     echo "usage: external-dsp {on|off|ab|status|unity|level N|devices|device N}" >&2
-    echo "  (startup is run by external-dsp.service, not by hand)" >&2
     exit 2
 }
 
@@ -170,26 +169,6 @@ case "${1:-status}" in
         pactl set-sink-volume "$_d" "${_n}%" && \
             echo "level: ${_n}% (on the device, after the graph)"
         ;;
-    startup)
-        # Run from external-dsp.service after PipeWire comes up. WirePlumber
-        # restores a remembered volume for every device, which after a restart
-        # left the pre-graph sink at 38% -- the DSP bypassed by volume -- and
-        # the device at 100%, which on this speaker is far past comfortable and
-        # past the cap. Neither is visible without asking, and the loud one is a
-        # hazard, so the correct structure is reasserted at login rather than
-        # waiting for someone to notice.
-        #
-        # Idempotent and conservative: the pre-graph sink is put back to unity,
-        # and the level is only touched if it is above the cap.
-        pin_pregraph_unity
-        _d=$(raw_device)
-        [ -n "$_d" ] || exit 0
-        _v=$(volume_pct "$_d")
-        if [ -n "$_v" ] && [ "$_v" -gt "$MAX_LEVEL" ]; then
-            pactl set-sink-volume "$_d" "${MAX_LEVEL}%" 2>/dev/null && \
-                echo "capped $_d from ${_v}% to ${MAX_LEVEL}%"
-        fi
-        ;;
     unity)
         pin_pregraph_unity
         echo "External (Tuning) pre-graph level: $(volume_pct "$DSP")% (must be 100)"
@@ -225,6 +204,11 @@ for o in json.load(sys.stdin):
 ")
         [ -n "$_oid" ] || { echo "External (Tuning) not loaded" >&2; exit 1; }
         pw-metadata "$_oid" target.object "$_pick" >/dev/null 2>&1
+        # Remembered across restarts by 52-external-target.lua, which reads this
+        # file. No login service: the script already runs when the graph is
+        # rebuilt, and it can check the device is actually present first.
+        _sd=${XDG_STATE_HOME:-$HOME/.local/state}/external-dsp
+        mkdir -p "$_sd" && echo "$_pick" > "$_sd/device"
         sleep 1
         echo "External (Tuning) -> $_pick"
         echo "note: level is per-device; set it with 'external-dsp level N'."

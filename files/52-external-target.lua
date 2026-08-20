@@ -44,6 +44,21 @@ local function is_external (props)
   return true
 end
 
+-- The device the listener last chose, written by `external-dsp device`. It is
+-- read here rather than reapplied by a login service, because this script
+-- already runs whenever the graph is rebuilt and knows when the device is
+-- actually present.
+local function remembered ()
+  local home = os.getenv ("HOME")
+  if home == nil then return nil end
+  local f = io.open (home .. "/.local/state/external-dsp/device", "r")
+  if f == nil then return nil end
+  local name = f:read ("l")
+  f:close ()
+  if name == nil or name == "" then return nil end
+  return name
+end
+
 local function pick ()
   local best, best_prio = nil, -1
   for node in sinks_om:iterate () do
@@ -85,7 +100,11 @@ local function apply ()
   local current = md:find (id, "target.object")
   if still_present (current) then return end
 
-  local target = pick ()
+  -- Prefer the remembered choice over priority. With a USB speaker and earbuds
+  -- both connected, priority picked the earbuds and the listener wanted the
+  -- speaker; re-deciding that on every restart is worse than not deciding.
+  local target = remembered ()
+  if not still_present (target) then target = pick () end
   if target == nil then
     -- Nothing external connected. Park on a name that resolves to nothing
     -- rather than leaving a stale device pinned.
