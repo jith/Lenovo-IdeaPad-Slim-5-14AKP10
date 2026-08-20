@@ -29,12 +29,24 @@ raw_om = ObjectManager {
   },
 }
 
--- GNOME also derives output entries from card ports, so hide this onboard
--- speaker card while leaving other devices such as HDMI visible.
+-- GNOME derives output entries from card PORTS as well as from sink nodes, so
+-- hiding the sinks alone is not enough -- a USB speaker still shows up as
+-- "Analog Output" and "Digital Output" entries from its card. Hide every audio
+-- card for the same reason the sinks are hidden: the two tuned sinks are the
+-- only outputs that should be selectable, so that whatever is chosen is always
+-- processed.
+--
+-- This covers the onboard card, HDMI, USB and Bluetooth. An earlier version
+-- named the onboard card alone and deliberately left HDMI visible; that made
+-- sense when only the internal speaker was tuned, and stopped making sense once
+-- External (Tuning) covered everything else.
 card_om = ObjectManager {
   Interest { type = "device",
-    Constraint { "device.name", "equals", "alsa_card.pci-0000_04_00.6" },
-  }
+    Constraint { "device.name", "matches", "alsa_card.*" },
+  },
+  Interest { type = "device",
+    Constraint { "device.name", "matches", "bluez_card.*" },
+  },
 }
 
 clients_om = ObjectManager {
