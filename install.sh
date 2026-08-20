@@ -31,7 +31,8 @@ uninstall() {
         "$EXT_FILTER_DEST" \
         "$EXT_CONF_DEST" \
         "$EXT_SCRIPT_DEST" \
-        /usr/local/bin/speaker-dsp
+        /usr/local/bin/speaker-dsp \
+        /usr/local/bin/external-dsp
 
     echo "Removed the system-wide Speaker DSP files."
     print_user_restart_instructions
@@ -70,6 +71,10 @@ install_filter() {
         echo "missing external target script: $FILES_DIR/52-external-target.lua" >&2
         exit 1
     }
+    [ -f "$FILES_DIR/external-dsp" ] || {
+        echo "missing external switch helper: $FILES_DIR/external-dsp" >&2
+        exit 1
+    }
 
     # The target script is not optional. Without it the external chain has no
     # resolved target, and PipeWire routes its output into the INTERNAL chain --
@@ -84,6 +89,7 @@ install_filter() {
     install -D -m644 "$FILES_DIR/52-external-tuning.conf" "$EXT_FILTER_DEST"
     install -D -m644 "$FILES_DIR/52-external-target.conf" "$EXT_CONF_DEST"
     install -D -m644 "$FILES_DIR/52-external-target.lua" "$EXT_SCRIPT_DEST"
+    install -D -m755 "$FILES_DIR/external-dsp" /usr/local/bin/external-dsp
 
     echo "Installed the fourteen-stage Speaker DSP filter chain (internal)"
     echo "and the six-stage External (Tuning) chain for every other output."

@@ -1,0 +1,99 @@
+#!/bin/sh
+# Switch the external output between the tuned virtual sink and the raw device,
+# and keep the raw device's PCM at 100%. Mirrors speaker-dsp, which does the
+# same job for the built-in speaker. No sudo required.
+#
+#   external-dsp on      External (Tuning), the six-stage chain
+#   external-dsp off     the raw device, no processing
+#   external-dsp ab      toggle, carrying the level across
+#   external-dsp status  which one is active, and what it is pointed at
+#   external-dsp level N set the listening level, 0-100
+
+if [ "$(id -u)" = "0" ] && [ -n "${SUDO_UID:-}" ]; then
+    export XDG_RUNTIME_DIR="/run/user/$SUDO_UID"
+fi
+
+DSP=effect_input.external-tuning
+
+usage() {
+    echo "usage: external-dsp {on|off|ab|status|level N}" >&2
+    exit 2
+}
+
+# The raw device is whatever 52-external-target.lua currently points the chain
+# at, so read it from the graph rather than hardcoding a device that may not be
+# connected. Falls back to the highest-priority non-internal sink when the
+# chain is unlinked.
+raw_device() {
+    _r=$(pw-link -l 2>/dev/null \
+        | grep -A1 'effect_output\.external-tuning:output_FL' \
+        | tail -1 | sed 's/^ *|-> *//; s/:playback_.*//; s/^ *//')
+    case "$_r" in
+        alsa_output*|bluez_output*) echo "$_r"; return 0 ;;
+    esac
+    pactl list sinks short | awk '$2 ~ /^(alsa_output|bluez_output)/ &&
+        $2 !~ /HiFi__Speaker__sink/ { print $2; exit }'
+}
+
+volume_pct() {
+    pactl get-sink-volume "$1" 2>/dev/null \
+        | awk -F'/' '/Volume:/ { gsub(/[^0-9]/, "", $2); print $2; exit }'
+}
+
+# The chain is tuned expecting the device at unity, exactly as the internal
+# chain is. Anything else silently changes the gain structure the limiter was
+# sized against, and nothing downstream measures it -- captures are taken ahead
+# of this control. Listening level belongs on the virtual sink instead, where
+# 'level' puts it.
+pin_device_volume() {
+    _d=$(raw_device)
+    [ -n "$_d" ] || return 0
+    _v=$(volume_pct "$_d")
+    [ "$_v" = "100" ] && return 0
+    pactl set-sink-volume "$_d" 100% 2>/dev/null && \
+        echo "note: set $_d PCM to 100% (was ${_v}%); use 'external-dsp level N' to set loudness"
+}
+
+case "${1:-status}" in
+    on|dsp|tuning)
+        pin_device_volume
+        pactl set-default-sink "$DSP" && \
+            echo "EXTERNAL DSP - External (Tuning) is the default output"
+        ;;
+    off|raw)
+        _d=$(raw_device)
+        [ -n "$_d" ] || { echo "no external device connected" >&2; exit 1; }
+        # Carry the level across so the A/B is a comparison and not a loudness
+        # test: the virtual sink's level moves onto the device.
+        _v=$(volume_pct "$DSP")
+        [ -n "$_v" ] && pactl set-sink-volume "$_d" "${_v}%" 2>/dev/null
+        pactl set-default-sink "$_d" && {
+            echo "RAW - $_d is the default output"
+            echo "note: GNOME hides the raw devices, so switch back with"
+            echo "      'external-dsp on' rather than from Settings."
+        }
+        ;;
+    ab)
+        _cur=$(pactl get-default-sink) || exit $?
+        if [ "$_cur" = "$DSP" ]; then exec "$0" off; else exec "$0" on; fi
+        ;;
+    level)
+        [ -n "${2:-}" ] || usage
+        pin_device_volume
+        pactl set-sink-volume "$DSP" "${2}%" && \
+            echo "External (Tuning) level: ${2}%"
+        ;;
+    status)
+        _cur=$(pactl get-default-sink) || exit $?
+        _d=$(raw_device)
+        case "$_cur" in
+            "$DSP") echo "state: External (Tuning), six-stage chain" ;;
+            "$_d")  echo "state: raw device, no processing" ;;
+            *)      echo "state: other output ($_cur)" ;;
+        esac
+        echo "device: ${_d:-none connected}"
+        [ -n "$_d" ] && echo "  PCM ${_d##*.}: $(volume_pct "$_d")%   (should be 100)"
+        echo "  level (External (Tuning)): $(volume_pct "$DSP")%"
+        ;;
+    *) usage ;;
+esac
