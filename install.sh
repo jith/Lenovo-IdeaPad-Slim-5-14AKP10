@@ -16,10 +16,12 @@ HIDE_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/hide-speaker-tuning.lua
 EXT_FILTER_DEST=/etc/pipewire/pipewire.conf.d/52-external-tuning.conf
 EXT_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/52-external-target.conf
 EXT_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/52-external-target.lua
+EXT_UNIT_DEST=/etc/systemd/user/external-dsp.service
 
 print_user_restart_instructions() {
     echo "For each logged-in user, run:"
     echo "  systemctl --user restart pipewire pipewire-pulse wireplumber"
+    echo "  systemctl --user enable --now external-dsp.service"
 }
 
 uninstall() {
@@ -32,7 +34,8 @@ uninstall() {
         "$EXT_CONF_DEST" \
         "$EXT_SCRIPT_DEST" \
         /usr/local/bin/speaker-dsp \
-        /usr/local/bin/external-dsp
+        /usr/local/bin/external-dsp \
+        "$EXT_UNIT_DEST"
 
     echo "Removed the system-wide Speaker DSP files."
     print_user_restart_instructions
@@ -75,6 +78,10 @@ install_filter() {
         echo "missing external switch helper: $FILES_DIR/external-dsp" >&2
         exit 1
     }
+    [ -f "$FILES_DIR/external-dsp.service" ] || {
+        echo "missing external-dsp unit: $FILES_DIR/external-dsp.service" >&2
+        exit 1
+    }
 
     # The target script is not optional. Without it the external chain has no
     # resolved target, and PipeWire routes its output into the INTERNAL chain --
@@ -90,6 +97,7 @@ install_filter() {
     install -D -m644 "$FILES_DIR/52-external-target.conf" "$EXT_CONF_DEST"
     install -D -m644 "$FILES_DIR/52-external-target.lua" "$EXT_SCRIPT_DEST"
     install -D -m755 "$FILES_DIR/external-dsp" /usr/local/bin/external-dsp
+    install -D -m644 "$FILES_DIR/external-dsp.service" "$EXT_UNIT_DEST"
 
     echo "Installed the fourteen-stage Speaker DSP filter chain (internal)"
     echo "and the six-stage External (Tuning) chain for every other output."
