@@ -39,16 +39,23 @@ chains_om = ObjectManager {
     Constraint { "node.name", "matches", "effect_output.tuned-*" } }
 }
 
--- A candidate is any sink that is not the built-in speaker and not part of a
--- filter chain. Excluding node.link-group is what stops a chain ever targeting
--- another chain, which is the double-processing case.
+-- A candidate is any sink that is not the built-in speaker and is not one of
+-- our own chains.
+--
+-- Excluding every node carrying node.link-group was wrong and cost a Bluetooth
+-- device: when earbuds are in headset mode WirePlumber builds a loopback pair
+-- for the microphone, so the sink itself carries node.link-group =
+-- "loopback-NNNN-NN" and was rejected -- the Bluetooth chain then fell all the
+-- way back to the built-in speaker. Only OUR link-groups may be excluded, and
+-- those are named after the chain.
 local function candidates (pattern)
   local out = {}
   for node in sinks_om:iterate () do
     local props = node.properties
     local name = props["node.name"]
+    local group = props["node.link-group"]
     if name ~= nil
-        and props["node.link-group"] == nil
+        and (group == nil or not group:match ("^tuned%-"))
         and not name:match ("^effect_")
         and not name:match (INTERNAL)
         and name:match (pattern) then
