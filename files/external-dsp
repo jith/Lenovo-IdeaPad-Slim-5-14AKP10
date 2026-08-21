@@ -10,6 +10,7 @@
 #   external-dsp devices list the connected external devices
 #   external-dsp device N pick one of them by number or name
 #   external-dsp status  what is playing, through what, at what level
+#   external-dsp eq      show or set the voicing, live, per class of device
 #   external-dsp level N set the listening level, 0-100
 #
 # HOW THE ROUTING WORKS, because every subcommand here depends on it. GNOME
@@ -44,7 +45,11 @@ STATE_DIR=${XDG_RUNTIME_DIR:-/tmp}
 BYPASS_FLAG=$STATE_DIR/external-dsp.bypassed
 
 usage() {
-    echo "usage: external-dsp {on|off|ab|status|unity|level N|devices|device N|generate}" >&2
+    echo "usage: external-dsp {on|off|ab|status|eq|unity|level N|devices|device N|generate}" >&2
+    echo "  eq                      show the voicing for the current device" >&2
+    echo "  eq BAND dB [BAND dB..]  bass | mid | presence | treble, -12..+12" >&2
+    echo "  eq flat                 every band back to 0" >&2
+    echo "  eq preset NAME          a starting curve; 'eq presets' lists them" >&2
     exit 2
 }
 
@@ -188,6 +193,139 @@ pin_pregraph_unity() {
     done
 }
 
+
+# -- stage XV, the voicing ---------------------------------------------------
+#
+# The other five stages protect and control, which is all that can honestly be
+# done to hardware nobody has measured. This one changes the sound, so it is set
+# BY EAR and ships flat: a fresh install is identical to the chain before the
+# stage existed.
+#
+# Per CLASS of device, because that is how the chains are built -- earbuds and a
+# USB speaker want different curves and get different chains, so setting one
+# does not touch the other.
+#
+# MEASURED, so the numbers mean something. On 30 s of -10.7 LUFS programme with
+# peaks at -0.1 dBFS, a +4 dB shelf or peak delivers into its own band:
+#
+#     band        set    delivered   bleed into neighbours
+#     bass        +4     +2.10       low-mid +0.36
+#     presence    +4     +2.55       top     +0.76
+#     treble      +4     +1.92       presence -0.03
+#
+# Delivered is smaller than set because a band average is diluted by the shelf's
+# own transition and by X1 removing the bottom. It is still well above the ~1 dB
+# that is audible, which is the point.
+#
+# NO INPUT TRIM COMPENSATION, though it was built and measured first. The worry
+# was that boosts would make X4 work harder and pump. Swept to +15 dB, LRA stays
+# between 11.9 and 12.4 LU against 11.9 flat, and sample peak is pinned at
+# -1.500 dBFS throughout -- the limiter holds without squashing. Compensating
+# cost 4.7 LU of level to move the tilt by 0.12 dB, so it was removed.
+EQ_BANDS="bass mid presence treble"
+
+eq_nodes() {
+    case "$1" in
+        bass)     echo "xv1bass_l xv1bass_r" ;;
+        mid)      echo "xv2mid_l xv2mid_r" ;;
+        pres|presence) echo "xv3pres_l xv3pres_r" ;;
+        treb|treble)  echo "xv4treb_l xv4treb_r" ;;
+        *)        return 1 ;;
+    esac
+}
+
+eq_label() {
+    case "$1" in
+        bass)     echo "150 Hz shelf" ;;
+        mid)      echo "1 kHz" ;;
+        presence) echo "3.5 kHz" ;;
+        treble)   echo "8 kHz shelf" ;;
+    esac
+}
+
+# Read back from the graph rather than from a state file: the graph is what is
+# actually in circuit, and a live set that silently failed would otherwise be
+# reported as applied.
+eq_get() {
+    _n=$(eq_nodes "$2" | awk '{print $1}')
+    pw-cli enum-params "$1" Props 2>/dev/null \
+        | grep -A1 "\"$_n:Gain\"" | tail -1 | awk '{printf "%.1f", $2}'
+}
+
+# A chain built from a config older than stage XV has no xv nodes at all, and
+# eq_get would read every band as empty -- which eq_show would then print as a
+# flat curve. Reporting "not voicing anything" for "cannot voice anything" is
+# the worst possible answer, so check first.
+eq_present() {
+    pw-cli enum-params "$1" Props 2>/dev/null | grep -q '"xv1bass_l:Gain"'
+}
+
+eq_show() {
+    _id=$1; _desc=$2
+    echo "voicing: $_desc"
+    echo
+    _any=0
+    for _b in $EQ_BANDS; do
+        _g=$(eq_get "$_id" "$_b")
+        _g=${_g:-0.0}
+        case "$_g" in 0.0|-0.0) ;; *) _any=1 ;; esac
+        # printf's '+' flag is numeric-only and these are strings, so the sign
+        # and the bar are both built here. The bar is centred on a zero column
+        # so cuts and boosts are read at a glance.
+        awk -v b="$_b" -v f="$(eq_label "$_b")" -v g="$_g" 'BEGIN {
+            n = g < 0 ? int(-g + 0.5) : int(g + 0.5)
+            if (n > 8) n = 8
+            left = ""; right = ""
+            if (g < 0) { for (i = 0; i < n; i++) left = left "<" }
+            else       { for (i = 0; i < n; i++) right = right ">" }
+            sign = (g > 0) ? "+" : ""
+            printf "  %-10s %-14s %6s dB   %8s|%s\n", b, f, sign g, left, right
+        }'
+    done
+    [ "$_any" = "0" ] && echo "  (flat -- this chain is not voicing anything)"
+    return 0
+}
+
+eq_set() {
+    _id=$1; shift
+    _params=""
+    while [ $# -gt 0 ]; do
+        _b=$1; _g=$2
+        [ -n "$_g" ] || { echo "eq: '$_b' needs a value in dB" >&2; return 2; }
+        _nodes=$(eq_nodes "$_b") || {
+            echo "eq: no such band '$_b' -- try: $EQ_BANDS" >&2; return 2; }
+        case "$_g" in
+            *[!0-9.+-]*|"") echo "eq: '$_g' is not a number of dB" >&2; return 2 ;;
+        esac
+        # +-12 dB is not a safety limit -- the limiter holds well past it,
+        # measured to +15 -- it is a typo guard. Past this it is not a voicing,
+        # it is a different speaker.
+        awk -v g="$_g" 'BEGIN{exit !(g>=-12 && g<=12)}' || {
+            echo "eq: ${_g} dB is outside -12..+12" >&2; return 2; }
+        for _n in $_nodes; do
+            _params="$_params \"$_n:Gain\" $_g"
+        done
+        shift 2
+    done
+    [ -n "$_params" ] || return 2
+    pw-cli set-param "$_id" Props "{ params = [$_params ] }" >/dev/null 2>&1
+}
+
+eq_preset() {
+    case "$1" in
+        # Cheap true-wireless earbuds are near-universally V-shaped: lifted
+        # bass, recessed mids, a hot upper treble. Everything but 'flat' here
+        # is some way of unbending that, and none of it is measured -- pick by
+        # ear.
+        flat)    echo "bass 0 mid 0 presence 0 treble 0" ;;
+        vocal)   echo "bass -2 mid 2.5 presence 1.5 treble -1" ;;
+        warm)    echo "bass 3 mid 0.5 presence -1.5 treble -2.5" ;;
+        bright)  echo "bass -1 mid 0 presence 2.5 treble 3" ;;
+        bass)    echo "bass 5 mid 0 presence 0 treble -1" ;;
+        *) return 1 ;;
+    esac
+}
+
 case "${1:-status}" in
     on|dsp|tuning)
         set_bypass off || exit 1
@@ -238,6 +376,66 @@ case "${1:-status}" in
         pin_pregraph_unity
         pactl set-sink-volume "$_d" "${_n}%" && \
             echo "level: ${_n}% on $(description_of "$_d") (after the graph)"
+        ;;
+    eq)
+        shift
+        if internal_is_active; then
+            echo "the built-in speaker is the active output; this voicing is for" >&2
+            echo "external devices only. Pick one with 'external-dsp devices'." >&2
+            exit 1
+        fi
+        _d=$(active_device)
+        [ -n "$_d" ] || { echo "no external device connected" >&2; exit 1; }
+        set -- "$(chain_for "$_d")" "$@"
+        _cls=$(echo "$1" | awk '{print $1}')
+        _cid=$(echo "$1" | awk '{print $2}')
+        _cdesc=$(echo "$1" | cut -d' ' -f3-)
+        shift
+        [ -n "$_cid" ] || { echo "no chain matches $_d" >&2; exit 1; }
+        eq_present "$_cid" || {
+            echo "$_cdesc has no voicing stage -- it was built from a config" >&2
+            echo "older than stage XV. Re-run install.sh from the repo, then:" >&2
+            echo "  systemctl --user restart pipewire pipewire-pulse wireplumber" >&2
+            exit 1; }
+        case "${1:-show}" in
+            show)
+                eq_show "$_cid" "$_cdesc  ->  $(description_of "$_d")"
+                echo
+                echo "set with: external-dsp eq bass +3 treble -2"
+                echo "presets:  external-dsp eq presets"
+                ;;
+            presets)
+                echo "flat    no voicing at all"
+                echo "vocal   unbend the V -- mids and consonants forward"
+                echo "warm    weight up, treble down"
+                echo "bright  air and detail up"
+                echo "bass    weight up hard, treble eased"
+                echo
+                echo "apply with: external-dsp eq preset vocal"
+                ;;
+            preset)
+                [ -n "${2:-}" ] || { echo "which preset? try 'external-dsp eq presets'" >&2; exit 2; }
+                _p=$(eq_preset "$2") || {
+                    echo "no such preset: $2 -- try 'external-dsp eq presets'" >&2; exit 2; }
+                eq_set "$_cid" $_p || exit $?
+                echo "preset '$2' applied to $_cdesc"
+                echo
+                eq_show "$_cid" "$_cdesc"
+                ;;
+            flat)
+                eq_set "$_cid" bass 0 mid 0 presence 0 treble 0 || exit $?
+                echo "flat -- $_cdesc is not voicing anything"
+                ;;
+            *)
+                eq_set "$_cid" "$@" || exit $?
+                eq_show "$_cid" "$_cdesc"
+                ;;
+        esac
+        # Live only. PipeWire reads filter-chain controls from config at startup
+        # and nothing runs at login to reapply them, so this is lost on restart
+        # -- deliberately, while a curve is being auditioned. Once one is chosen
+        # it belongs in the template as that class's shipped default, which
+        # survives everything and needs no machinery.
         ;;
     unity)
         pin_pregraph_unity

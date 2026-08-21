@@ -2647,3 +2647,102 @@ device: OPPO Enco Buds
 A non-zero `streams bypassing it` means `52-external-target.lua` did not
 redirect and audio is reaching the device untuned — which is otherwise only
 detectable by ear, on a chain deliberately tuned not to be audible.
+
+### Stage XV: the voicing, and why it is the only stage set by ear
+
+The five protective stages are why the chain is inaudible, and for a long time
+that was the whole answer. Measured on 30 s of −10.7 LUFS programme with peaks
+at −0.1 dBFS, tuned against the exact settings `external-dsp off` applies:
+
+| | tuned | bypassed | difference |
+|---|---|---|---|
+| loudness | −11.09 LUFS | −10.82 LUFS | **0.27 LU** |
+| true peak | −1.489 dBTP | +0.011 dBTP | 1.5 dB |
+| every ⅓-octave band, 50 Hz–16 kHz | within 0.8 dB, most within 0.15 dB | | |
+
+0.27 LU is not audible — roughly 1 LU is the threshold with instant switching,
+and an A/B with a gap is harder still. Splitting it: the limiter accounts for
+0.25 LU, GOTT for 0.12. That is the chain working correctly. It is insurance
+against inter-sample clipping over a lossy codec, not an effect.
+
+So stage XV exists to give it something to say. It **ships flat** — a fresh
+install is identical to the chain before the stage existed, verified offline to
+the same −11.09 / −1.500 dBFS / −1.489 dBTP.
+
+| band | filter | why |
+|---|---|---|
+| bass | low shelf, 150 Hz, Q 0.707 | boom / weight |
+| mid | peaking, 1 kHz, Q 0.9 | body, vocal forwardness |
+| presence | peaking, 3.5 kHz, Q 1.2 | clarity, consonants |
+| treble | high shelf, 8 kHz, Q 0.707 | air / sibilance |
+
+It sits between X1 and X2, so GOTT still controls whatever it boosts. Placement
+was measured rather than assumed: moving it after GOTT changes a +4 dB bass
+shelf's delivered gain from +1.70 to +1.88 dB, which does not buy the loss of
+protection.
+
+The bass corner was swept, since a shelf's corner decides how much of the boost
+lands as bass and how much as mud:
+
+| corner | bass 50–125 Hz | low-mid 160–400 Hz |
+|---|---|---|
+| 110 Hz | +1.70 | −0.02 |
+| **150 Hz** | **+2.10** | **+0.36** |
+| 200 Hz | +2.25 | +0.93 |
+| 250 Hz | +2.27 | +1.45 |
+| 300 Hz | +2.25 | +1.87 |
+
+Authority saturates by 200 Hz; everything past that is added to the low-mids.
+
+**Set dB and delivered dB are not the same number**, because a band average is
+diluted by the shelf's own transition and by X1 removing the bottom. For +4 dB:
+
+| band | set | delivered | bleed |
+|---|---|---|---|
+| bass | +4 | +2.10 | low-mid +0.36 |
+| presence | +4 | +2.55 | top +0.76 |
+| treble | +4 | +1.92 | presence −0.03 |
+
+Still well above the ~1 dB that is audible, which is the point.
+
+#### No input-trim compensation, though it was built first
+
+The expectation was that boosts would make X4 work harder and pump, so an
+automatic input trim was added to hold the peak level constant. Measured, that
+was wrong. Sweeping the bass shelf from 0 to +15 dB:
+
+| bass | LUFS-I | LRA | sample peak |
+|---|---|---|---|
+| +0 | −11.0 | 11.9 LU | −1.5 dBFS |
+| +3 | −10.2 | 11.9 LU | −1.5 dBFS |
+| +6 | −9.5 | 12.4 LU | −1.5 dBFS |
+| +9 | −8.8 | 12.4 LU | −1.5 dBFS |
+| +12 | −8.2 | 11.9 LU | −1.5 dBFS |
+| +15 | −7.6 | 12.3 LU | −1.5 dBFS |
+
+Loudness range never collapses and the peak never moves — the limiter holds
+without squashing, which is what it was sized to do. Compensating cost 4.7 LU of
+level to move the tilt by 0.12 dB, so it was removed. The ±12 dB clamp in
+`external-dsp eq` is a typo guard, not a safety limit.
+
+#### Why this one is by ear
+
+Every other stage in this repo is measured. This one cannot be: voicing needs a
+target, an earbud's target needs an ear coupler, and this setup does not have
+one — a phone mic cannot sit where the ear canal is, and the room cannot measure
+below 125 Hz anyway. Presets exist because cheap true-wireless earbuds are
+near-universally V-shaped, so "unbend the V" is a better first guess than flat,
+but it is a guess.
+
+```
+external-dsp eq                       show the curve for the current device
+external-dsp eq bass +3 treble -2     set bands live, in dB
+external-dsp eq preset vocal          flat | vocal | warm | bright | bass
+external-dsp eq flat                  back to no voicing
+```
+
+The curve is **live only**. PipeWire reads filter-chain controls from config at
+startup and nothing runs at login to reapply them, so a restart loses it — which
+is right while a curve is being auditioned. Once one is chosen it belongs in the
+template as that class's shipped default, where it survives everything and needs
+no machinery.

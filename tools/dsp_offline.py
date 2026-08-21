@@ -133,6 +133,25 @@ def _rbj(kind, freq, q, gain_db=0.0, rate=RATE):
     elif kind == "bq_peaking":
         b = [1 + alpha * a, -2 * cw, 1 - alpha * a]
         a0, a1, a2 = 1 + alpha / a, -2 * cw, 1 - alpha / a
+    elif kind == "bq_lowshelf":
+        # RBJ shelves use 2*sqrt(a)*alpha, not the peaking form. builtins.c
+        # derives alpha from Q the same way, so Q = 0.707 gives the maximally
+        # flat shelf and higher Q overshoots at the corner.
+        two = 2 * np.sqrt(a) * alpha
+        b = [a * ((a + 1) - (a - 1) * cw + two),
+             2 * a * ((a - 1) - (a + 1) * cw),
+             a * ((a + 1) - (a - 1) * cw - two)]
+        a0 = (a + 1) + (a - 1) * cw + two
+        a1 = -2 * ((a - 1) + (a + 1) * cw)
+        a2 = (a + 1) + (a - 1) * cw - two
+    elif kind == "bq_highshelf":
+        two = 2 * np.sqrt(a) * alpha
+        b = [a * ((a + 1) + (a - 1) * cw + two),
+             -2 * a * ((a - 1) + (a + 1) * cw),
+             a * ((a + 1) + (a - 1) * cw - two)]
+        a0 = (a + 1) - (a - 1) * cw + two
+        a1 = 2 * ((a - 1) - (a + 1) * cw)
+        a2 = (a + 1) - (a - 1) * cw - two
     else:
         raise ValueError(f"unhandled biquad {kind}")
     return np.array(b) / a0, np.array([1.0, a1 / a0, a2 / a0])
