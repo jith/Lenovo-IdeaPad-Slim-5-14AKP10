@@ -2591,3 +2591,59 @@ install the filter without it. The script never selects a node whose name starts
 with `effect_` or that carries `node.link-group`, so it cannot target either
 chain; verified by mis-pointing it at the internal speaker and watching it
 correct itself on the next device event.
+
+### What GNOME selects, and what `external-dsp` drives
+
+GNOME lists the **real devices** — "OPPO Enco Buds", "Creative Stage Mini" — and
+the chains are hidden. So the default sink is the device itself, and the chain
+is spliced in behind it: `52-external-target.lua` moves each app stream into
+`effect_input.tuned-<class>`, whose output feeds the selected device.
+
+Nothing in `external-dsp` switches the default sink to a virtual sink. It did in
+the first design, when a single "External (Tuning)" entry was what GNOME showed,
+and the switch to per-class chains broke every remnant of that model without
+breaking anything audible — so it went unnoticed until the commands were run:
+
+| symptom | cause |
+|---|---|
+| `external-dsp on` → `Failure: No such entity` | drove `effect_input.external-tuning`, a sink that no longer exists |
+| `status` → `pre-graph sink: %` and a bogus `WRONG` | volume query on that sink returned empty, and `"" != "100"` |
+| `status` → `raw device, no processing` | the default sink being a real device *is* the design now; it was reading it as bypassed |
+| `on` printed the tail of a note it had not started | `pactl … && echo` bound only the first of three `echo`s |
+| `speaker-dsp off` on the earbuds bypassed the *internal* chain | its `external_is_active()` also tested for the vanished sink, so it never delegated |
+
+| command | what it does |
+|---|---|
+| `external-dsp on` / `off` / `ab` | engage or bypass the chain **in place** — the output device never changes |
+| `external-dsp status` | active chain, device, both volumes, and a stream census |
+| `external-dsp devices` / `device N` | list and select; `device` sets the default sink, exactly as picking it in GNOME does |
+| `external-dsp level N` | listening level, on the device, after the graph. Capped at 60 % |
+| `external-dsp unity` | put every chain input back to 100 % |
+
+Bypass raises `x2mbc:td_*` and `x4brick:th` to full scale rather than setting
+`enabled = 0`, which would drop GOTT to its dry path at `g_dry = 0.0` and cost
+12 dB. It is applied to **every** chain, not just the active one: bypassing only
+the active one meant switching from the earbuds to the USB speaker silently
+turned the DSP back on mid-comparison.
+
+The two volumes are not interchangeable. A chain's input sink is applied
+**before** the graph, so anything below 100 % starves the compressor and limiter
+of the level they were sized against and switches the tuning off by stealth —
+`status` reports it and `unity` repairs it. The device's volume is after the
+graph, which is why the listening level lives there.
+
+`status` also counts streams, because the failure this design exists to prevent
+is silent:
+
+```
+state: Bluetooth (Tuning) -- six-stage chain
+device: OPPO Enco Buds
+        bluez_output.F0:BE:25:17:71:00
+  level (device, after the graph):    55%   (max 60)
+  chain input (before the graph):    100%   correct
+  streams in the chain:                1
+```
+
+A non-zero `streams bypassing it` means `52-external-target.lua` did not
+redirect and audio is reaching the device untuned — which is otherwise only
+detectable by ear, on a chain deliberately tuned not to be audible.

@@ -8,7 +8,6 @@ fi
 
 DSP=effect_input.speaker-tuning
 RAW=alsa_output.pci-0000_04_00.6.HiFi__Speaker__sink
-EXT=effect_input.external-tuning
 
 # Loudness trim for the raw path, in dB, from tools/loudness-match.sh.
 # Attenuation only: the louder path is trimmed at its own output, never the
@@ -28,12 +27,24 @@ EXT=effect_input.external-tuning
 RAW_TRIM_DB=${SPEAKER_DSP_RAW_TRIM_DB:-0.0}
 
 # 'off' and 'ab' mean "bypass the DSP on what I am listening to". When the
-# active output is External (Tuning) -- a Bluetooth speaker, earbuds,
+# active output is an external device -- a Bluetooth speaker, earbuds,
 # headphones, a USB speaker -- that is external-dsp's job. Without this,
 # 'speaker-dsp off' moved the sound to the built-in speaker, which is a
 # different physical device and never what was meant.
+#
+# External is now recognised by the default sink being a real device that is not
+# the built-in speaker. It used to be recognised by the default sink being
+# effect_input.external-tuning, and that sink no longer exists: the chains are
+# hidden from GNOME and the DEVICE is what gets selected, with the chain spliced
+# in behind it by 52-external-target.lua. Left as it was, this test never fired,
+# so 'speaker-dsp off' on the earbuds silently bypassed the internal chain
+# instead of the external one.
 external_is_active() {
-    [ "$(pactl get-default-sink 2>/dev/null)" = "$EXT" ] || return 1
+    case "$(pactl get-default-sink 2>/dev/null)" in
+        "$RAW") return 1 ;;
+        alsa_output*|bluez_output*) ;;
+        *) return 1 ;;
+    esac
     command -v external-dsp >/dev/null 2>&1
 }
 
@@ -151,7 +162,7 @@ case "${1:-status}" in
         ;;
     off|raw)
         if external_is_active; then
-            echo "note: External (Tuning) is the active output, so bypassing THAT."
+            echo "note: an external device is the active output, so bypassing THAT."
             echo "      Use 'speaker-dsp on' to move to the built-in speaker instead."
             exec external-dsp off
         fi
@@ -162,7 +173,7 @@ case "${1:-status}" in
         ;;
     ab)
         if external_is_active; then
-            echo "note: External (Tuning) is the active output, so toggling THAT."
+            echo "note: an external device is the active output, so toggling THAT."
             exec external-dsp ab
         fi
         current=$(pactl get-default-sink) || exit $?
@@ -190,7 +201,8 @@ case "${1:-status}" in
         case "$current" in
             "$DSP") echo "state: Speaker (Tuning), 14-stage chain" ;;
             "$RAW") echo "state: raw hardware speaker"; warn_slider ;;
-            "$EXT") echo "state: External (Tuning) -- run 'external-dsp status'" ;;
+            alsa_output*|bluez_output*)
+                    echo "state: external device -- run 'external-dsp status'" ;;
             *) echo "state: other output ($current)" ;;
         esac
         warn_hardware_volume

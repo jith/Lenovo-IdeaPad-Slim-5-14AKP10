@@ -1,105 +1,89 @@
 #!/bin/sh
-# Switch the external output between the tuned virtual sink and the raw device,
-# and keep the raw device's PCM at 100%. Mirrors speaker-dsp, which does the
-# same job for the built-in speaker. No sudo required.
+# Control the External (Tuning) chains -- the six-stage DSP that every output
+# except the built-in speaker is played through. Mirrors speaker-dsp, which does
+# the same job for the built-in speaker. No sudo required.
 #
-#   external-dsp on      External (Tuning), the six-stage chain
-#   external-dsp off     bypass the DSP, staying on the same device
-#   external-dsp ab      toggle, carrying the level across
-#   external-dsp unity   set the device PCM to 100%, which the chain assumes
+#   external-dsp on      the six-stage chain processes
+#   external-dsp off     bypass it, staying on the same device at the same level
+#   external-dsp ab      toggle between the two
+#   external-dsp unity   put every chain input back to 100%, which it assumes
 #   external-dsp devices list the connected external devices
 #   external-dsp device N pick one of them by number or name
-#   external-dsp status  which one is active, and what it is pointed at
+#   external-dsp status  what is playing, through what, at what level
 #   external-dsp level N set the listening level, 0-100
+#
+# HOW THE ROUTING WORKS, because every subcommand here depends on it. GNOME
+# lists the REAL devices -- "OPPO Enco Buds", "Creative Stage Mini" -- and the
+# chains are hidden. So the default sink is the device itself, and the chain is
+# spliced in behind it: 52-external-target.lua moves each app stream into
+# effect_input.tuned-<class>, whose output feeds the selected device.
+#
+# That is why nothing here switches the default sink to a virtual sink. It used
+# to, back when a single "External (Tuning)" entry was what GNOME showed, and
+# every remnant of that model was broken by the change: this script drove
+# effect_input.external-tuning, a sink that no longer exists, so 'on' failed with
+# "No such entity" and 'status' reported "raw device, no processing" while the
+# chain was in fact processing. Reported from real use 21 Aug 2026.
 
 if [ "$(id -u)" = "0" ] && [ -n "${SUDO_UID:-}" ]; then
     export XDG_RUNTIME_DIR="/run/user/$SUDO_UID"
 fi
 
-DSP=effect_input.external-tuning
 INT=effect_input.speaker-tuning
+INT_RAW=alsa_output.pci-0000_04_00.6.HiFi__Speaker__sink
 
-# The mirror of the guard in speaker-dsp: 'off' and 'ab' mean "bypass the DSP
-# on what I am listening to". If the built-in speaker is the active output,
-# that is speaker-dsp's job -- switching to the external device here would move
-# the sound to a different physical device.
-# Bypass IN PLACE rather than by switching the default sink to the raw device.
-# The raw devices are hidden from GNOME, so making one the default meant GNOME's
-# picker fell back to the first sink it could see -- Speaker (Tuning) -- and the
-# sound jumped to the built-in speaker. Reported and reproduced 20 Aug 2026.
-#
-# Staying on External (Tuning) keeps the default sink visible and stable, and
-# has a second advantage: the sink's volume is applied BEFORE the graph, so
-# leaving it alone means tuned and bypassed are heard at the same level without
-# any level-carrying arithmetic.
-#
-# X2 and X4 are neutralised, NOT disabled. Setting x2mbc:enabled = 0 drops GOTT
-# to its dry path, and this chain runs g_dry = 0.0 / g_wet = 1.0, so "disabled"
-# cost 12 dB rather than being transparent -- measured 20 Aug 2026. Raising the
-# thresholds to full scale leaves both plugins in circuit doing nothing, which
-# is what transparent actually means here. X1 and X3 are pushed out of band
-# because a builtin biquad has no enable control.
-filter_id() {
-    pw-dump 2>/dev/null | python3 -c "
-import json,sys
-for o in json.load(sys.stdin):
-    p=(o.get('info') or {}).get('props') or {}
-    if p.get('node.name')=='effect_input.external-tuning': print(o['id']); break
-"
-}
-
-set_bypass() {
-    _id=$(filter_id)
-    [ -n "$_id" ] || { echo "External (Tuning) not loaded" >&2; return 1; }
-    if [ "$1" = "on" ]; then
-        pw-cli set-param "$_id" Props '{ params = [
-            "x2mbc:td_1" 1.0 "x2mbc:td_2" 1.0 "x2mbc:td_3" 1.0 "x2mbc:td_4" 1.0
-            "x4brick:th" 1.0
-            "x1hp_l:Freq" 5.0 "x1hp_r:Freq" 5.0
-            "x3lp_l:Freq" 24000.0 "x3lp_r:Freq" 24000.0 ] }' >/dev/null 2>&1
-    else
-        pw-cli set-param "$_id" Props '{ params = [
-            "x2mbc:td_1" 0.50 "x2mbc:td_2" 0.50 "x2mbc:td_3" 0.45 "x2mbc:td_4" 0.35
-            "x4brick:th" 0.8414
-            "x1hp_l:Freq" 30.0 "x1hp_r:Freq" 30.0
-            "x3lp_l:Freq" 20000.0 "x3lp_r:Freq" 20000.0 ] }' >/dev/null 2>&1
-    fi
-}
+# Cap the device. This speaker is uncomfortably loud at 100%, and the level
+# lives on the device rather than on a virtual sink, so an accidental full-scale
+# set is a real hazard rather than a slider position. Override with the
+# environment variable if a quieter device is ever used.
+MAX_LEVEL=${EXTERNAL_DSP_MAX_LEVEL:-60}
 
 # Bypass is a live control change, so it leaves no trace in any config file and
 # does not survive a restart. Recorded here so status can report it.
-# Cap the device. This speaker is uncomfortably loud at 100%, and the level now
-# lives here rather than on the virtual sink, so an accidental full-scale set is
-# a real hazard rather than a slider position. Override with the environment
-# variable if a quieter device is ever used.
-MAX_LEVEL=${EXTERNAL_DSP_MAX_LEVEL:-60}
-
 STATE_DIR=${XDG_RUNTIME_DIR:-/tmp}
 BYPASS_FLAG=$STATE_DIR/external-dsp.bypassed
 
-internal_is_active() {
-    [ "$(pactl get-default-sink 2>/dev/null)" = "$INT" ] || return 1
-    command -v speaker-dsp >/dev/null 2>&1
-}
-
 usage() {
-    echo "usage: external-dsp {generate|on|off|ab|status|unity|level N|devices|device N}" >&2
+    echo "usage: external-dsp {on|off|ab|status|unity|level N|devices|device N|generate}" >&2
     exit 2
 }
 
-# The raw device is whatever 52-external-target.lua currently points the chain
-# at, so read it from the graph rather than hardcoding a device that may not be
-# connected. Falls back to the highest-priority non-internal sink when the
-# chain is unlinked.
-raw_device() {
-    _r=$(pw-link -l 2>/dev/null \
-        | grep -A1 'effect_output\.external-tuning:output_FL' \
-        | tail -1 | sed 's/^ *|-> *//; s/:playback_.*//; s/^ *//')
-    case "$_r" in
-        alsa_output*|bluez_output*) echo "$_r"; return 0 ;;
-    esac
-    pactl list sinks short | awk '$2 ~ /^(alsa_output|bluez_output)/ &&
-        $2 !~ /HiFi__Speaker__sink/ { print $2; exit }'
+# Every loaded chain, one line each:  <class> <input-node-id> <pattern> <description>
+#
+# The two halves of a chain carry different things. The Props that 'off'
+# neutralises live on the INPUT node; speaker-dsp.match, naming the devices the
+# chain serves, lives on the OUTPUT node. They pair by the class suffix.
+chains() {
+    pw-dump 2>/dev/null | python3 -c "
+import json, sys
+ins, pats = {}, {}
+for o in json.load(sys.stdin):
+    p = (o.get('info') or {}).get('props') or {}
+    n = p.get('node.name') or ''
+    if n.startswith('effect_input.tuned-'):
+        ins[n[19:]] = (o['id'], p.get('node.description') or n)
+    elif n.startswith('effect_output.tuned-'):
+        pats[n[20:]] = p.get('speaker-dsp.match') or ''
+for cls in sorted(ins):
+    nid, desc = ins[cls]
+    print(cls, nid, pats.get(cls) or '-', desc)
+"
+}
+
+# Which chain serves a given device. This repeats the matching that
+# 52-external-target.lua does for real; the patterns are Lua patterns, and the
+# generator only ever emits an anchored literal prefix, so turning Lua's '%'
+# escape into a backslash is exact for everything it produces.
+chain_for() {
+    chains | python3 -c "
+import re, sys
+dev = sys.argv[1]
+for line in sys.stdin:
+    cls, nid, pat, desc = line.rstrip('\n').split(' ', 3)
+    if pat != '-' and re.match(pat.replace('%', '\\\\'), dev):
+        print(cls, nid, desc)
+        break
+" "$1"
 }
 
 volume_pct() {
@@ -107,45 +91,131 @@ volume_pct() {
         | awk -F'/' '/Volume:/ { gsub(/[^0-9]/, "", $2); print $2; exit }'
 }
 
-# The chain is tuned expecting the device at unity, exactly as the internal
-# chain is. Anything else silently changes the gain structure the limiter was
-# sized against, and nothing downstream measures it -- captures are taken ahead
-# of this control. Listening level belongs on the virtual sink instead, where
-# 'level' puts it.
-# Warn, do not force. Forcing 100% here made the speaker jump to full output
-# every time the DSP was switched, which is hostile on a loud device. This
-# matches speaker-dsp, which warns about the same drift on the built-in speaker
-# rather than overriding a level the listener chose. 'external-dsp unity' sets
-# it deliberately.
-# The pre-graph sink is the one that must stay at unity now: anything less and
-# the chain stops seeing full scale and stops working. The device is where the
-# level belongs, so it is deliberately NOT pinned.
+description_of() {
+    pactl list sinks 2>/dev/null | awk -v n="$1" '
+        $1=="Name:" && $2==n { f=1 }
+        f && $1=="Description:" { $1=""; sub(/^ /,""); print; exit }'
+}
+
+external_sinks() {
+    pactl list sinks short 2>/dev/null | awk '$2 ~ /^(alsa_output|bluez_output)/ &&
+        $2 !~ /HiFi__Speaker__sink/ { print $2 }'
+}
+
+internal_is_active() {
+    case "$(pactl get-default-sink 2>/dev/null)" in
+        "$INT"|"$INT_RAW") ;;
+        *) return 1 ;;
+    esac
+    command -v speaker-dsp >/dev/null 2>&1
+}
+
+# The device being listened to: the default sink, when that is a real external
+# device. Falls back to the first connected one so 'level' and 'devices' still
+# have something to talk about while the built-in speaker is selected.
+active_device() {
+    _d=$(pactl get-default-sink 2>/dev/null)
+    case "$_d" in
+        alsa_output*|bluez_output*)
+            [ "$_d" = "$INT_RAW" ] || { echo "$_d"; return 0 ; } ;;
+    esac
+    external_sinks | head -1
+}
+
+# How many app streams are inside the chain, and how many are playing straight
+# into the device untuned. The second number is the failure this whole design
+# exists to prevent -- it means the stream was not redirected -- so status
+# reports it rather than leaving it to be noticed by ear.
+census() {
+    pactl list sink-inputs 2>/dev/null | awk -v c="$1" -v d="$2" '
+        function flush() {
+            if (sink == "") return
+            if (sink == c) inside++
+            else if (sink == d && nm !~ /effect_output/) raw++
+            sink = ""
+        }
+        /^Sink Input/ { flush(); nm = "" }
+        $1 == "Sink:" { sink = $2 }
+        $1 == "node.name" { nm = $3 }
+        END { flush(); print inside+0, raw+0 }'
+}
+
+# X2 and X4 are neutralised, NOT disabled. Setting x2mbc:enabled = 0 drops GOTT
+# to its dry path, and this chain runs g_dry = 0.0 / g_wet = 1.0, so "disabled"
+# cost 12 dB rather than being transparent -- measured 20 Aug 2026. Raising the
+# thresholds to full scale leaves both plugins in circuit doing nothing, which
+# is what transparent actually means here. X1 and X3 are pushed out of band
+# because a builtin biquad has no enable control.
+#
+# Applied to EVERY chain, not just the one serving the current device: the
+# chains are per class, so bypassing only the active one meant switching from
+# the earbuds to the USB speaker silently turned the DSP back on mid-comparison.
+set_bypass() {
+    _ids=$(chains | awk '{ print $2 }')
+    [ -n "$_ids" ] || { echo "no External (Tuning) chain is loaded" >&2; return 1; }
+    for _id in $_ids; do
+        if [ "$1" = "on" ]; then
+            pw-cli set-param "$_id" Props '{ params = [
+                "x2mbc:td_1" 1.0 "x2mbc:td_2" 1.0 "x2mbc:td_3" 1.0 "x2mbc:td_4" 1.0
+                "x4brick:th" 1.0
+                "x1hp_l:Freq" 5.0 "x1hp_r:Freq" 5.0
+                "x3lp_l:Freq" 24000.0 "x3lp_r:Freq" 24000.0 ] }' >/dev/null 2>&1
+        else
+            pw-cli set-param "$_id" Props '{ params = [
+                "x2mbc:td_1" 0.50 "x2mbc:td_2" 0.50 "x2mbc:td_3" 0.45 "x2mbc:td_4" 0.35
+                "x4brick:th" 0.8414
+                "x1hp_l:Freq" 30.0 "x1hp_r:Freq" 30.0
+                "x3lp_l:Freq" 20000.0 "x3lp_r:Freq" 20000.0 ] }' >/dev/null 2>&1
+        fi
+    done
+}
+
+# A chain's own input sink is applied BEFORE the graph, so anything below 100%
+# starves the compressor and limiter of the level they were sized against and
+# quietly switches the tuning off. The listening level belongs on the device,
+# after the graph, which is where 'level' puts it. So this one is pinned and
+# the device's is deliberately not.
 pin_pregraph_unity() {
-    _v=$(volume_pct "$DSP")
-    [ "$_v" = "100" ] && return 0
-    pactl set-sink-volume "$DSP" 100% 2>/dev/null && \
-        echo "note: External (Tuning) was at ${_v}% -- that sits BEFORE the graph and"
-        echo "      switches the DSP off. Restored to 100%; set loudness with"
-        echo "      'external-dsp level N'."
+    for _c in $(chains | awk '{ print $1 }'); do
+        _sink=effect_input.tuned-$_c
+        _v=$(volume_pct "$_sink")
+        [ "$_v" = "100" ] && continue
+        if pactl set-sink-volume "$_sink" 100% 2>/dev/null; then
+            echo "note: $_sink was at ${_v:-?}% -- that sits BEFORE the graph, so it"
+            echo "      was switching the DSP off. Restored to 100%; set the"
+            echo "      listening level with 'external-dsp level N'."
+        fi
+    done
 }
 
 case "${1:-status}" in
     on|dsp|tuning)
+        set_bypass off || exit 1
+        rm -f "$BYPASS_FLAG"
         pin_pregraph_unity
-        set_bypass off && rm -f "$BYPASS_FLAG"
-        pactl set-default-sink "$DSP" && \
-            echo "EXTERNAL DSP - External (Tuning) is the default output"
+        # Deliberately does NOT move the output. Switching the default sink is
+        # what made 'off' throw the sound onto the built-in speaker in the old
+        # model; the selection is the listener's, and on/off only decide whether
+        # what they picked is processed.
+        if internal_is_active; then
+            echo "EXTERNAL DSP - the chains are processing again, but the built-in"
+            echo "               speaker is the selected output, so you will not"
+            echo "               hear the difference until you pick an external"
+            echo "               device. See 'external-dsp devices'."
+        else
+            _d=$(active_device)
+            echo "EXTERNAL DSP - six-stage chain${_d:+, into $(description_of "$_d")}"
+        fi
         ;;
     off|raw)
         if internal_is_active; then
             echo "note: the built-in speaker is the active output, so bypassing THAT."
-            echo "      Use 'external-dsp on' to move to the external device instead."
+            echo "      Pick an external device first to bypass the external chain."
             exec speaker-dsp off
         fi
-        set_bypass on && {
-            : > "$BYPASS_FLAG"
-            echo "BYPASS - External (Tuning) is passing through, same device, same level"
-        }
+        set_bypass on || exit 1
+        : > "$BYPASS_FLAG"
+        echo "BYPASS - the chain is passing through, same device, same level"
         ;;
     ab)
         if internal_is_active; then
@@ -163,23 +233,78 @@ case "${1:-status}" in
             echo "raise the ceiling with EXTERNAL_DSP_MAX_LEVEL=<n> if you mean it."
             _n=$MAX_LEVEL
         fi
-        _d=$(raw_device)
+        _d=$(active_device)
         [ -n "$_d" ] || { echo "no external device connected" >&2; exit 1; }
         pin_pregraph_unity
         pactl set-sink-volume "$_d" "${_n}%" && \
-            echo "level: ${_n}% (on the device, after the graph)"
+            echo "level: ${_n}% on $(description_of "$_d") (after the graph)"
         ;;
     unity)
         pin_pregraph_unity
-        echo "External (Tuning) pre-graph level: $(volume_pct "$DSP")% (must be 100)"
-        echo "set loudness with: external-dsp level N"
+        chains | while read -r _c _id _pat _desc; do
+            printf '  %-30s %4s%%  (must be 100)\n' \
+                "effect_input.tuned-$_c" "$(volume_pct "effect_input.tuned-$_c")"
+        done
+        echo "set the listening level with: external-dsp level N"
+        ;;
+    devices)
+        _cur=$(pactl get-default-sink 2>/dev/null)
+        _n=0
+        external_sinks | while read -r _name; do
+            _n=$((_n + 1))
+            _mark="  "
+            [ "$_name" = "$_cur" ] && _mark="->"
+            _ch=$(chain_for "$_name" | cut -d' ' -f3-)
+            printf '%s %d  %-28s %s\n' "$_mark" "$_n" \
+                "$(description_of "$_name")" "${_ch:-NO CHAIN MATCHES}"
+        done
+        [ -n "$(external_sinks)" ] || echo "no external device connected"
+        ;;
+    device)
+        [ -n "${2:-}" ] || usage
+        _list=$(external_sinks)
+        # Match on the DESCRIPTION as well as the node name. A Bluetooth node is
+        # named bluez_output.F0:BE:25:17:71:00 -- the make and model live only
+        # in the description, so 'external-dsp device oppo' matched nothing and
+        # failed silently.
+        case "$2" in
+            [0-9]*) _pick=$(echo "$_list" | sed -n "${2}p") ;;
+            *)      _pick=$(echo "$_list" | while read -r _name; do
+                        echo "$_name $(description_of "$_name")" \
+                            | grep -qi -- "$2" && { echo "$_name"; break; }
+                    done | head -1) ;;
+        esac
+        [ -n "$_pick" ] || { echo "no such device: $2" >&2
+                             echo "try: external-dsp devices" >&2; exit 1; }
+        # Selecting the DEVICE, not a chain: 52-external-target.lua sees the
+        # default sink change and moves the streams into the matching chain.
+        # This is exactly what picking it in GNOME does.
+        pactl set-default-sink "$_pick" || exit 1
+        sleep 1
+        echo "output: $(description_of "$_pick")"
+        _ch=$(chain_for "$_pick" | cut -d' ' -f3-)
+        echo "chain:  ${_ch:-NONE -- this device matches no chain, it will play untuned}"
+        echo "note: level is per-device; set it with 'external-dsp level N'."
         ;;
     generate)
-        # One tuned sink per connected device, written to the user's own conf.d
-        # so no sudo is needed. PipeWire loads filter chains at startup, and
-        # modules loaded at runtime with pw-cli die with the client (verified),
-        # so a new device needs this re-run and a restart -- there is no way to
-        # conjure a chain on hotplug without a process that stays running.
+        # The chains are per CLASS now -- one for Bluetooth, one for wired -- so
+        # a newly paired device needs nothing regenerated; it matches an existing
+        # chain the moment it appears. This is only for after the template
+        # changes, and install.sh already does it.
+        #
+        # It must NOT write a second copy into the user's conf.d. PipeWire MERGES
+        # conf.d rather than shadowing it, so a user copy alongside the installed
+        # one loads both and every sink appears twice -- reported and reproduced
+        # 20 Aug 2026.
+        if [ -f /etc/pipewire/pipewire.conf.d/52-external-tuning.conf ]; then
+            echo "the chains are installed system-wide already:"
+            echo "  /etc/pipewire/pipewire.conf.d/52-external-tuning.conf"
+            echo
+            echo "Writing a second copy here would not replace it -- PipeWire"
+            echo "merges conf.d, so both would load and every sink would appear"
+            echo "twice. To pick up a template change, re-run install.sh."
+            exit 1
+        fi
         _gen=$(command -v gen-external-chains.py || echo \
             /home/sreejith/speaker-dsp/files/gen-external-chains.py)
         _d=${XDG_CONFIG_HOME:-$HOME/.config}/pipewire/pipewire.conf.d
@@ -195,85 +320,53 @@ case "${1:-status}" in
         mv "$_tmp" "$_d/52-external-tuning.conf"
         chmod 644 "$_d/52-external-tuning.conf"
         echo "wrote $_d/52-external-tuning.conf"
-        grep -c "libpipewire-module-filter-chain" "$_d/52-external-tuning.conf" \
-            | sed 's/^/chains: /'
         echo "restarting pipewire..."
         systemctl --user restart pipewire pipewire-pulse wireplumber
         sleep 4
         pactl list sinks short | awk '$2 ~ /^effect_input/ { print "  " $2 }'
         ;;
-    devices)
-        _cur=$(raw_device)
-        pactl list sinks short | awk '$2 ~ /^(alsa_output|bluez_output)/ &&
-            $2 !~ /HiFi__Speaker__sink/ { print $2 }' | nl -w2 -s'  ' | \
-        while read -r _n _name; do
-            _mark="  "
-            [ "$_name" = "$_cur" ] && _mark="->"
-            _desc=$(pactl list sinks | awk -v n="$_name" '
-                $1=="Name:" && $2==n { found=1 }
-                found && $1=="Description:" { $1=""; sub(/^ /,""); print; exit }')
-            echo "$_mark $_n  ${_desc:-$_name}"
-        done
-        ;;
-    device)
-        [ -n "${2:-}" ] || usage
-        _list=$(pactl list sinks short | awk '$2 ~ /^(alsa_output|bluez_output)/ &&
-            $2 !~ /HiFi__Speaker__sink/ { print $2 }')
-        # Match on the DESCRIPTION as well as the node name. A Bluetooth node is
-        # named bluez_output.F0:BE:25:17:71:00 -- the make and model live only
-        # in the description, so 'external-dsp device oppo' matched nothing and
-        # failed silently.
-        case "$2" in
-            [0-9]*) _pick=$(echo "$_list" | sed -n "${2}p") ;;
-            *)      _pick=$(echo "$_list" | while read -r _n; do
-                        _dsc=$(pactl list sinks | awk -v n="$_n" '
-                            $1=="Name:" && $2==n { f=1 }
-                            f && $1=="Description:" { $1=""; sub(/^ /,""); print; exit }')
-                        case "$_n $_dsc" in
-                            *[Nn]"$2"*|*"$2"*) echo "$_n"; break ;;
-                        esac
-                        echo "$_n $_dsc" | grep -qi -- "$2" && { echo "$_n"; break; }
-                    done | head -1) ;;
-        esac
-        [ -n "$_pick" ] || { echo "no such device: $2" >&2; echo "try: external-dsp devices" >&2; exit 1; }
-        _oid=$(pw-dump 2>/dev/null | python3 -c "
-import json,sys
-for o in json.load(sys.stdin):
-    p=(o.get('info') or {}).get('props') or {}
-    if p.get('node.name')=='effect_output.external-tuning': print(o['id']); break
-")
-        [ -n "$_oid" ] || { echo "External (Tuning) not loaded" >&2; exit 1; }
-        pw-metadata "$_oid" target.object "$_pick" >/dev/null 2>&1
-        # Remembered across restarts by 52-external-target.lua, which reads this
-        # file. No login service: the script already runs when the graph is
-        # rebuilt, and it can check the device is actually present first.
-        _sd=${XDG_STATE_HOME:-$HOME/.local/state}/external-dsp
-        mkdir -p "$_sd" && echo "$_pick" > "$_sd/device"
-        sleep 1
-        echo "External (Tuning) -> $_pick"
-        echo "note: level is per-device; set it with 'external-dsp level N'."
-        ;;
     status)
-        _cur=$(pactl get-default-sink) || exit $?
-        _d=$(raw_device)
-        case "$_cur" in
-            "$DSP") if [ -f "$BYPASS_FLAG" ]; then
-                        echo "state: External (Tuning), BYPASSED (pass-through)"
-                    else
-                        echo "state: External (Tuning), six-stage chain"
-                    fi ;;
-            "$_d")  echo "state: raw device, no processing" ;;
-            "$INT") echo "state: built-in speaker -- run 'speaker-dsp status'" ;;
-            *)      echo "state: other output ($_cur)" ;;
-        esac
-        echo "device: ${_d:-none connected}"
-        [ -n "$_d" ] && echo "  level (device, after the graph): $(volume_pct "$_d")%   (max $MAX_LEVEL)"
-        _pg=$(volume_pct "$DSP")
-        if [ "$_pg" = "100" ]; then
-            echo "  pre-graph sink: 100%   (correct -- chain sees full scale)"
+        if internal_is_active; then
+            echo "state: built-in speaker -- run 'speaker-dsp status'"
+            exit 0
+        fi
+        _d=$(active_device)
+        if [ -z "$_d" ]; then
+            echo "state: no external device connected"
+            exit 0
+        fi
+        set -- $(chain_for "$_d")
+        _cls=$1; _cid=$2
+        if [ -z "$_cls" ]; then
+            echo "state: $(description_of "$_d") -- NO CHAIN MATCHES, playing untuned"
+            exit 0
+        fi
+        _desc=$(chains | awk -v c="$_cls" '$1==c { $1=""; $2=""; $3=""; sub(/^ +/,""); print }')
+        if [ -f "$BYPASS_FLAG" ]; then
+            echo "state: $_desc -- BYPASSED (pass-through)"
         else
-            echo "  pre-graph sink: ${_pg}%   WRONG -- the DSP is being bypassed by volume."
-            echo "                        run 'external-dsp unity'"
+            echo "state: $_desc -- six-stage chain"
+        fi
+        echo "device: $(description_of "$_d")"
+        echo "        $_d"
+        printf '  level (device, after the graph):  %4s%%   (max %s)\n' \
+            "$(volume_pct "$_d")" "$MAX_LEVEL"
+        _pg=$(volume_pct "effect_input.tuned-$_cls")
+        if [ "$_pg" = "100" ]; then
+            printf '  chain input (before the graph):   %4s%%   correct\n' "$_pg"
+        else
+            printf '  chain input (before the graph):   %4s%%   WRONG -- this bypasses\n' \
+                "${_pg:-?}"
+            echo "                                          the DSP by volume."
+            echo "                                          run 'external-dsp unity'"
+        fi
+        _dev_id=$(pactl list sinks short | awk -v n="$_d" '$2==n { print $1; exit }')
+        set -- $(census "$_cid" "$_dev_id")
+        printf '  streams in the chain:             %4s\n' "$1"
+        if [ "${2:-0}" -gt 0 ]; then
+            printf '  streams bypassing it:             %4s   NOT REDIRECTED --\n' "$2"
+            echo "                                          52-external-target.lua"
+            echo "                                          is not running"
         fi
         ;;
     *) usage ;;
