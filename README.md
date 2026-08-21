@@ -2746,3 +2746,62 @@ startup and nothing runs at login to reapply them, so a restart loses it — whi
 is right while a curve is being auditioned. Once one is chosen it belongs in the
 template as that class's shipped default, where it survives everything and needs
 no machinery.
+
+### GOTT was running with its defining half switched off
+
+Stage XV made the chain adjustable, and it still was not audible, because the
+inaudibility was never in the voicing — it was in X2.
+
+GOTT is an **upward and downward** compressor. The chain shipped with
+`ru_* = 1.0`, which is the port's **minimum**: a 1:1 upward ratio, meaning do
+nothing. The plugin's own default is 4.0. Downward ran at `rd = 2.0` against a
+default of 6.0, and every makeup was pinned at 1.0. Measured contribution on
+programme: **0.12 LU**. The upward half — bringing quiet detail up, which is the
+reason to reach for this plugin rather than any ordinary compressor — was off.
+
+Turning it on, measured on 30 s of −10.7 LUFS programme:
+
+| preset | LUFS-I | LRA | THD 90 Hz | vs protect |
+|---|---|---|---|---|
+| `protect` | −11.0 | 11.9 LU | 0.01 % | +0.0 LU |
+| `gentle` | −8.9 | 11.3 LU | 0.10 % | +2.1 LU |
+| `medium` | −8.4 | 10.4 LU | 0.21 % | +2.6 LU |
+| **`dense`** | **−7.9** | **9.4 LU** | **0.44 %** | **+3.1 LU** |
+| `crush` | −7.2 | 8.4 LU | 0.75 % | +3.8 LU |
+
+`dense` is shipped. Sample peak stays at −1.500 dBFS in every row — X4 holds, so
+none of this clips however hard X2 is driven. Past `crush` it stops responding:
+a `pulverise` row at ratio 12 and +12 dB makeup lands within 0.1 LU and 0.0 LU
+of `crush`.
+
+**The distortion is GOTT's, not the limiter's.** Checked by neutralising X4:
+0.76 % with it and without. It is gain modulation inside a 90 Hz period, which
+is inherent to compressing bass this hard and is what the "smearing" consists
+of. Band-1 timing was swept to reduce it and plateaus — `ta 20 / tr 250` gives
+0.75 %, `ta 30 / tr 500` gives 0.62 %, and slower buys nothing — so the
+compressing presets use 30/500. For scale, an earbud driver's own THD at 90 Hz
+is typically 0.5–2 %, so `dense` adds about what the transducer already
+contributes.
+
+```
+external-dsp gott                 current preset, plus the table above
+external-dsp gott dense           apply one
+external-dsp gott protect         back to the original downward-only chain
+```
+
+#### A bypass that was 5.5 LU loud and clipping
+
+`external-dsp off` neutralised `td_*` and `th` and nothing else. That was
+correct while `ru` was 1.0 and every makeup was unity, and it became a fault the
+moment either could be otherwise: raising the downward thresholds stops downward
+compression and leaves the **upward** ratio and the makeup applied, while the
+same bypass also neutralises X4.
+
+Bypassing `crush` that way measured **−5.33 LUFS against a correct −10.82, with
+true peak at +0.049 dBTP** — 5.5 LU loud and clipping, which is exactly the
+distortion the chain exists to prevent. It would have been the first thing to
+happen after choosing any preset. Bypass now neutralises `ru_*` and `mk_*` too.
+
+The lesson generalises: a bypass built by neutralising *the controls that were
+in use* silently stops being a bypass when a new control comes into use. It has
+to neutralise everything that can produce gain.

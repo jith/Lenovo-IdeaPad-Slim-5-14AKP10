@@ -10,6 +10,7 @@
 #   external-dsp devices list the connected external devices
 #   external-dsp device N pick one of them by number or name
 #   external-dsp status  what is playing, through what, at what level
+#   external-dsp gott    how hard the compressor works -- the density ladder
 #   external-dsp eq      show or set the voicing, live, per class of device
 #   external-dsp level N set the listening level, 0-100
 #
@@ -45,7 +46,8 @@ STATE_DIR=${XDG_RUNTIME_DIR:-/tmp}
 BYPASS_FLAG=$STATE_DIR/external-dsp.bypassed
 
 usage() {
-    echo "usage: external-dsp {on|off|ab|status|eq|unity|level N|devices|device N|generate}" >&2
+    echo "usage: external-dsp {on|off|ab|status|gott|eq|unity|level N|devices|device N|generate}" >&2
+    echo "  gott [PRESET]           protect | gentle | medium | dense | crush" >&2
     echo "  eq                      show the voicing for the current device" >&2
     echo "  eq BAND dB [BAND dB..]  bass | mid | presence | treble, -12..+12" >&2
     echo "  eq flat                 every band back to 0" >&2
@@ -160,17 +162,30 @@ set_bypass() {
     [ -n "$_ids" ] || { echo "no External (Tuning) chain is loaded" >&2; return 1; }
     for _id in $_ids; do
         if [ "$1" = "on" ]; then
+            # The UPWARD half and the makeup have to go too, not just the
+            # downward thresholds. Raising td alone stops downward compression
+            # and leaves ru and mk applied -- and bypass also neutralises X4, so
+            # a 'crush' preset bypassed this way measured -5.33 LUFS against a
+            # correct -10.82 and clipped at +0.049 dBTP. A bypass that is 5.5 LU
+            # loud and clipping is not a bypass, and it would have been the
+            # first thing to happen after choosing any preset.
             pw-cli set-param "$_id" Props '{ params = [
                 "x2mbc:td_1" 1.0 "x2mbc:td_2" 1.0 "x2mbc:td_3" 1.0 "x2mbc:td_4" 1.0
+                "x2mbc:ru_1" 1.0 "x2mbc:ru_2" 1.0 "x2mbc:ru_3" 1.0 "x2mbc:ru_4" 1.0
+                "x2mbc:mk_1" 1.0 "x2mbc:mk_2" 1.0 "x2mbc:mk_3" 1.0 "x2mbc:mk_4" 1.0
                 "x4brick:th" 1.0
                 "x1hp_l:Freq" 5.0 "x1hp_r:Freq" 5.0
                 "x3lp_l:Freq" 24000.0 "x3lp_r:Freq" 24000.0 ] }' >/dev/null 2>&1
         else
             pw-cli set-param "$_id" Props '{ params = [
-                "x2mbc:td_1" 0.50 "x2mbc:td_2" 0.50 "x2mbc:td_3" 0.45 "x2mbc:td_4" 0.35
                 "x4brick:th" 0.8414
                 "x1hp_l:Freq" 30.0 "x1hp_r:Freq" 30.0
                 "x3lp_l:Freq" 20000.0 "x3lp_r:Freq" 20000.0 ] }' >/dev/null 2>&1
+            # The thresholds belong to whichever density preset is chosen, so
+            # they are restored from that rather than from the shipped values.
+            # Hardcoding them here meant 'off' then 'on' silently reset a
+            # chosen preset back to the inaudible one.
+            gott_apply "$_id" "$(gott_current)"
         fi
     done
 }
@@ -193,6 +208,77 @@ pin_pregraph_unity() {
     done
 }
 
+
+
+# -- stage X2, GOTT: how hard it works ---------------------------------------
+#
+# GOTT is an UPWARD AND DOWNWARD compressor -- that is the whole point of the
+# plugin -- and the shipped chain had the upward half switched off. ru_* = 1.0
+# is the port's MINIMUM, a 1:1 upward ratio, which is "do nothing". The plugin's
+# own defaults are ru = 4.0 and rd = 6.0; the chain ran ru = 1.0 and rd = 2.0
+# with every makeup pinned at unity. Measured contribution on programme: 0.12 LU.
+# That is why the chain was inaudible.
+#
+# Upward compression is what brings quiet detail up; downward tames peaks; the
+# makeup turns the resulting headroom into level. Together they are the density
+# the plugin is known for. Measured on 30 s of -10.7 LUFS programme:
+#
+#     preset     LUFS-I   LRA     THD 90 Hz   vs protect
+#     protect    -11.0    11.9 LU   0.01 %      +0.0 LU     <- shipped, inaudible
+#     gentle      -8.9    11.3      0.10 %      +2.1 LU
+#     medium      -8.4    10.4      0.21 %      +2.6 LU
+#     dense       -7.9     9.4      0.44 %      +3.1 LU
+#     crush       -7.2     8.4      0.75 %      +3.8 LU
+#
+# Sample peak stays at -1.500 dBFS in every row: X4 holds, so none of this
+# clips however hard X2 is driven.
+#
+# THE DISTORTION IS GOTT'S, NOT THE LIMITER'S. Checked by neutralising X4 --
+# 0.76 % with it and without. It is gain modulation inside a 90 Hz period, which
+# is inherent to compressing bass this hard and is the "smearing" the character
+# is made of. Band-1 timing was swept to reduce it and plateaus: ta 20/tr 250
+# gives 0.75 %, ta 30/tr 500 gives 0.62 %, and slower buys nothing. The
+# compressing presets use 30/500 for that reason.
+#
+# For scale, an earbud driver's own THD at 90 Hz is typically 0.5-2 %, so
+# 'dense' adds roughly what the transducer already contributes and 'crush' adds
+# rather more. Pick by ear -- that is what the ladder is for.
+GOTT_STATE=$STATE_DIR/external-dsp.gott
+
+gott_preset() {
+    #        ru  tu       rd  td       mk       ru4 rd4 mk4      ta1 tr1
+    case "$1" in
+        protect) echo "1  0.12589  2   PROTECT  1.0      1   2.5 1.0      20  250" ;;
+        gentle)  echo "2  0.03162  3   0.19953  1.58489  2   3   1.25893  30  500" ;;
+        medium)  echo "4  0.04467  4   0.15849  1.99526  3   4   1.41254  30  500" ;;
+        dense)   echo "6  0.06310  6   0.12589  2.51189  4   5   1.58489  30  500" ;;
+        crush)   echo "8  0.10000  8   0.10000  3.16228  6   6   1.77828  30  500" ;;
+        *) return 1 ;;
+    esac
+}
+
+gott_apply() {
+    _id=$1; _name=$2
+    set -- $(gott_preset "$_name") || return 1
+    _ru=$1 _tu=$2 _rd=$3 _td=$4 _mk=$5 _ru4=$6 _rd4=$7 _mk4=$8 _ta=$9
+    shift 9; _tr=$1
+    if [ "$_td" = "PROTECT" ]; then
+        # The original downward-only settings, per band, kept verbatim so
+        # 'protect' is exactly the chain as it shipped.
+        _p='"x2mbc:td_1" 0.50 "x2mbc:td_2" 0.50 "x2mbc:td_3" 0.45 "x2mbc:td_4" 0.35'
+    else
+        _p="\"x2mbc:td_1\" $_td \"x2mbc:td_2\" $_td \"x2mbc:td_3\" $_td \"x2mbc:td_4\" $_td"
+    fi
+    pw-cli set-param "$_id" Props "{ params = [
+        \"x2mbc:ru_1\" $_ru \"x2mbc:ru_2\" $_ru \"x2mbc:ru_3\" $_ru \"x2mbc:ru_4\" $_ru4
+        \"x2mbc:tu_1\" $_tu \"x2mbc:tu_2\" $_tu \"x2mbc:tu_3\" $_tu \"x2mbc:tu_4\" $_tu
+        \"x2mbc:rd_1\" $_rd \"x2mbc:rd_2\" $_rd \"x2mbc:rd_3\" $_rd \"x2mbc:rd_4\" $_rd4
+        $_p
+        \"x2mbc:mk_1\" $_mk \"x2mbc:mk_2\" $_mk \"x2mbc:mk_3\" $_mk \"x2mbc:mk_4\" $_mk4
+        \"x2mbc:ta_1\" $_ta \"x2mbc:tr_1\" $_tr ] }" >/dev/null 2>&1
+}
+
+gott_current() { cat "$GOTT_STATE" 2>/dev/null || echo protect; }
 
 # -- stage XV, the voicing ---------------------------------------------------
 #
@@ -377,6 +463,56 @@ case "${1:-status}" in
         pactl set-sink-volume "$_d" "${_n}%" && \
             echo "level: ${_n}% on $(description_of "$_d") (after the graph)"
         ;;
+    gott|density)
+        shift
+        if internal_is_active; then
+            echo "the built-in speaker is the active output; this is the external" >&2
+            echo "chain's compressor. Pick an external device first." >&2
+            exit 1
+        fi
+        _d=$(active_device)
+        [ -n "$_d" ] || { echo "no external device connected" >&2; exit 1; }
+        set -- "$(chain_for "$_d")" "$@"
+        _cid=$(echo "$1" | awk '{print $2}')
+        _cdesc=$(echo "$1" | cut -d' ' -f3-)
+        shift
+        [ -n "$_cid" ] || { echo "no chain matches $_d" >&2; exit 1; }
+        case "${1:-show}" in
+            show)
+                echo "GOTT density: $(gott_current)   on $_cdesc"
+                echo
+                _ru=$(pw-cli enum-params "$_cid" Props 2>/dev/null \
+                        | grep -A1 '"x2mbc:ru_1"' | tail -1 | awk '{printf "%.1f", $2}')
+                _mk=$(pw-cli enum-params "$_cid" Props 2>/dev/null \
+                        | grep -A1 '"x2mbc:mk_1"' | tail -1 | awk '{printf "%.2f", $2}')
+                echo "  upward ratio  ${_ru:-?}:1   (1.0 = upward compression OFF)"
+                echo "  makeup        ${_mk:-?}x"
+                echo
+                echo "presets, measured on -10.7 LUFS programme:"
+                echo "                LUFS-I    LRA      THD 90 Hz   vs protect"
+                echo "  protect       -11.0     11.9 LU    0.01 %      +0.0 LU"
+                echo "  gentle         -8.9     11.3 LU    0.10 %      +2.1 LU"
+                echo "  medium         -8.4     10.4 LU    0.21 %      +2.6 LU"
+                echo "  dense          -7.9      9.4 LU    0.44 %      +3.1 LU"
+                echo "  crush          -7.2      8.4 LU    0.75 %      +3.8 LU"
+                echo
+                echo "apply with: external-dsp gott dense"
+                ;;
+            *)
+                gott_preset "$1" >/dev/null || {
+                    echo "no such preset: $1" >&2
+                    echo "try: protect gentle medium dense crush" >&2; exit 2; }
+                gott_apply "$_cid" "$1" || { echo "could not set GOTT" >&2; exit 1; }
+                echo "$1" > "$GOTT_STATE"
+                echo "GOTT density: $1   on $_cdesc"
+                case "$1" in
+                    protect) echo "  downward only, upward off -- inaudible by design" ;;
+                    crush)   echo "  +3.8 LU louder and 3.5 LU less range than protect." ;;
+                    *)       echo "  louder and denser; peak still held at -1.5 dBFS by X4." ;;
+                esac
+                ;;
+        esac
+        ;;
     eq)
         shift
         if internal_is_active; then
@@ -543,7 +679,7 @@ case "${1:-status}" in
         if [ -f "$BYPASS_FLAG" ]; then
             echo "state: $_desc -- BYPASSED (pass-through)"
         else
-            echo "state: $_desc -- six-stage chain"
+            echo "state: $_desc -- six-stage chain, GOTT '$(gott_current)'"
         fi
         echo "device: $(description_of "$_d")"
         echo "        $_d"
