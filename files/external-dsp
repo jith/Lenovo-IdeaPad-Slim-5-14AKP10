@@ -508,8 +508,20 @@ case "${1:-status}" in
                 gott_preset "$1" >/dev/null || {
                     echo "no such preset: $1" >&2
                     echo "try: protect gentle medium dense crush" >&2; exit 2; }
-                gott_apply "$_cid" "$1" || { echo "could not set GOTT" >&2; exit 1; }
                 echo "$1" > "$(gott_state "$_ccls")"
+                # Asking for a density means wanting the DSP on, and applying
+                # one while bypassed was actively unsafe: bypass neutralises X4,
+                # so setting a preset put GOTT's makeup -- +4 dB even at gentle
+                # -- into a chain with no limiter. Reproduced live 21 Aug 2026.
+                # set_bypass off restores X1/X3/X4 and re-applies each chain's
+                # own preset from the state file just written.
+                if [ -f "$BYPASS_FLAG" ]; then
+                    set_bypass off || exit 1
+                    rm -f "$BYPASS_FLAG"
+                    echo "note: was bypassed -- the chain is back on."
+                else
+                    gott_apply "$_cid" "$1" || { echo "could not set GOTT" >&2; exit 1; }
+                fi
                 echo "GOTT density: $1   on $_cdesc"
                 case "$1" in
                     protect) echo "  downward only, upward off -- inaudible by design" ;;
@@ -689,8 +701,14 @@ case "${1:-status}" in
         fi
         echo "device: $(description_of "$_d")"
         echo "        $_d"
+        _lv=$(volume_pct "$_d")
         printf '  level (device, after the graph):  %4s%%   (max %s)\n' \
-            "$(volume_pct "$_d")" "$MAX_LEVEL"
+            "$_lv" "$MAX_LEVEL"
+        # The cap is enforced by 'external-dsp level'. The volume keys and
+        # GNOME's slider write the same control and do not know about it, so
+        # the only honest thing status can do is say so.
+        [ -n "$_lv" ] && [ "$_lv" -gt "$MAX_LEVEL" ] 2>/dev/null && \
+            echo "                                          ABOVE THE CAP -- set with 'external-dsp level $MAX_LEVEL'"
         _pg=$(volume_pct "effect_input.tuned-$_cls")
         if [ "$_pg" = "100" ]; then
             printf '  chain input (before the graph):   %4s%%   correct\n' "$_pg"
