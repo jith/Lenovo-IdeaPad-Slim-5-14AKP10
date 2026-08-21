@@ -2889,3 +2889,52 @@ cannot radiate. Into headphones it is damage, not tuning. Hiding
 `Speaker (Tuning)` closes the GNOME route; `speaker-dsp on` and `speaker-dsp
 status` now refuse and explain rather than selecting a chain with no device
 behind it.
+
+#### Hiding it stopped it being chosen, not being restored
+
+Making the jack visible opened a one-way door. Selecting the internal speaker
+made WirePlumber switch the card to the Speaker profile to satisfy the chain's
+`target.object`, which removed the Headphones port — and with the card then
+hidden again there was no way back short of unplugging. Worse, WirePlumber
+recorded that switch as a deliberate choice:
+
+```
+~/.local/state/wireplumber/default-profile
+alsa_card.pci-0000_04_00.6=HiFi (Mic1, Mic2, Speaker)
+```
+
+A stored profile beats the best available one, so even unplugging and replugging
+would not bring headphones back. That is the same trap that made the jack
+invisible to begin with, re-created by one ordinary click.
+
+**The jack now wins.** While the Headphones route reports `available`, the card
+is put back on the headphones profile. The route is the only reliable signal:
+both profiles always report `available: yes`, and the Speaker *route* reports
+`unknown` on this hardware, so it is the Headphones route flipping to `yes` that
+says something is plugged in.
+
+`save = false` is the whole point of that call — it changes the profile without
+writing it to `default-profile`, so nothing is remembered and unplugging still
+falls back to the speaker on its own. Verified by re-creating the pin by hand and
+restarting: the card recovered to the headphones profile in one switch, no
+oscillation, and the stale pin was left untouched in the file.
+
+**And a second door had to be closed.** Hiding `Speaker (Tuning)` stops it being
+*chosen*; it does not stop it being *restored*. WirePlumber keeps the last
+explicit choice in `default.configured.audio.sink` and reinstates it at every
+start, so the internal chain came back as the default output with the jack
+occupied and its own target gone. So when the jack is occupied and the default
+is the internal chain, the default is moved to the headphone sink.
+
+| after the fix | |
+|---|---|
+| card profile | `HiFi (Headphones, Mic1, Mic2)`, stable, one switch |
+| default sink | `alsa_output.…HiFi__Headphones__sink` |
+| GNOME's client sees | only `HiFi__Headphones__sink` |
+| a played stream lands in | `effect_input.tuned-wired`, GOTT `gentle` |
+
+One residual, left deliberately: `effect_output.speaker-tuning` still *links* to
+the headphone sink, because a chain whose target is missing is routed to the
+default sink and there is no way to refuse that without also blocking the
+retarget it needs when the speaker returns. It is idle — nothing can select it,
+`speaker-dsp on` refuses, and it is hidden — so it carries silence.

@@ -11,6 +11,20 @@
 -- is hidden instead, because the built-in speaker is physically unavailable
 -- while the jack is occupied and selecting it would mean selecting a chain with
 -- no device behind it.
+--
+-- AND THE JACK WINS. Hiding alone left a one-way door: selecting the internal
+-- speaker made WirePlumber switch the card to the Speaker profile to satisfy
+-- the chain's target, which removed the Headphones port -- and with the card
+-- then hidden there was no way back short of unplugging. Worse, WirePlumber
+-- stored that switch as a deliberate choice in default-profile, and a stored
+-- profile beats the best available one, so even unplugging and replugging did
+-- not bring headphones back. That is the exact trap that made the jack invisible
+-- in the first place.
+--
+-- So while the Headphones route reports available, this puts the card back on
+-- the headphones profile. save = false is the whole point of the call: it
+-- changes the profile WITHOUT writing it to default-profile, so nothing is
+-- remembered and unplugging still falls back to the speaker on its own.
 
 log = Log.open_topic ("s-hide-speaker-tuning")
 
@@ -55,12 +69,50 @@ clients_om = ObjectManager {
   Interest { type = "client" }
 }
 
+metadata_om = ObjectManager {
+  Interest { type = "metadata", Constraint { "metadata.name", "=", "default" } }
+}
+
+sinks_om = ObjectManager {
+  Interest { type = "node", Constraint { "media.class", "=", "Audio/Sink" } }
+}
+
 local function is_gvc_mixer_client (client)
   local props = client["properties"]
   return props ~= nil
       and props["client.api"] == "pipewire-pulse"
       and props["application.id"] == "org.gnome.VolumeControl"
       and props["application.icon-name"] == "multimedia-volume-control"
+end
+
+-- The jack, read from the card's routes. This is the only reliable signal:
+-- both profiles always report "available", and the Speaker route's own
+-- availability is "unknown" on this hardware -- it is the Headphones route
+-- flipping to "yes" that says something is plugged in.
+local function jack_plugged (dev)
+  for p in dev:iterate_params ("EnumRoute") do
+    local v = p:parse ()
+    if v ~= nil and v.properties ~= nil then
+      local pr = v.properties
+      if pr.direction == "Output"
+          and tostring (pr.name):match ("Headphones")
+          and tostring (pr.available) == "yes" then
+        return true
+      end
+    end
+  end
+  return false
+end
+
+local function headphones_profile_index (dev)
+  for p in dev:iterate_params ("EnumProfile") do
+    local v = p:parse ()
+    if v ~= nil and v.properties ~= nil
+        and tostring (v.properties.description):match ("Headphones") then
+      return v.properties.index
+    end
+  end
+  return nil
 end
 
 local function profile_name (dev)
@@ -99,7 +151,67 @@ local function set_perm (client, obj, allow)
   end
 end
 
+-- Put the card back on the headphones profile when the jack is occupied.
+-- Deliberately does NOT save: a saved profile is what beats jack detection, and
+-- writing one here would recreate the bug this exists to fix.
+local function honour_jack ()
+  for dev in card_om:iterate () do
+    if jack_plugged (dev) then
+      local n = profile_name (dev)
+      if n ~= nil and not n:match ("Headphones") then
+        local idx = headphones_profile_index (dev)
+        if idx ~= nil then
+          log:info ("jack occupied, moving off '" .. n .. "' to profile " ..
+              tostring (idx) .. " without saving it")
+          dev:set_param ("Profile", Pod.Object {
+            "Spa:Pod:Object:Param:Profile", "Profile",
+            index = idx,
+            save = false,
+          })
+        end
+      end
+    end
+  end
+end
+
+-- Hiding Speaker (Tuning) stops it being CHOSEN; it does not stop it being
+-- restored. WirePlumber remembers the last explicit choice in
+-- default.configured.audio.sink and reinstates it at every start, so the
+-- internal chain came back as the default output with the jack occupied and its
+-- own target gone -- which routes a correction built for one measured driver
+-- into headphones. The GNOME route is closed and this closes the other one.
+local function release_internal_default ()
+  local md = metadata_om:lookup ()
+  if md == nil then return end
+  local plugged = false
+  for dev in card_om:iterate () do
+    if jack_plugged (dev) then plugged = true end
+  end
+  if not plugged then return end
+
+  local cur = md:find (0, "default.audio.sink")
+  if cur == nil then return end
+  local json = Json.Raw (cur)
+  if not json:is_object () then return end
+  local parsed = json:parse ()
+  local name = parsed and parsed["name"]
+  if name ~= INTERNAL_SINK then return end
+
+  for node in sinks_om:iterate () do
+    local n = node.properties["node.name"]
+    if n ~= nil and n:match ("HiFi__Headphones__sink") then
+      log:info ("default was " .. INTERNAL_SINK .. " with the jack occupied; "
+          .. "moving it to " .. n)
+      md:set (0, "default.audio.sink", "Spa:String:JSON",
+              Json.Object { name = n }:to_string ())
+      return
+    end
+  end
+end
+
 local function refresh ()
+  honour_jack ()
+  release_internal_default ()
   local spk = speaker_active ()
   log:info ("speaker profile active: " .. tostring (spk))
   for client in clients_om:iterate () do
@@ -128,6 +240,11 @@ card_om:connect ("object-added", function (_, dev)
   refresh ()
 end)
 
+metadata_om:connect ("object-added", function () refresh () end)
+sinks_om:connect ("object-added", function () refresh () end)
+
+metadata_om:activate ()
+sinks_om:activate ()
 clients_om:activate ()
 nodes_om:activate ()
 raw_om:activate ()
