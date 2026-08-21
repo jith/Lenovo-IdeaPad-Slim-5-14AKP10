@@ -2907,7 +2907,26 @@ A stored profile beats the best available one, so even unplugging and replugging
 would not bring headphones back. That is the same trap that made the jack
 invisible to begin with, re-created by one ordinary click.
 
-**The jack now wins.** While the Headphones route reports `available`, the card
+**Showing the card was the wrong way to show the jack.** GNOME Settings builds
+its output dropdown from **card ports**, not sink ports — that is how it can
+offer a port belonging to an inactive profile — and this card carries
+`[Out] Speaker` and `[Out] Headphones` together whatever profile is live. So
+making the card visible put the raw `Speaker` port back in the list next to
+`Speaker (Tuning)`: two entries for the built-in speaker, one of them bypassing
+the DSP. It showed up as a duplicated name in both the shell toggle and Settings.
+
+The card stays hidden always, as it was. What is shown instead is the headphone
+**sink**, which exists only on the headphones profile and carries one port. A
+sink is listed on its own, so nothing has to expose the card:
+
+| | GNOME's client sees |
+|---|---|
+| card `…04_00.6` | hidden — takes the raw `Speaker` port with it |
+| `HiFi__Headphones__sink` | **shown**, as "Ryzen HD Audio Controller Headphones" |
+| `Speaker (Tuning)` | hidden while the jack is occupied |
+| `HiFi__Speaker__sink`, all chains | hidden |
+
+**The jack still wins.** While the Headphones route reports `available`, the card
 is put back on the headphones profile. The route is the only reliable signal:
 both profiles always report `available: yes`, and the Speaker *route* reports
 `unknown` on this hardware, so it is the Headphones route flipping to `yes` that

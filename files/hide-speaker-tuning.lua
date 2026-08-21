@@ -5,12 +5,22 @@
 -- kept the raw speaker out of GNOME's list -- also hid the headphone jack, so
 -- plugging headphones in showed nothing at all. Reported 21 Aug 2026.
 --
--- So the card is hidden only while the SPEAKER profile is active. On the
--- headphones profile the card is shown -- its only output port is then
--- Headphones, which is exactly what should be listed -- and "Speaker (Tuning)"
--- is hidden instead, because the built-in speaker is physically unavailable
--- while the jack is occupied and selecting it would mean selecting a chain with
--- no device behind it.
+-- SHOWING THE CARD WAS THE WRONG WAY TO SHOW THE JACK. GNOME Settings builds
+-- its output dropdown from CARD PORTS, not from sink ports -- that is how it
+-- offers a port belonging to an inactive profile -- and this card carries
+-- [Out] Speaker and [Out] Headphones on the same card whatever profile is
+-- live. So making the card visible put the raw "Speaker" port back in the list
+-- next to "Speaker (Tuning)": two entries for the built-in speaker, one of them
+-- bypassing the DSP entirely. Reported as a duplicated name in both the shell
+-- toggle and Settings, 21 Aug 2026.
+--
+-- The card therefore stays hidden always, as it was. What is shown instead is
+-- the headphone SINK, which exists only on the headphones profile and carries
+-- one port. A sink is listed on its own, so nothing has to expose the card.
+--
+-- "Speaker (Tuning)" is hidden while the jack is occupied, because the built-in
+-- speaker is physically unavailable then and selecting it would mean selecting
+-- a chain with no device behind it.
 --
 -- AND THE JACK WINS. Hiding alone left a one-way door: selecting the internal
 -- speaker made WirePlumber switch the card to the Speaker profile to satisfy
@@ -218,10 +228,11 @@ local function refresh ()
     if is_gvc_mixer_client (client) then
       for node in nodes_om:iterate () do set_perm (client, node, false) end
       for node in raw_om:iterate () do set_perm (client, node, false) end
-      -- The card is what carries the headphone port, so it is only hidden
-      -- while the speaker profile owns the card.
-      for dev in card_om:iterate () do set_perm (client, dev, not spk) end
-      -- And Speaker (Tuning) is only meaningful while that profile is active.
+      -- Always hidden: it carries the raw Speaker port, and GNOME would list
+      -- that port beside Speaker (Tuning). The headphone sink is what makes
+      -- the jack selectable, and it needs no card.
+      for dev in card_om:iterate () do set_perm (client, dev, false) end
+      -- Speaker (Tuning) is only meaningful while the speaker owns the card.
       for node in internal_om:iterate () do set_perm (client, node, spk) end
     end
   end
