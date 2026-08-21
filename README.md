@@ -3036,3 +3036,34 @@ default sink saved as the internal chain, jack in:
 | default sink | `alsa_output.…HiFi__Headphones__sink` |
 | GNOME served | one output, "Ryzen HD Audio Controller Headphones" |
 | a played stream | `effect_input.tuned-wired`, GOTT `gentle` |
+
+#### Listing both, and why the entries are the chains rather than the devices
+
+The card can only run one of speaker or headphones at a time, and the first
+design reflected that by hiding `Speaker (Tuning)` while the jack was in. That
+is not what was wanted: both should be listed, and the choice left to the
+listener.
+
+The two entries are the two **virtual chains**, not the two devices:
+
+| entry | node | selecting it |
+|---|---|---|
+| Speaker (Tuning) | `effect_input.speaker-tuning` | moves the card to `HiFi (Mic1, Mic2, Speaker)` |
+| Headphones / Wired (Tuning) | `effect_input.tuned-wired` | moves the card to `HiFi (Headphones, Mic1, Mic2)` |
+
+It has to be this way round. The real headphone sink exists *only* on the
+headphones profile, so it cannot be the thing you switch **back** to once the
+card has moved to the speaker — the entry would have vanished. The chains always
+exist, so both are always listed and the switch works in both directions. The
+real headphone sink is hidden behind `tuned-wired`; listing both would be the
+duplicate again.
+
+Nothing is forced any more. An earlier version put the card back on the
+headphones profile whenever the jack was occupied, which made choosing the
+speaker a one-way door. The profile now simply follows the selection, with
+`save = false` so no remembered profile is written — a remembered profile is
+what stops jack detection working after a replug.
+
+The wired class was renamed from "Speaker / Headphones (Tuning)" to
+"Headphones / Wired (Tuning)": beside "Speaker (Tuning)" the old name read as a
+duplicate of it.

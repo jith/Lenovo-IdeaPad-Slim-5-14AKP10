@@ -184,92 +184,108 @@ local function set_perm (client, obj, allow)
   end
 end
 
--- Put the card back on the headphones profile when the jack is occupied.
--- Deliberately does NOT save: a saved profile is what beats jack detection, and
--- writing one here would recreate the bug this exists to fix.
-local function honour_jack ()
-  for dev in card_om:iterate () do
-    if jack_plugged (dev) then
-      local n = profile_name (dev)
-      if n ~= nil and not n:match ("Headphones") then
-        local idx = headphones_profile_index (dev)
-        if idx ~= nil then
-          log:info ("jack occupied, moving off '" .. n .. "' to profile " ..
-              tostring (idx) .. " without saving it")
-          dev:set_param ("Profile", Pod.Object {
-            "Spa:Pod:Object:Param:Profile", "Profile",
-            index = idx,
-            save = false,
-          })
-        end
-      end
+-- BOTH the speaker and the headphones are listed while the jack is occupied, so
+-- the choice is the listener's. The two entries are the two virtual chains,
+-- because they always exist: the real headphone sink exists only on the
+-- headphones profile, so it cannot be an entry you can switch BACK to once the
+-- card has moved to the speaker.
+--
+--   Speaker (Tuning)            effect_input.speaker-tuning
+--   Headphones / Wired (Tuning) effect_input.tuned-wired
+--
+-- The card profile then follows whichever one is selected. Nothing is forced
+-- against the listener any more -- an earlier version put the card back on the
+-- headphones profile whenever the jack was in, which made choosing the speaker
+-- a one-way door.
+local function profile_index_matching (dev, want)
+  for p in dev:iterate_params ("EnumProfile") do
+    local v = p:parse ()
+    if v ~= nil and v.properties ~= nil
+        and tostring (v.properties.description):match (want) then
+      return v.properties.index
     end
   end
+  return nil
 end
 
--- Hiding Speaker (Tuning) stops it being CHOSEN; it does not stop it being
--- restored. WirePlumber remembers the last explicit choice in
--- default.configured.audio.sink and reinstates it at every start, so the
--- internal chain came back as the default output with the jack occupied and its
--- own target gone -- which routes a correction built for one measured driver
--- into headphones. The GNOME route is closed and this closes the other one.
-local function release_internal_default ()
+local function set_profile (dev, want)
+  local cur = profile_name (dev)
+  if cur ~= nil and cur:match (want) then return end
+  local idx = profile_index_matching (dev, want)
+  if idx == nil then return end
+  log:info ("selection wants '" .. want .. "', moving off '" .. tostring (cur) .. "'")
+  -- save = false: a remembered profile beats jack detection, and writing one
+  -- here is what previously left the jack unnoticed after a replug.
+  dev:set_param ("Profile", Pod.Object {
+    "Spa:Pod:Object:Param:Profile", "Profile", index = idx, save = false,
+  })
+end
+
+local function follow_selection ()
   local md = metadata_om:lookup ()
   if md == nil then return end
-  local plugged = false
-  for dev in card_om:iterate () do
-    if jack_plugged (dev) then plugged = true end
-  end
-  if not plugged then return end
-
   local cur = md:find (0, "default.audio.sink")
   if cur == nil then return end
   local json = Json.Raw (cur)
   if not json:is_object () then return end
   local parsed = json:parse ()
   local name = parsed and parsed["name"]
-  if name ~= INTERNAL_SINK then return end
+  if name == nil then return end
 
-  for node in sinks_om:iterate () do
-    local n = node.properties["node.name"]
-    if n ~= nil and n:match ("HiFi__Headphones__sink") then
-      log:info ("default was " .. INTERNAL_SINK .. " with the jack occupied; "
-          .. "moving it to " .. n)
-      md:set (0, "default.audio.sink", "Spa:String:JSON",
-              Json.Object { name = n }:to_string ())
-      return
+  for dev in card_om:iterate () do
+    if name == INTERNAL_SINK then
+      set_profile (dev, "Speaker")
+    elseif name == "effect_input.tuned-wired" and jack_plugged (dev) then
+      set_profile (dev, "Headphones")
     end
   end
 end
 
--- Apply to ONE client. This must take the client as an argument rather than
--- iterating clients_om, because a client is not yet in the manager when its own
--- object-added fires -- so iterating applied nothing to the client that had just
--- connected. Every client that appeared after start-up therefore saw the whole
--- graph: all three chains, the raw speaker and the card with its Speaker port.
--- That is the duplicate. The original script passed the client through and was
--- right to; the regression came in when this was rewritten around a profile
--- check.
+-- Apply to ONE client. Takes the client as an argument rather than iterating
+-- clients_om, because a client is not yet in the manager when its own
+-- object-added fires -- iterating applied nothing to the client that had just
+-- connected, so every client appearing after start-up saw the whole graph.
 local function apply_to_client (client)
   if not is_gvc_mixer_client (client) then return end
   if card_om:lookup () == nil then return end
-  local spk = speaker_selectable ()
+
+  local plugged = false
+  for dev in card_om:iterate () do plugged = jack_plugged (dev) end
+
+  -- Chain outputs are plumbing, never selectable.
   for node in nodes_om:iterate () do set_perm (client, node, false) end
-  for node in raw_om:iterate () do set_perm (client, node, false) end
-  -- Always hidden: it carries the raw Speaker port, and GNOME would list that
-  -- port beside Speaker (Tuning). The headphone sink is what makes the jack
-  -- selectable, and it needs no card.
+
+  -- raw_om holds the raw speaker sink and the tuned chain inputs.
+  -- effect_input.tuned-wired is the HEADPHONE entry while the jack is in, so it
+  -- is the one member that is shown rather than hidden. It is used instead of
+  -- the real headphone sink because that sink exists only on the headphones
+  -- profile -- it could not be something to switch BACK to once the card had
+  -- moved to the speaker.
+  for node in raw_om:iterate () do
+    local n = node.properties["node.name"] or ""
+    set_perm (client, node, plugged and n == "effect_input.tuned-wired")
+  end
+
+  -- The real headphone sink stays hidden: tuned-wired stands in front of it,
+  -- and listing both is the duplicate all over again.
+  for node in sinks_om:iterate () do
+    local n = node.properties["node.name"] or ""
+    if n:match ("HiFi__Headphones__sink") then set_perm (client, node, false) end
+  end
+
+  -- The card carries the raw Speaker port, which GNOME would list beside
+  -- Speaker (Tuning).
   for dev in card_om:iterate () do set_perm (client, dev, false) end
-  -- Speaker (Tuning) is only meaningful while the speaker owns the card.
-  for node in internal_om:iterate () do set_perm (client, node, spk) end
+
+  -- Always listed: selecting it moves the card to the speaker profile.
+  for node in internal_om:iterate () do set_perm (client, node, true) end
 end
 
 local function refresh ()
   -- Until the card is known, every answer here is a guess that will be
   -- corrected a moment later -- and a correction is a remove event. Wait.
   if card_om:lookup () == nil then return end
-  honour_jack ()
-  release_internal_default ()
+  follow_selection ()
   for client in clients_om:iterate () do apply_to_client (client) end
 end
 

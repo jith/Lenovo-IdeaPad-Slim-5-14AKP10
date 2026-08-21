@@ -64,7 +64,7 @@ INTERNAL = "HiFi__Speaker__sink"
 # is excluded by 50-speaker-tuning.conf owning it already.
 CLASSES = [
     ("bluetooth", "Bluetooth (Tuning)", "^bluez_output%."),
-    ("wired", "Speaker / Headphones (Tuning)", "^alsa_output%."),
+    ("wired", "Headphones / Wired (Tuning)", "^alsa_output%."),
 ]
 
 
