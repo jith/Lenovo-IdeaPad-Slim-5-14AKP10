@@ -225,8 +225,8 @@ pin_pregraph_unity() {
 # the plugin is known for. Measured on 30 s of -10.7 LUFS programme:
 #
 #     preset     LUFS-I   LRA     THD 90 Hz   vs protect
-#     protect    -11.0    11.9 LU   0.01 %      +0.0 LU     <- shipped, inaudible
-#     gentle      -8.9    11.3      0.10 %      +2.1 LU
+#     protect    -11.0    11.9 LU   0.01 %      +0.0 LU     <- the old chain
+#     gentle      -8.9    11.3      0.10 %      +2.1 LU     <- shipped
 #     medium      -8.4    10.4      0.21 %      +2.6 LU
 #     dense       -7.9     9.4      0.44 %      +3.1 LU
 #     crush       -7.2     8.4      0.75 %      +3.8 LU
@@ -283,7 +283,7 @@ gott_apply() {
         \"x2mbc:ta_1\" $_ta \"x2mbc:tr_1\" $_tr ] }" >/dev/null 2>&1
 }
 
-gott_current() { cat "$(gott_state "$1")" 2>/dev/null || echo dense; }
+gott_current() { cat "$(gott_state "$1")" 2>/dev/null || echo gentle; }
 
 # -- stage XV, the voicing ---------------------------------------------------
 #

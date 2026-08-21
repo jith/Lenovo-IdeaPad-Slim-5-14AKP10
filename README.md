@@ -2761,15 +2761,34 @@ reason to reach for this plugin rather than any ordinary compressor — was off.
 
 Turning it on, measured on 30 s of −10.7 LUFS programme:
 
-| preset | LUFS-I | LRA | THD 90 Hz | vs protect |
-|---|---|---|---|---|
-| `protect` | −11.0 | 11.9 LU | 0.01 % | +0.0 LU |
-| `gentle` | −8.9 | 11.3 LU | 0.10 % | +2.1 LU |
-| `medium` | −8.4 | 10.4 LU | 0.21 % | +2.6 LU |
-| **`dense`** | **−7.9** | **9.4 LU** | **0.44 %** | **+3.1 LU** |
-| `crush` | −7.2 | 8.4 LU | 0.75 % | +3.8 LU |
+| preset | LUFS-I | LRA | THD 90 Hz | vs protect | tilt |
+|---|---|---|---|---|---|
+| `protect` | −11.0 | 11.9 LU | 0.01 % | +0.0 LU | +0.30 dB |
+| **`gentle`** | **−8.9** | **11.3 LU** | **0.10 %** | **+2.1 LU** | **+2.41 dB** |
+| `medium` | −8.4 | 10.4 LU | 0.21 % | +2.6 LU | +4.14 dB |
+| `dense` | −7.9 | 9.4 LU | 0.44 % | +3.1 LU | +6.76 dB |
+| `crush` | −7.2 | 8.4 LU | 0.75 % | +3.8 LU | +10.71 dB |
 
-`dense` is shipped. Sample peak stays at −1.500 dBFS in every row — X4 holds, so
+`gentle` is shipped, chosen by ear.
+
+**The ladder is not tonally neutral, and the loudness numbers hide it.** Upward
+compression lifts presence and top far more than bass, because quiet detail
+lives up there while bass is already loud and is being pushed *down*:
+
+| preset | bass | low-mid | presence | top |
+|---|---|---|---|---|
+| `protect` | −0.39 | −0.20 | −0.09 | −0.08 |
+| `gentle` | +0.90 | +1.84 | +3.30 | +1.89 |
+| `medium` | +1.13 | +2.14 | +5.28 | +4.22 |
+| `dense` | +1.05 | +1.95 | +7.81 | +6.97 |
+| `crush` | +0.55 | +1.07 | +11.26 | +10.04 |
+
+So "density" is also a brightness control, and by `crush` it is a **+10.7 dB
+tilt** — a different speaker, not a louder one. This was nearly shipped
+unnoticed: the LUFS / LRA / THD sweep that chose the ladder cannot see it, and
+`--bands` was run on the voicing stage but not on the ladder. That is the same
+omission this repo already records once, where a 10.1 dB tilt survived four
+tuning sessions because every tool asked "what did this one parameter move". Sample peak stays at −1.500 dBFS in every row — X4 holds, so
 none of this clips however hard X2 is driven. Past `crush` it stops responding:
 a `pulverise` row at ratio 12 and +12 dB makeup lands within 0.1 LU and 0.0 LU
 of `crush`.
