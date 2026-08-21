@@ -135,31 +135,34 @@ local function profile_name (dev)
   return nil
 end
 
--- Whether Speaker (Tuning) should be offered. Decided from the JACK, not from
--- the active profile: the profile changes twice during a switch and the jack
--- does not, so keying off the profile made the entry appear and disappear
--- mid-transition, and each of those is an add/remove in GNOME's list.
+-- Whether Speaker (Tuning) should be offered. Decided by whether the raw
+-- speaker sink EXISTS, not by the jack and not by the profile name.
 --
--- Unknown card means "no jack to worry about", which is the pre-existing
--- behaviour on any machine without this one's onboard card.
+-- Keying it off the jack left a gap with no output at all: with the jack in but
+-- the card still on the Speaker profile -- which is exactly what a remembered
+-- profile produces -- Speaker (Tuning) was hidden because the jack was in, the
+-- headphone sink did not exist because the profile was Speaker, and the raw
+-- speaker is always hidden. GNOME was served nothing selectable.
+--
+-- Existence cannot produce that gap: whichever profile is live, exactly one of
+-- the two sinks is there, so exactly one entry is offered.
 local function speaker_selectable ()
-  for dev in card_om:iterate () do
-    return not jack_plugged (dev)
+  for node in sinks_om:iterate () do
+    local n = node.properties["node.name"]
+    if n ~= nil and n:match ("HiFi__Speaker__sink") then return true end
   end
-  return true
+  return false
 end
 
--- EVERY call is an event to the client, and gvc builds its device list from
--- those events. refresh() runs ~20 times while the graph settles, so
--- re-asserting the same permission each time produced a storm of new/remove
--- pairs on the same sink. Only ever send a change.
+-- EVERY permission write is an event to the client, and gvc builds its device
+-- list from those events. refresh() runs about twenty times while the graph
+-- settles, so re-asserting the same permission each time produced a storm of
+-- new/remove pairs on the same sink. Only ever send a change.
 --
 -- Keyed per client and CLEARED WHEN THE CLIENT GOES AWAY, because PipeWire
--- reuses client ids. Keeping one flat table meant a new client that inherited a
--- retired id hit the previous client's cache entry, the hide was skipped as
--- already-applied, and that client saw the entire graph -- every chain, the raw
--- speaker and the card with its Speaker port. Reproducible: the first client
--- after a restart was hidden correctly and every later one was not.
+-- reuses client ids: one flat table meant a new client inheriting a retired id
+-- hit the previous client's entry, the hide was skipped as already applied, and
+-- that client saw the entire graph.
 applied = {}
 
 local function set_perm (client, obj, allow)
@@ -285,14 +288,30 @@ end)
 nodes_om:connect ("object-added", function () refresh () end)
 raw_om:connect ("object-added", function () refresh () end)
 internal_om:connect ("object-added", function () refresh () end)
-metadata_om:connect ("object-added", function () refresh () end)
+metadata_om:connect ("object-added", function (_, md)
+  -- WirePlumber restores default.configured.audio.sink well AFTER the metadata
+  -- object appears, so reacting only to it appearing missed the restore
+  -- entirely: the card was corrected to the headphones profile, GNOME was
+  -- offered the headphones, and the actual default stayed on the hidden
+  -- internal chain. That is what "plugged in but still on speaker" was.
+  md:connect ("changed", function (_, subject, key)
+    if key == "default.audio.sink" then refresh () end
+  end)
+  refresh ()
+end)
 sinks_om:connect ("object-added", function () refresh () end)
 
 card_om:connect ("object-added", function (_, dev)
   -- The profile changing is the event that matters most, and it arrives on the
   -- device as a param rather than as a property change.
+  -- PLUGGING A JACK CHANGES ROUTES, NOT THE PROFILE. Listening only for
+  -- "Profile" meant a jack going in was never noticed: it worked the first time
+  -- only because WirePlumber switched the profile itself, and stopped working
+  -- as soon as a remembered profile kept it on Speaker.
   dev:connect ("params-changed", function (_, name)
-    if name == "Profile" then refresh () end
+    if name == "Profile" or name == "Route" or name == "EnumRoute" then
+      refresh ()
+    end
   end)
   refresh ()
 end)

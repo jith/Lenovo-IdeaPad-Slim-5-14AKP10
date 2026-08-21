@@ -2999,3 +2999,40 @@ received a storm.
 Worth recording separately: two of the three only appear *after* start-up, so
 any check made immediately following a restart passes. The first client is
 always correct.
+
+#### Plugging a jack changes routes, not the profile
+
+Replugging headphones left the card on Speaker and GNOME still on the speaker.
+Three faults behind it, all in the same script.
+
+**The profile watcher listened for the wrong param.** `params-changed` was
+filtered to `"Profile"`, but plugging a jack changes **Route** / **EnumRoute** —
+the profile is a *consequence*, not the event. It appeared to work the first
+time only because WirePlumber switched the profile on its own; once a remembered
+profile kept the card on Speaker, nothing ever noticed the jack. It now listens
+for `Route` and `EnumRoute` as well.
+
+**Visibility keyed off the jack left a gap with no output at all.** With the jack
+in but the card still on Speaker — exactly what a remembered profile produces —
+`Speaker (Tuning)` was hidden because the jack was in, the headphone sink did not
+exist because the profile was Speaker, and the raw speaker is always hidden.
+GNOME was served **nothing selectable**. It is now decided by whether
+`HiFi__Speaker__sink` *exists*: whichever profile is live, exactly one of the two
+sinks is there, so exactly one entry is offered and the gap cannot occur.
+
+**The saved default sink is restored late.** `release_internal_default()` ran
+only when the metadata object appeared, and WirePlumber restores
+`default.configured.audio.sink` well after that. So the card was corrected to
+headphones and GNOME was offered the headphones while the actual default stayed
+on the hidden internal chain — "plugged in, still on speaker". It now watches the
+value, not just the object.
+
+Recovery verified from the exact failing state — profile pinned to Speaker,
+default sink saved as the internal chain, jack in:
+
+| | after restart |
+|---|---|
+| card profile | `HiFi (Headphones, Mic1, Mic2)` |
+| default sink | `alsa_output.…HiFi__Headphones__sink` |
+| GNOME served | one output, "Ryzen HD Audio Controller Headphones" |
+| a played stream | `effect_input.tuned-wired`, GOTT `gentle` |
