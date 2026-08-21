@@ -158,9 +158,10 @@ census() {
 # chains are per class, so bypassing only the active one meant switching from
 # the earbuds to the USB speaker silently turned the DSP back on mid-comparison.
 set_bypass() {
-    _ids=$(chains | awk '{ print $2 }')
+    _ids=$(chains | awk '{ print $1 ":" $2 }')
     [ -n "$_ids" ] || { echo "no External (Tuning) chain is loaded" >&2; return 1; }
-    for _id in $_ids; do
+    for _pair in $_ids; do
+        _cls=${_pair%%:*}; _id=${_pair#*:}
         if [ "$1" = "on" ]; then
             # The UPWARD half and the makeup have to go too, not just the
             # downward thresholds. Raising td alone stops downward compression
@@ -185,7 +186,7 @@ set_bypass() {
             # they are restored from that rather than from the shipped values.
             # Hardcoding them here meant 'off' then 'on' silently reset a
             # chosen preset back to the inaudible one.
-            gott_apply "$_id" "$(gott_current)"
+            gott_apply "$_id" "$(gott_current "$_cls")"
         fi
     done
 }
@@ -243,7 +244,11 @@ pin_pregraph_unity() {
 # For scale, an earbud driver's own THD at 90 Hz is typically 0.5-2 %, so
 # 'dense' adds roughly what the transducer already contributes and 'crush' adds
 # rather more. Pick by ear -- that is what the ladder is for.
-GOTT_STATE=$STATE_DIR/external-dsp.gott
+# Per CLASS, exactly like the voicing. A single global preset was wrong in a
+# way that only showed up in the graph: 'on' restores every chain, 'gott'
+# sets one, so the two scopes drifted and the earbuds ended on 'dense' while
+# the USB speaker sat on 'crush'.
+gott_state() { echo "$STATE_DIR/external-dsp.gott.$1"; }
 
 gott_preset() {
     #        ru  tu       rd  td       mk       ru4 rd4 mk4      ta1 tr1
@@ -278,7 +283,7 @@ gott_apply() {
         \"x2mbc:ta_1\" $_ta \"x2mbc:tr_1\" $_tr ] }" >/dev/null 2>&1
 }
 
-gott_current() { cat "$GOTT_STATE" 2>/dev/null || echo protect; }
+gott_current() { cat "$(gott_state "$1")" 2>/dev/null || echo dense; }
 
 # -- stage XV, the voicing ---------------------------------------------------
 #
@@ -473,13 +478,14 @@ case "${1:-status}" in
         _d=$(active_device)
         [ -n "$_d" ] || { echo "no external device connected" >&2; exit 1; }
         set -- "$(chain_for "$_d")" "$@"
+        _ccls=$(echo "$1" | awk '{print $1}')
         _cid=$(echo "$1" | awk '{print $2}')
         _cdesc=$(echo "$1" | cut -d' ' -f3-)
         shift
         [ -n "$_cid" ] || { echo "no chain matches $_d" >&2; exit 1; }
         case "${1:-show}" in
             show)
-                echo "GOTT density: $(gott_current)   on $_cdesc"
+                echo "GOTT density: $(gott_current "$_ccls")   on $_cdesc"
                 echo
                 _ru=$(pw-cli enum-params "$_cid" Props 2>/dev/null \
                         | grep -A1 '"x2mbc:ru_1"' | tail -1 | awk '{printf "%.1f", $2}')
@@ -503,7 +509,7 @@ case "${1:-status}" in
                     echo "no such preset: $1" >&2
                     echo "try: protect gentle medium dense crush" >&2; exit 2; }
                 gott_apply "$_cid" "$1" || { echo "could not set GOTT" >&2; exit 1; }
-                echo "$1" > "$GOTT_STATE"
+                echo "$1" > "$(gott_state "$_ccls")"
                 echo "GOTT density: $1   on $_cdesc"
                 case "$1" in
                     protect) echo "  downward only, upward off -- inaudible by design" ;;
@@ -679,7 +685,7 @@ case "${1:-status}" in
         if [ -f "$BYPASS_FLAG" ]; then
             echo "state: $_desc -- BYPASSED (pass-through)"
         else
-            echo "state: $_desc -- six-stage chain, GOTT '$(gott_current)'"
+            echo "state: $_desc -- six-stage chain, GOTT '$(gott_current "$_cls")'"
         fi
         echo "device: $(description_of "$_d")"
         echo "        $_d"
