@@ -48,6 +48,21 @@ external_is_active() {
     command -v external-dsp >/dev/null 2>&1
 }
 
+# The built-in speaker and the headphone jack share one card and cannot both be
+# active: plugging headphones switches it to a UCM profile where
+# HiFi__Speaker__sink does not exist at all.
+#
+# That matters because the 14-stage chain is a correction for ONE measured
+# driver -- a Linkwitz transform for its Fs and Q, a notch at its 761 Hz
+# resonance, harmonics synthesised to stand in for bass it cannot radiate -- and
+# PipeWire routes a chain whose target has vanished to the default sink instead.
+# So selecting it with headphones plugged puts the speaker's correction into the
+# headphones, which is damage rather than tuning. Found 21 Aug 2026 while
+# tracking down why the jack did not appear in GNOME.
+speaker_present() {
+    pactl list sinks short 2>/dev/null | awk '{print $2}' | grep -qx "$RAW"
+}
+
 usage() {
     echo "usage: speaker-dsp {on|off|ab|status|unity}" >&2
     echo "  on      Speaker (Tuning), the 14-stage filter chain" >&2
@@ -158,6 +173,15 @@ warn_hardware_volume() {
 
 case "${1:-status}" in
     on|dsp|tuning)
+        if ! speaker_present; then
+            echo "the built-in speaker is not available: the onboard card is on its" >&2
+            echo "headphone profile, so $RAW" >&2
+            echo "does not exist. Selecting Speaker (Tuning) now would send the" >&2
+            echo "speaker's own correction into the headphones." >&2
+            echo "Unplug the jack, or use the headphones as they are:" >&2
+            echo "  external-dsp status" >&2
+            exit 1
+        fi
         select_tuned && echo "SPEAKER DSP - Speaker (Tuning) is the default output"
         ;;
     off|raw)
@@ -198,6 +222,12 @@ case "${1:-status}" in
         ;;
     status)
         current=$(pactl get-default-sink) || exit $?
+        if ! speaker_present; then
+            echo "state: the built-in speaker is not available -- headphones are in"
+            echo "       the jack, and the onboard card cannot do both. Run"
+            echo "       'external-dsp status' for what is actually playing."
+            exit 0
+        fi
         case "$current" in
             "$DSP") echo "state: Speaker (Tuning), 14-stage chain" ;;
             "$RAW") echo "state: raw hardware speaker"; warn_slider ;;

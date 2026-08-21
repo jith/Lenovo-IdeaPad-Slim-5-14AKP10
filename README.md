@@ -2824,3 +2824,68 @@ happen after choosing any preset. Bypass now neutralises `ru_*` and `mk_*` too.
 The lesson generalises: a bypass built by neutralising *the controls that were
 in use* silently stops being a bypass when a new control comes into use. It has
 to neutralise everything that can produce gain.
+
+### The headphone jack, and a card that can only do one thing at a time
+
+Plugging headphones into the onboard jack showed nothing in GNOME. Two separate
+causes, both in this repo's own design.
+
+**WirePlumber had the card profile pinned.** The onboard card exposes the
+built-in speaker and the headphone jack as *mutually exclusive* UCM profiles:
+
+| profile | ports | priority |
+|---|---|---|
+| `HiFi (Headphones, Mic1, Mic2)` | Headphones | 8500 |
+| `HiFi (Mic1, Mic2, Speaker)` | Speaker | 8400 |
+
+The jack was detected — the Headphones port reported `available` — but
+`~/.local/state/wireplumber/default-profile` carried
+
+```
+alsa_card.pci-0000_04_00.6=HiFi (Mic1, Mic2, Speaker)
+```
+
+and `find-preferred-profile.lua` prefers a remembered profile over the best
+available one. Deleting that line and restarting WirePlumber made it select the
+Headphones profile by itself, and it did **not** write the entry back — an
+automatic selection is not a remembered one, so unplugging falls back to Speaker
+cleanly. Nothing in the repo needs to maintain this; the stale pin was a one-off.
+
+**And the card was hidden outright.** `hide-speaker-tuning.lua` hid
+`alsa_card.pci-0000_04_00.6` because GNOME builds output entries from card ports
+as well as from sinks, so the raw speaker reappeared as a port even with its
+sink hidden. But the headphone jack is a port on that same card, so hiding the
+card hid the jack too.
+
+The card is now hidden **only while the Speaker profile is active**. On the
+headphones profile the card is shown — its only output port is then Headphones,
+which is exactly what should be listed — and `Speaker (Tuning)` is hidden
+instead, because the built-in speaker is physically unavailable while the jack
+is occupied. The profile arrives as a device *param*, not a property, so it is
+read with `iterate_params("Profile")` and watched via `params-changed`;
+permissions are restored with `"rwxm"` rather than only removed with `"-"`.
+
+Nothing was needed for the audio path: the headphone sink is
+`alsa_output.…HiFi__Headphones__sink`, which matches the wired class's
+`^alsa_output%.` and is not the internal `HiFi__Speaker__sink`, so
+`52-external-target.lua` pointed the wired chain at it unprompted. `external-dsp
+status` named it `Ryzen HD Audio Controller Headphones` at GOTT `gentle` with no
+change at all. Matching on a pattern rather than a device list is what made that
+free.
+
+#### A chain whose target vanishes falls into the default sink
+
+Switching the profile revealed that `effect_output.speaker-tuning` — the
+14-stage chain — was linked to the **headphone sink**, alongside both external
+chains. Its `target.object` names `HiFi__Speaker__sink`, which ceases to exist
+on the headphones profile, and PipeWire routes an unresolved chain to the
+default sink. This is the same fallthrough that
+`52-external-target.lua` exists to prevent for the external chains; the internal
+one never had the guard because its target was assumed permanent.
+
+That chain is a correction for one measured driver — a Linkwitz transform for
+its Fs and Q, a notch at its 761 Hz resonance, harmonics synthesised for bass it
+cannot radiate. Into headphones it is damage, not tuning. Hiding
+`Speaker (Tuning)` closes the GNOME route; `speaker-dsp on` and `speaker-dsp
+status` now refuse and explain rather than selecting a chain with no device
+behind it.
