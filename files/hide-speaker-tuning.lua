@@ -135,27 +135,47 @@ local function profile_name (dev)
   return nil
 end
 
--- True when the card is on a profile that carries the built-in speaker. The
--- safe default when the card or its profile cannot be read is TRUE: that keeps
--- the old behaviour, which hides the raw speaker.
-local function speaker_active ()
+-- Whether Speaker (Tuning) should be offered. Decided from the JACK, not from
+-- the active profile: the profile changes twice during a switch and the jack
+-- does not, so keying off the profile made the entry appear and disappear
+-- mid-transition, and each of those is an add/remove in GNOME's list.
+--
+-- Unknown card means "no jack to worry about", which is the pre-existing
+-- behaviour on any machine without this one's onboard card.
+local function speaker_selectable ()
   for dev in card_om:iterate () do
-    local n = profile_name (dev)
-    if n ~= nil then
-      return n:match ("Speaker") ~= nil
-    end
+    return not jack_plugged (dev)
   end
   return true
 end
 
+-- EVERY call is an event to the client, and gvc builds its device list from
+-- those events. refresh() runs ~20 times while the graph settles, so
+-- re-asserting the same permission each time produced a storm of new/remove
+-- pairs on the same sink. Only ever send a change.
+--
+-- Keyed per client and CLEARED WHEN THE CLIENT GOES AWAY, because PipeWire
+-- reuses client ids. Keeping one flat table meant a new client that inherited a
+-- retired id hit the previous client's cache entry, the hide was skipped as
+-- already-applied, and that client saw the entire graph -- every chain, the raw
+-- speaker and the card with its Speaker port. Reproducible: the first client
+-- after a restart was hidden correctly and every later one was not.
+applied = {}
+
 local function set_perm (client, obj, allow)
   if not is_gvc_mixer_client (client) then return end
   local id = obj["bound-id"]
-  if id == nil then return end
+  local cid = client["bound-id"]
+  if id == nil or cid == nil then return end
+  local seen = applied[cid]
+  if seen == nil then seen = {}; applied[cid] = seen end
+  if seen[id] == allow then return end
   local ok, err = pcall (function ()
     client:update_permissions { [id] = allow and "rwxm" or "-" }
   end)
-  if not ok then
+  if ok then
+    seen[id] = allow
+  else
     log:warning ("could not set permission on " .. tostring (id) .. ": "
         .. tostring (err))
   end
@@ -219,29 +239,55 @@ local function release_internal_default ()
   end
 end
 
-local function refresh ()
-  honour_jack ()
-  release_internal_default ()
-  local spk = speaker_active ()
-  log:info ("speaker profile active: " .. tostring (spk))
-  for client in clients_om:iterate () do
-    if is_gvc_mixer_client (client) then
-      for node in nodes_om:iterate () do set_perm (client, node, false) end
-      for node in raw_om:iterate () do set_perm (client, node, false) end
-      -- Always hidden: it carries the raw Speaker port, and GNOME would list
-      -- that port beside Speaker (Tuning). The headphone sink is what makes
-      -- the jack selectable, and it needs no card.
-      for dev in card_om:iterate () do set_perm (client, dev, false) end
-      -- Speaker (Tuning) is only meaningful while the speaker owns the card.
-      for node in internal_om:iterate () do set_perm (client, node, spk) end
-    end
-  end
+-- Apply to ONE client. This must take the client as an argument rather than
+-- iterating clients_om, because a client is not yet in the manager when its own
+-- object-added fires -- so iterating applied nothing to the client that had just
+-- connected. Every client that appeared after start-up therefore saw the whole
+-- graph: all three chains, the raw speaker and the card with its Speaker port.
+-- That is the duplicate. The original script passed the client through and was
+-- right to; the regression came in when this was rewritten around a profile
+-- check.
+local function apply_to_client (client)
+  if not is_gvc_mixer_client (client) then return end
+  if card_om:lookup () == nil then return end
+  local spk = speaker_selectable ()
+  for node in nodes_om:iterate () do set_perm (client, node, false) end
+  for node in raw_om:iterate () do set_perm (client, node, false) end
+  -- Always hidden: it carries the raw Speaker port, and GNOME would list that
+  -- port beside Speaker (Tuning). The headphone sink is what makes the jack
+  -- selectable, and it needs no card.
+  for dev in card_om:iterate () do set_perm (client, dev, false) end
+  -- Speaker (Tuning) is only meaningful while the speaker owns the card.
+  for node in internal_om:iterate () do set_perm (client, node, spk) end
 end
 
-clients_om:connect ("object-added", function () refresh () end)
+local function refresh ()
+  -- Until the card is known, every answer here is a guess that will be
+  -- corrected a moment later -- and a correction is a remove event. Wait.
+  if card_om:lookup () == nil then return end
+  honour_jack ()
+  release_internal_default ()
+  for client in clients_om:iterate () do apply_to_client (client) end
+end
+
+-- A client gets its permissions applied directly, never by iterating: it is not
+-- in clients_om yet when its own object-added fires.
+clients_om:connect ("object-added", function (_, client)
+  apply_to_client (client)
+end)
+
+clients_om:connect ("object-removed", function (_, client)
+  local cid = client["bound-id"]
+  if cid ~= nil then applied[cid] = nil end
+end)
+
+-- Anything newly appearing has to be hidden from every client already connected.
 nodes_om:connect ("object-added", function () refresh () end)
 raw_om:connect ("object-added", function () refresh () end)
 internal_om:connect ("object-added", function () refresh () end)
+metadata_om:connect ("object-added", function () refresh () end)
+sinks_om:connect ("object-added", function () refresh () end)
+
 card_om:connect ("object-added", function (_, dev)
   -- The profile changing is the event that matters most, and it arrives on the
   -- device as a param rather than as a property change.
@@ -250,9 +296,6 @@ card_om:connect ("object-added", function (_, dev)
   end)
   refresh ()
 end)
-
-metadata_om:connect ("object-added", function () refresh () end)
-sinks_om:connect ("object-added", function () refresh () end)
 
 metadata_om:activate ()
 sinks_om:activate ()

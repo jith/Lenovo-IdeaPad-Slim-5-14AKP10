@@ -2957,3 +2957,45 @@ the headphone sink, because a chain whose target is missing is routed to the
 default sink and there is no way to refuse that without also blocking the
 retarget it needs when the speaker returns. It is idle — nothing can select it,
 `speaker-dsp on` refuses, and it is hidden — so it carries silence.
+
+#### Why the same output was listed twice
+
+Three separate faults, all introduced by the rewrite that made the card
+visibility profile-aware. None was in the audio path; all three were in how
+permissions reached GNOME's mixer client.
+
+**A client is not in `clients_om` when its own `object-added` fires.** The
+original script passed the new client straight to `hide(client, node)`. The
+rewrite replaced that with a `refresh()` that *iterates* the manager — so the
+client that had just connected was skipped, and every client appearing after
+start-up saw the whole graph: all three chains, the raw speaker, and the card
+with its `Speaker` port. Restored to applying per client, with iteration kept
+only for the case where an object appears and every existing client must be
+updated.
+
+**PipeWire reuses client ids.** Permission writes were made idempotent to stop
+an event storm — `refresh()` runs about twenty times while the graph settles, and
+each redundant write is a `new`/`remove` pair on the client — but the cache was
+one flat table keyed `client:object`. A new client inheriting a retired id hit
+the previous client's entry, the hide was skipped as already applied, and that
+client saw everything. Reproducible and unmistakable once measured:
+
+| fresh client, after a WirePlumber restart | sinks visible |
+|---|---|
+| t+3 s | 1 — correct |
+| t+6 s and every later one | 4 + both cards |
+
+The cache is now per client and cleared on `object-removed`.
+
+**Deciding visibility from the profile made it flicker.** The profile changes
+twice during a switch and the jack does not, so `Speaker (Tuning)` was granted
+and revoked mid-transition — each one an add/remove in GNOME's list. It is keyed
+off the jack now.
+
+Measured after the fix: every client at every timing sees one output and no
+onboard card, and an idle client receives **zero** events where it previously
+received a storm.
+
+Worth recording separately: two of the three only appear *after* start-up, so
+any check made immediately following a restart passes. The first client is
+always correct.
