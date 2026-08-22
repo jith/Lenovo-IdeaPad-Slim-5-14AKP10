@@ -3067,3 +3067,52 @@ what stops jack detection working after a replug.
 The wired class was renamed from "Speaker / Headphones (Tuning)" to
 "Headphones / Wired (Tuning)": beside "Speaker (Tuning)" the old name read as a
 duplicate of it.
+
+### A hidden sink must never be the default
+
+The GNOME volume slider did nothing on the built-in speaker, while working
+normally on headphones. Reported 22 Aug 2026.
+
+The slider was not broken and neither was the chain. Driven directly, the
+internal graph passes a level change through almost untouched — measured at the
+raw sink's monitor, with the same six seconds of programme each time:
+
+| chain input | captured RMS |
+|---|---|
+| 100% | −13.40 dBFS |
+| 70%  | −21.38 dBFS |
+| 45%  | −32.90 dBFS |
+
+The fault was **which sink the slider was attached to**. Two different things
+set two different pieces of state and nothing kept them in step:
+
+- `hide-speaker-tuning.lua` sets *permissions* — with the jack out,
+  `effect_input.tuned-wired` is hidden from GNOME.
+- WirePlumber restores the *default sink* from `default-nodes`, which still
+  said `effect_input.tuned-wired` from when the jack had been in.
+
+So the default sink was a sink GNOME could not see. `pipewire-pulse` reports a
+default the client is actually allowed to see, which left the two disagreeing:
+
+```
+PipeWire default : effect_input.tuned-wired      <- audio really played here
+GNOME sees       : effect_input.speaker-tuning
+GNOME's default  : effect_input.speaker-tuning   <- and the slider drove this
+```
+
+Audio kept playing because the wired class matches `^alsa_output%.`, which with
+the jack out matches the built-in speaker — so the wired chain was feeding the
+speaker. The slider, meanwhile, moved a chain with no stream in it. Nothing was
+silent and nothing logged an error; the slider simply had no effect. Headphones
+worked because there the visible sink and the default were the same node.
+
+`release_hidden_default()` closes the gap: whenever the default sink is one of
+the nodes being hidden, the selection is handed back to
+`effect_input.speaker-tuning`. It writes `default.configured.audio.sink`, not
+`default.audio.sink` — the configured key is the selection, and WirePlumber
+recomputes the other from it. Writing only `default.audio.sink` is undone on the
+next pass.
+
+The hidden set is now expressed once, in `hidden_from_gnome()`, so the
+permission pass and the default-release pass cannot drift apart again.
+

@@ -221,15 +221,68 @@ local function set_profile (dev, want)
   })
 end
 
+local function default_sink_name (md)
+  local cur = md:find (0, "default.audio.sink")
+  if cur == nil then return nil end
+  local json = Json.Raw (cur)
+  if not json:is_object () then return nil end
+  local parsed = json:parse ()
+  return parsed and parsed["name"] or nil
+end
+
+-- Exactly the set apply_to_client refuses to show, expressed once so the two
+-- cannot drift apart.
+local function hidden_from_gnome (name, plugged)
+  if name:match ("^effect_output%.") then return true end
+  if name:match ("HiFi__Speaker__sink") then return true end
+  if name:match ("HiFi__Headphones__sink") then return true end
+  if name:match ("^effect_input%.tuned%-") then
+    return not (plugged and name == "effect_input.tuned-wired")
+  end
+  return false
+end
+
+-- A SINK THAT IS HIDDEN FROM GNOME MUST NEVER BE THE DEFAULT. Two different
+-- things set the two: permissions are set here, the default is restored by
+-- WirePlumber from default-nodes, and nothing kept them in step.
+--
+-- Pulling the jack out hid effect_input.tuned-wired again but left it as the
+-- default sink, and its pattern ^alsa_output%. then matches the built-in
+-- speaker -- so audio really did keep playing, through the wired chain, out of
+-- the speaker. GNOME, served only Speaker (Tuning), pointed its slider at that
+-- chain instead. The slider moved a sink with no stream in it: audio unchanged,
+-- while the headphone case worked because there the visible sink and the
+-- default were the same node. Reported as "volume slider not working on the
+-- internal speaker, working fine on headphones", 22 Aug 2026.
+--
+-- default.configured.audio.sink is the key to write, not default.audio.sink:
+-- the configured one is the selection, and WirePlumber recomputes the other
+-- from it. Writing only default.audio.sink is undone on the next pass.
+local function release_hidden_default ()
+  local md = metadata_om:lookup ()
+  if md == nil then return end
+  local name = default_sink_name (md)
+  if name == nil or name == INTERNAL_SINK then return end
+
+  local plugged = false
+  for dev in card_om:iterate () do plugged = jack_plugged (dev) end
+  if not hidden_from_gnome (name, plugged) then return end
+
+  -- Plain find, not a pattern: "speaker-tuning" read as a pattern makes the
+  -- hyphen a lazy quantifier and stops matching itself.
+  local cfg = md:find (0, "default.configured.audio.sink")
+  if cfg ~= nil and string.find (cfg, INTERNAL_SINK, 1, true) then return end
+
+  log:info ("default sink " .. name .. " is hidden from GNOME, releasing to "
+      .. INTERNAL_SINK)
+  md:set (0, "default.configured.audio.sink", "Spa:String:JSON",
+      '{"name":"' .. INTERNAL_SINK .. '"}')
+end
+
 local function follow_selection ()
   local md = metadata_om:lookup ()
   if md == nil then return end
-  local cur = md:find (0, "default.audio.sink")
-  if cur == nil then return end
-  local json = Json.Raw (cur)
-  if not json:is_object () then return end
-  local parsed = json:parse ()
-  local name = parsed and parsed["name"]
+  local name = default_sink_name (md)
   if name == nil then return end
 
   for dev in card_om:iterate () do
@@ -285,6 +338,7 @@ local function refresh ()
   -- Until the card is known, every answer here is a guess that will be
   -- corrected a moment later -- and a correction is a remove event. Wait.
   if card_om:lookup () == nil then return end
+  release_hidden_default ()
   follow_selection ()
   for client in clients_om:iterate () do apply_to_client (client) end
 end
