@@ -2474,6 +2474,9 @@ image-only scans with no text layer — use the HTML page for searchable text.
   `files/hide-speaker-tuning.lua` — keep **Speaker (Tuning)** as the single
   laptop-speaker entry GNOME shows. The raw sink stays available to PipeWire
   and `pactl`.
+- `files/54-volume-sync.conf`, `files/54-volume-sync.lua` — carry the
+  listening level across an output change, clamped to 60% on everything but
+  the built-in speaker.
 - `files/speaker-dsp` → `/usr/local/bin/speaker-dsp`.
 
 The physical sink node name appears in `files/50-speaker-tuning.conf`
@@ -3116,3 +3119,45 @@ next pass.
 The hidden set is now expressed once, in `hidden_from_gnome()`, so the
 permission pass and the default-release pass cannot drift apart again.
 
+### Carrying the level across an output change
+
+`files/54-volume-sync.lua`.
+
+There is no master volume in PipeWire to sync a per-device volume *to* — the
+per-device volume is the only volume there is, and GNOME's slider drives
+whichever sink is currently default. Nothing carried a level from one output to
+the next, so each drifted to wherever it was last left: **Speaker (Tuning) at
+65% beside the wired chain at 28%**, a 22 dB jump on a slider nobody had
+touched.
+
+So the script does the reachable thing. When the selection changes, the level
+you were listening at is copied onto the newly selected output. Switch away and
+back and you land where you left off, because the level travelled both ways.
+
+Everything except the built-in speaker is clamped to **60%**, the same ceiling
+`external-dsp level` enforces (`EXTERNAL_DSP_MAX_LEVEL`). Carrying a level *onto*
+headphones or a powered speaker is exactly where an unclamped copy would hurt.
+The built-in speaker is exempt: it is quiet at full scale, and its slider sits
+*before* the filter graph, where backing off starves the DSP rather than
+protecting anyone's ears.
+
+Measured, with a null sink standing in for a second selectable output:
+
+| step | Speaker (Tuning) | second output |
+|---|---|---|
+| start, speaker selected | 80% | 100% |
+| select the second output | 80% | **60%** (carried 80%, clamped) |
+| set it to 50%, select the speaker | **50%** | 50% |
+
+**Setting a volume from Lua works, but in one form only.** This corrects what
+this repo previously recorded as impossible:
+
+| call | result |
+|---|---|
+| `node:set_param("Props", …)` | accepted, does nothing |
+| `mixer:call("set-volume", id, Json.Object { volume = v })` | **returns false** |
+| `mixer:call("set-volume", id, { volume = v })` | works |
+
+Only the middle one reports its own failure. The volume is linear, while pactl
+and GNOME show a cubic percentage — 60% on the slider is `0.6³ = 0.216` linear,
+so the two cannot be compared by eye.

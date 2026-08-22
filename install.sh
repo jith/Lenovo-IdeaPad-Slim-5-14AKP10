@@ -20,6 +20,8 @@ HIDE_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/hide-speaker-tuning.lua
 EXT_FILTER_DEST=/etc/pipewire/pipewire.conf.d/52-external-tuning.conf
 EXT_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/52-external-target.conf
 EXT_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/52-external-target.lua
+SYNC_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/54-volume-sync.conf
+SYNC_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/54-volume-sync.lua
 EXT_UNIT_OLD=/etc/systemd/user/external-dsp.service
 
 print_user_restart_instructions() {
@@ -36,6 +38,8 @@ uninstall() {
         "$EXT_FILTER_DEST" \
         "$EXT_CONF_DEST" \
         "$EXT_SCRIPT_DEST" \
+        "$SYNC_CONF_DEST" \
+        "$SYNC_SCRIPT_DEST" \
         "$EXT_UNIT_OLD" \
         /etc/systemd/user/external-dsp.service \
         /usr/local/bin/gen-external-chains.py \
@@ -107,6 +111,8 @@ install_filter() {
         /usr/local/share/speaker-dsp/52-external-tuning.conf
     install -D -m644 "$FILES_DIR/52-external-target.conf" "$EXT_CONF_DEST"
     install -D -m644 "$FILES_DIR/52-external-target.lua" "$EXT_SCRIPT_DEST"
+    install -D -m644 "$FILES_DIR/54-volume-sync.conf" "$SYNC_CONF_DEST"
+    install -D -m644 "$FILES_DIR/54-volume-sync.lua" "$SYNC_SCRIPT_DEST"
 
     # The chains are per CLASS of output, not per device, so this expands to the
     # same file every time and can be generated here rather than by hand or by
