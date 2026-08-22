@@ -43,6 +43,20 @@ sinks_om = ObjectManager {
   Interest { type = "node", Constraint { "media.class", "=", "Audio/Sink" } }
 }
 
+-- The onboard headphone sink sits behind the wired chain and is hidden from
+-- GNOME, so a remembered level on its route is loss nothing can reach: measured
+-- at -21.39 dB, held in default-routes as 0.085177, with no slider anywhere
+-- that could put it back. The speaker's route was stored at 1.000000, which is
+-- the whole reason only headphones sounded quiet. Reported 22 Aug 2026.
+--
+-- Its level belongs at unity because the GNOME slider already carries the
+-- listening level, one stage earlier, on effect_input.tuned-wired.
+--
+-- THE SPEAKER SINK IS DELIBERATELY NOT PINNED HERE. speaker-dsp writes its
+-- volume to level-match the bypass A/B, and holding it at unity would silently
+-- break that comparison.
+UNITY_SINK = "HiFi__Headphones__sink"
+
 metadata_om = ObjectManager {
   Interest { type = "metadata", Constraint { "metadata.name", "=", "default" } }
 }
@@ -74,9 +88,30 @@ local function capped (name, v)
   return v
 end
 
+local function pin_unity ()
+  local mixer = Plugin.find ("mixer-api")
+  if mixer == nil then return end
+  for n in sinks_om:iterate () do
+    local name = n.properties["node.name"] or ""
+    if name:match (UNITY_SINK) then
+      local id = n["bound-id"]
+      if id ~= nil then
+        local ok, cur = pcall (function () return mixer:call ("get-volume", id) end)
+        -- Only ever write a change: the read-back is what stops this from
+        -- chasing its own write round the params-changed it causes.
+        if ok and cur ~= nil and cur.volume ~= nil and cur.volume < 0.999 then
+          mixer:call ("set-volume", id, { volume = 1.0 })
+          log:info ("held " .. name .. " at unity, was " .. tostring (cur.volume))
+        end
+      end
+    end
+  end
+end
+
 local function carry ()
   local md = metadata_om:lookup ()
   if md == nil then return end
+  pin_unity ()
   local name = default_sink_name (md)
   if name == nil then return end
   local node = node_named (name)
@@ -111,7 +146,24 @@ end)
 
 -- A sink appearing can be the thing that resolves the current selection, so the
 -- first carry may only become possible here.
-sinks_om:connect ("object-added", function () carry () end)
+--
+-- AND UNITY HAS TO BE RE-ASSERTED, not just set once when the node appears.
+-- WirePlumber restores a route's stored volume AFTER object-added, so a single
+-- write at that moment is overwritten a beat later and the sink is quietly back
+-- at -21 dB. Watching the node's own params is what makes it stick; the
+-- read-back inside pin_unity stops that from becoming a ping-pong, and once the
+-- value is written WirePlumber saves the new one to default-routes and stops
+-- restoring the old.
+sinks_om:connect ("object-added", function (_, node)
+  local name = node.properties["node.name"] or ""
+  if name:match (UNITY_SINK) then
+    node:connect ("params-changed", function (_, what)
+      if what == "Props" or what == "Route" then pin_unity () end
+    end)
+  end
+  pin_unity ()
+  carry ()
+end)
 
 metadata_om:activate ()
 sinks_om:activate ()

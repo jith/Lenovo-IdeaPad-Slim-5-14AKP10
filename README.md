@@ -3149,6 +3149,41 @@ Measured, with a null sink standing in for a second selectable output:
 | select the second output | 80% | **60%** (carried 80%, clamped) |
 | set it to 50%, select the speaker | **50%** | 50% |
 
+#### The 21 dB nobody could reach
+
+`alsamixer` showed the onboard **Headphone** element at −21 dB while the speaker
+sat at unity. Reported 22 Aug 2026, and it was not the mixer's doing —
+`~/.local/state/wireplumber/default-routes` held it:
+
+```
+alsa_card.pci-0000_04_00.6:output:[Out] Speaker    = {"channelVolumes":[1.000000, …]}
+alsa_card.pci-0000_04_00.6:output:[Out] Headphones = {"channelVolumes":[0.085177, …]}
+```
+
+`0.085177` linear is **−21.39 dB**. The headphone sink is hidden from GNOME —
+the wired chain stands in front of it — so no slider anywhere in the system
+could put that back. It was pure loss, stacked underneath the −17.04 dB the
+GNOME slider was already applying: −38.43 dB total, with 21 dB of it invisible.
+Only headphones were affected, because the speaker's route happened to be
+stored at unity.
+
+`pin_unity()` holds the headphone sink at 1.0, so the GNOME slider on
+`effect_input.tuned-wired` is once again the only level that matters.
+
+Two details make it work:
+
+- **The write must be re-asserted, not made once.** WirePlumber restores a
+  route's stored volume *after* `object-added`, so a single write at that moment
+  is overwritten a beat later and the sink is quietly back at −21 dB. Connecting
+  to the node's own `params-changed` is what makes it stick. Measured: seeded
+  back to 44%, restart, and it comes up at 100% / 0.00 dB and stays there —
+  three reads a second apart, WirePlumber at 0.7% CPU, so it is not
+  ping-ponging. The read-back inside `pin_unity()` is what prevents that, and
+  once written WirePlumber saves `1.000000` and stops restoring the old value.
+- **The speaker sink is deliberately not pinned.** `speaker-dsp` writes its
+  volume to level-match the bypass A/B, and holding it at unity would silently
+  break that comparison.
+
 **Setting a volume from Lua works, but in one form only.** This corrects what
 this repo previously recorded as impossible:
 
