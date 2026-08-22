@@ -3149,6 +3149,55 @@ Measured, with a null sink standing in for a second selectable output:
 | select the second output | 80% | **60%** (carried 80%, clamped) |
 | set it to 50%, select the speaker | **50%** | 50% |
 
+#### `external-dsp on` was pinning the master volume to 100%
+
+The same routing change caught the other helper. `pin_pregraph_unity()` sets
+every `effect_input.tuned-*` to unity, on the reasoning that a chain input sits
+*before* the graph, so a level there is not a listening level — it just starves
+the compressor.
+
+That was true when every chain input was invisible plumbing behind a device
+GNOME listed itself. It stopped being true the moment the headphone jack was
+listed as its own output, because **that entry *is* the chain**: GNOME's slider
+drives `effect_input.tuned-wired`. So `external-dsp on` threw the master volume
+to 100% — and with the headphone sink now pinned at unity, that is full scale
+into someone's ears.
+
+`level_node()` now decides which of the two arrangements is live, from what
+GNOME has selected:
+
+| default sink | the listener's level is | the other one is |
+|---|---|---|
+| `effect_input.tuned-*` | that chain input, before the graph | the device, held at unity |
+| a raw device (`bluez_output.*`, USB) | the device, after the graph | the chain input, held at unity |
+
+`pin_pregraph_unity`, `level` and `status` all read it, so `on` leaves the
+selected output alone and says why, `level N` writes to whichever node actually
+carries the level, and `status` stops calling the headphone sink *ABOVE THE CAP*
+when it is deliberately at unity, or the chain input *WRONG* when it is the
+slider. Verified both ways in one pass: with headphones selected, `unity` pins
+`tuned-bluetooth` 50% → 100% and leaves `tuned-wired` at 35%.
+
+This is the third time a routing change has broken a control script while the
+audio path kept working.
+
+#### …and it did not remember the level either
+
+`state.restore-props = false` in the chain's `capture.props`, for the same
+reason: a remembered value on a plumbing node switches the DSP off by volume.
+Measured — set `effect_input.tuned-wired` to 40%, restart, back at 100%.
+
+The wired class alone is now generated with `state.restore-props = true`, since
+it is the one class GNOME lists as an output in its own right. Every other class
+keeps `false`.
+
+Worth knowing when testing this: **the save is deferred.** Setting
+`effect_input.speaker-tuning` (which has always had the default) to 37% and
+restarting immediately brought back the *previous* value, 52%; the same change
+with twenty seconds before the restart came back at 37%. An immediate restart is
+not a test of whether a value is remembered. The value does not appear in
+`stream-properties` either way.
+
 #### The 21 dB nobody could reach
 
 `alsamixer` showed the onboard **Headphone** element at −21 dB while the speaker

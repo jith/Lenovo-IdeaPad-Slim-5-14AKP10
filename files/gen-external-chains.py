@@ -68,6 +68,40 @@ CLASSES = [
 ]
 
 
+# The template's chain input is plumbing: it sits behind a device GNOME lists
+# itself, so its volume belongs at unity and must not be remembered.
+PLUMBING_LEVEL = """\
+                # This sink's volume is applied BEFORE the graph, so it is not a
+                # listening level -- at anything below unity the chain stops
+                # seeing full scale and its limiting stops happening. WirePlumber
+                # restores a remembered volume for every node, and after a
+                # restart this one came back at 38%, silently switching the DSP
+                # off. state.restore-props = false makes it come up at unity
+                # every time; WirePlumber's own bluez monitor uses the same
+                # property for nodes whose volume must not be second-guessed.
+                # The listening level lives on the device, after the graph.
+                state.restore-props = false"""
+
+# THE WIRED CLASS IS THE ONE GNOME LISTS AS AN OUTPUT IN ITS OWN RIGHT. Since
+# the headphone jack started being offered as its own entry, this chain's input
+# IS what GNOME's slider drives, so the level on it is a listening level and
+# the reasoning above is inverted for it.
+LISTENING_LEVEL = """\
+                # THIS ONE IS A LISTENING LEVEL, unlike every other class here.
+                # The headphone jack is listed by GNOME as its own output, and
+                # the entry IS this chain -- so this sink's volume is the slider
+                # the listener actually moves, and the device behind it is held
+                # at unity by 54-volume-sync.lua instead.
+                #
+                # So it has to be remembered. state.restore-props = false made
+                # it come back at 100% after every restart, which is the "does
+                # not remember the last volume used" half of the report of
+                # 22 Aug 2026. It does still sit before the graph, so a low
+                # setting starves the compressor -- that is the price of the
+                # slider being here, and 'external-dsp status' says so.
+                state.restore-props = true"""
+
+
 def slug(name):
     """A short, stable, filename-safe id for a device node name."""
     s = name.split(".", 1)[-1]
@@ -100,6 +134,9 @@ def main():
                       '                speaker-dsp.match = "%s"' % (sid, pattern))
         m = m.replace("node.link-group = external-tuning",
                       "node.link-group = tuned-%s" % sid)
+
+        if sid == "wired":
+            m = m.replace(PLUMBING_LEVEL, LISTENING_LEVEL)
         # No target here: 52-external-target.lua sets it to whichever device
         # currently matches speaker-dsp.match. A placeholder that resolves to
         # nothing would not be safer -- PipeWire falls back to the default sink

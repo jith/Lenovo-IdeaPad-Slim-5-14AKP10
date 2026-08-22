@@ -129,6 +129,33 @@ active_device() {
     external_sinks | head -1
 }
 
+# WHICH NODE HOLDS THE LISTENING LEVEL. There are two arrangements, and which
+# one is live is decided by what GNOME has selected:
+#
+#   default sink is effect_input.tuned-*  the listener's level is THAT, before
+#                                         the graph, and the device behind it is
+#                                         plumbing held at unity. This is the
+#                                         headphone jack, which is listed as an
+#                                         output in its own right, so the entry
+#                                         GNOME's slider drives IS the chain.
+#
+#   default sink is a raw device          the listener's level is the device,
+#                                         after the graph, and the chain input
+#                                         is plumbing held at unity. This is
+#                                         Bluetooth and USB, where GNOME lists
+#                                         the device itself.
+#
+# Assuming the second one everywhere is what made 'external-dsp on' throw the
+# master volume to 100% on headphones -- pin_pregraph_unity pinned the very sink
+# the slider was on. Reported 22 Aug 2026.
+level_node() {
+    _ln=$(pactl get-default-sink 2>/dev/null)
+    case "$_ln" in
+        effect_input.tuned-*) echo "$_ln" ;;
+        *) active_device ;;
+    esac
+}
+
 # How many app streams are inside the chain, and how many are playing straight
 # into the device untuned. The second number is the failure this whole design
 # exists to prevent -- it means the stream was not redirected -- so status
@@ -197,8 +224,19 @@ set_bypass() {
 # after the graph, which is where 'level' puts it. So this one is pinned and
 # the device's is deliberately not.
 pin_pregraph_unity() {
+    _keep=$(level_node)
     for _c in $(chains | awk '{ print $1 }'); do
         _sink=effect_input.tuned-$_c
+        # Never the selected output: that level is the listener's, not ours.
+        if [ "$_sink" = "$_keep" ]; then
+            _v=$(volume_pct "$_sink")
+            if [ -n "$_v" ] && [ "$_v" -lt 100 ] 2>/dev/null; then
+                echo "note: $_sink is the selected output, so its level is GNOME's"
+                echo "      slider -- left alone at ${_v}%. It does sit before the graph,"
+                echo "      so the DSP is seeing less than full scale."
+            fi
+            continue
+        fi
         _v=$(volume_pct "$_sink")
         [ "$_v" = "100" ] && continue
         if pactl set-sink-volume "$_sink" 100% 2>/dev/null; then
@@ -462,11 +500,15 @@ case "${1:-status}" in
             echo "raise the ceiling with EXTERNAL_DSP_MAX_LEVEL=<n> if you mean it."
             _n=$MAX_LEVEL
         fi
-        _d=$(active_device)
+        _d=$(level_node)
         [ -n "$_d" ] || { echo "no external device connected" >&2; exit 1; }
         pin_pregraph_unity
+        case "$_d" in
+            effect_input.tuned-*) _where="before the graph -- this is GNOME's slider" ;;
+            *) _where="after the graph" ;;
+        esac
         pactl set-sink-volume "$_d" "${_n}%" && \
-            echo "level: ${_n}% on $(description_of "$_d") (after the graph)"
+            echo "level: ${_n}% on $(description_of "$_d") ($_where)"
         ;;
     gott|density)
         shift
@@ -592,10 +634,19 @@ case "${1:-status}" in
         # survives everything and needs no machinery.
         ;;
     unity)
+        _keep=$(level_node)
         pin_pregraph_unity
         chains | while read -r _c _id _pat _desc; do
-            printf '  %-30s %4s%%  (must be 100)\n' \
-                "effect_input.tuned-$_c" "$(volume_pct "effect_input.tuned-$_c")"
+            _s=effect_input.tuned-$_c
+            # "must be 100" is only true of a chain that is plumbing. The one
+            # GNOME has selected is the listener's slider and has no such rule.
+            if [ "$_s" = "$_keep" ]; then
+                printf '  %-30s %4s%%  (the slider -- any value)\n' \
+                    "$_s" "$(volume_pct "$_s")"
+            else
+                printf '  %-30s %4s%%  (must be 100)\n' \
+                    "$_s" "$(volume_pct "$_s")"
+            fi
         done
         echo "set the listening level with: external-dsp level N"
         ;;
@@ -701,22 +752,38 @@ case "${1:-status}" in
         fi
         echo "device: $(description_of "$_d")"
         echo "        $_d"
-        _lv=$(volume_pct "$_d")
-        printf '  level (device, after the graph):  %4s%%   (max %s)\n' \
-            "$_lv" "$MAX_LEVEL"
+        # Report the node that actually holds the listening level -- see
+        # level_node(). Reporting the device unconditionally called the
+        # headphone sink ABOVE THE CAP when it is deliberately pinned at unity,
+        # and called the chain input WRONG when it is the slider.
+        _ln=$(level_node)
+        _pgsink=effect_input.tuned-$_cls
+        _lv=$(volume_pct "$_ln")
+        if [ "$_ln" = "$_pgsink" ]; then
+            printf '  level (chain input, before graph):%4s%%   (max %s)\n' \
+                "$_lv" "$MAX_LEVEL"
+            echo "                                          this output IS the chain, so"
+            echo "                                          GNOME's slider drives it and"
+            echo "                                          the device behind it is unity."
+        else
+            printf '  level (device, after the graph):  %4s%%   (max %s)\n' \
+                "$_lv" "$MAX_LEVEL"
+        fi
         # The cap is enforced by 'external-dsp level'. The volume keys and
         # GNOME's slider write the same control and do not know about it, so
         # the only honest thing status can do is say so.
         [ -n "$_lv" ] && [ "$_lv" -gt "$MAX_LEVEL" ] 2>/dev/null && \
             echo "                                          ABOVE THE CAP -- set with 'external-dsp level $MAX_LEVEL'"
-        _pg=$(volume_pct "effect_input.tuned-$_cls")
-        if [ "$_pg" = "100" ]; then
-            printf '  chain input (before the graph):   %4s%%   correct\n' "$_pg"
-        else
-            printf '  chain input (before the graph):   %4s%%   WRONG -- this bypasses\n' \
-                "${_pg:-?}"
-            echo "                                          the DSP by volume."
-            echo "                                          run 'external-dsp unity'"
+        if [ "$_ln" != "$_pgsink" ]; then
+            _pg=$(volume_pct "$_pgsink")
+            if [ "$_pg" = "100" ]; then
+                printf '  chain input (before the graph):   %4s%%   correct\n' "$_pg"
+            else
+                printf '  chain input (before the graph):   %4s%%   WRONG -- this bypasses\n' \
+                    "${_pg:-?}"
+                echo "                                          the DSP by volume."
+                echo "                                          run 'external-dsp unity'"
+            fi
         fi
         _dev_id=$(pactl list sinks short | awk -v n="$_d" '$2==n { print $1; exit }')
         set -- $(census "$_cid" "$_dev_id")
