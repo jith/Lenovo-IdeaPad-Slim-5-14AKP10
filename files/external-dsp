@@ -288,14 +288,41 @@ pin_pregraph_unity() {
 # the USB speaker sat on 'crush'.
 gott_state() { echo "$STATE_DIR/external-dsp.gott.$1"; }
 
+# THE UPWARD COLUMNS ARE 1.0 THROUGHOUT, AND THAT IS THE FIX, NOT A LOSS.
+#
+# The ladder used to raise ru with density, on the reasoning that upward
+# compression is half of what GOTT is for. Two measurements, on music1:
+#
+#   1. At the shipped preset it was doing NOTHING. tm_* -- the floor of the
+#      upward window, never set -- defaults to 0.03162, which is exactly
+#      gentle's tu. Zero-width window. gentle measured identical with ru = 2.0
+#      and with ru = 1.0: -11.36 LUFS, +0.87 dB tilt, both.
+#
+#   2. Where the window WAS open -- the higher presets, whose tu clears the
+#      default floor -- it was buying loudness by wrecking the balance. Upward
+#      gain lands on whichever band is quietest, and on programme that is the
+#      top:
+#
+#        preset     as shipped            with ru = 1.0
+#        protect    -14.85   +0.19 dB     unchanged (ru was already 1)
+#        gentle     -11.36   +0.87 dB     identical -- it was inert
+#        medium     -10.04   +2.98 dB     -10.12   +1.73 dB
+#        dense       -9.06   +6.50 dB      -9.30   +3.00 dB
+#        crush       -7.63  +10.41 dB      -8.73   +4.45 dB
+#
+# More than half the tilt this ladder was recorded as having is the upward
+# compressor, bought for 0.08 to 1.10 LU. A chain that does not know the device
+# it is driving cannot afford to spend 6 dB of balance on 1 LU, so it does
+# downward compression only. tu_* is still written so the columns line up and
+# so opening the window later is one edit; it is inert while ru is 1.0.
 gott_preset() {
     #        ru  tu       rd  td       mk       ru4 rd4 mk4      ta1 tr1
     case "$1" in
         protect) echo "1  0.12589  2   PROTECT  1.0      1   2.5 1.0      20  250" ;;
-        gentle)  echo "2  0.03162  3   0.19953  1.58489  2   3   1.25893  30  500" ;;
-        medium)  echo "4  0.04467  4   0.15849  1.99526  3   4   1.41254  30  500" ;;
-        dense)   echo "6  0.06310  6   0.12589  2.51189  4   5   1.58489  30  500" ;;
-        crush)   echo "8  0.10000  8   0.10000  3.16228  6   6   1.77828  30  500" ;;
+        gentle)  echo "1  0.03162  3   0.19953  1.58489  1   3   1.25893  30  500" ;;
+        medium)  echo "1  0.04467  4   0.15849  1.99526  1   4   1.41254  30  500" ;;
+        dense)   echo "1  0.06310  6   0.12589  2.51189  1   5   1.58489  30  500" ;;
+        crush)   echo "1  0.10000  8   0.10000  3.16228  1   6   1.77828  30  500" ;;
         *) return 1 ;;
     esac
 }

@@ -3071,6 +3071,117 @@ The wired class was renamed from "Speaker / Headphones (Tuning)" to
 "Headphones / Wired (Tuning)": beside "Speaker (Tuning)" the old name read as a
 duplicate of it.
 
+### GOTT's upward half was off again, one port along
+
+Reviewing the external chain against what the plugin can actually do, 22 Aug
+2026. The chain read as though upward compression was running. It was not.
+
+```
+shipped                        LUFS -11.36   TP -1.494
+upward EXPLICITLY off (ru=1)   LUFS -11.36   TP -1.494
+```
+
+`tm_*` — **Minimum threshold**, the floor of the upward window — was never set,
+so it took its default of `0.03162`, which is exactly the `tu_*` the chain
+writes. Upward compression acts only *between* `tm` and `tu`. Zero-width
+window, nothing happens.
+
+That is the same trap as `ru = 1.0` being the port's minimum rather than
+neutral, one port along, and the second time this plugin has hidden its
+defining half behind a default. Neither is visible in the config — only in a
+measurement.
+
+**And opening the window is not the fix.** Upward gain lands on whichever band
+is quietest, and on programme that is nearly always the top:
+
+| setting | LUFS | tilt |
+|---|---|---|
+| shipped (inert) | −11.36 | **+0.87** |
+| `tm = 0.001` | −11.70 | **+8.52** |
+| `tu` tapered per band | −11.61 | +1.69 |
+| …and `ru = 1.5` | −11.62 | +1.45 |
+
+None was louder. So the chain now does downward compression only, and the
+density ladder in `external-dsp` carries `ru = 1.0` on every rung. That is not
+a loss — more than half the tilt the ladder was recorded as having *was* the
+upward compressor, bought for between 0.08 and 1.10 LU:
+
+| preset | as shipped | with `ru = 1.0` |
+|---|---|---|
+| protect | −14.85, +0.19 dB | unchanged (`ru` was already 1) |
+| gentle | −11.36, +0.87 dB | identical — it was inert |
+| medium | −10.04, +2.98 dB | −10.12, **+1.73 dB** |
+| dense | −9.06, **+6.50 dB** | −9.30, **+3.00 dB** |
+| crush | −7.63, **+10.41 dB** | −8.73, **+4.45 dB** |
+
+A chain that does not know the device it is driving cannot spend 6 dB of
+balance on 1 LU.
+
+### Envelope boost, the one free port
+
+`envb` weights GOTT's **detector** so the four bands are judged on equal
+footing rather than by raw energy, which programme material puts almost all of
+in the bass. Unset — `None` — until now. Setting it to `2` (Pink MT):
+
+| track | tilt `envb=0` → `envb=2` | LUFS |
+|---|---|---|
+| music1 | +0.87 → **+0.45** | −11.36 → −11.21 |
+| music2 | +2.82 → **+1.37** | −9.28 → −8.98 |
+| pink-prog | +0.19 → **+0.08** | −8.39 → −8.88 |
+
+Flatter on all three, ceiling held at or below −1.436 dBTP throughout, no
+latency, one port.
+
+**Confirmed on hardware.** Both changes applied to the live chain with `pw-cli
+set-param` and captured at the headphone sink's monitor, pink noise so the
+analysis window does not matter:
+
+```
+TILT (presence - bass)   before -15.18   after -15.29   change -0.10 dB
+offline predicted                                              -0.11 dB
+```
+
+Agreement to 0.01 dB. A first attempt with *music* could not resolve it — the
+two captures differed by a uniform 0.8 dB across every band, which is capture
+alignment, not spectrum. Use a stationary stimulus for a difference this small.
+
+### What was measured and rejected
+
+Kept here so it is not re-proposed. All on `music1` through the external chain.
+
+**Linear Phase (`mode = 2`) — 94 ms of latency.** Impulse in, peak out:
+
+| mode | peak | energy spread |
+|---|---|---|
+| 0 Classic | +8.67 ms | 8.60 → 21.98 ms |
+| **1 Modern (shipped)** | +8.58 ms | **8.56 → 10.96 ms** |
+| 2 Linear Phase | **+93.92 ms** | 93.90 → 94.85 ms |
+
+Unusable for playback; lip-sync breaks well below that. Note the shipped
+`mode = 1` already has by far the tightest impulse — that choice was right.
+
+**`mb_limiter_stereo` as a drop-in — worse.** −11.74 LUFS (0.4 quieter) and
+tilt +1.78 against +0.87. It also carries a trap: `gb` (Gain boost) defaults
+**on**, the multiband twin of the `boost = 0` this chain already disables.
+Without turning it off the chain measured **+0.007 dBTP** — the true-peak
+ceiling, which is the entire point of stage X4, silently gone.
+
+**`autogain_stereo` (LUFS levelling) — structurally incompatible.** It
+normalises to a target loudness, so it would raise back exactly what the
+pre-graph slider attenuated: a dead volume slider, for the third time. Only
+safe where the slider is post-graph, which is Bluetooth and USB but not the
+headphone jack.
+
+**`loud_comp_stereo` — the real gap, blocked by plumbing.** Equal-loudness
+compensation with ISO 226-2023, the current standard; the thing phones do so
+that low volume still sounds full. Measured transparent at `volume = 0` (tilt
++0.85 against +0.87), so it is safe to have in the graph. But its `volume` port
+*is* an output volume, −83…+7 dB — it cannot sit beside the existing volume
+control, it has to **become** it, with the chain input pinned at unity. And
+filter-chain controls cannot be set from WirePlumber Lua (only `pw-cli
+set-param` works), so nothing can track the GNOME slider without a daemon.
+Viable only if the listening level moves onto `external-dsp level`.
+
 ### A hidden sink must never be the default
 
 The GNOME volume slider did nothing on the built-in speaker, while working
