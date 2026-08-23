@@ -3145,6 +3145,73 @@ Agreement to 0.01 dB. A first attempt with *music* could not resolve it — the
 two captures differed by a uniform 0.8 dB across every band, which is capture
 alignment, not spectrum. Use a stationary stimulus for a difference this small.
 
+### Why `envb` does not transfer to the internal speaker
+
+Asked straight after the external change landed: if Pink MT is flatter there,
+should the internal chain have it too? Tested offline, then by ear. **No** — and
+the reason is the reason the two chains exist separately at all.
+
+The internal chain already runs `ru_* = 1.0`, so the upward-window trap above
+was never present there. `envb` was the only transferable item, and on paper it
+looked like the same win — flatter on every music track, peaks untouched,
+distortion identical:
+
+| material | LUFS | sample pk | tilt | THD |
+|---|---|---|---|---|
+| music1 | −10.57 → −10.36 | −1.012 → −1.012 | +6.08 → **+5.16** | — |
+| music2 | −8.50 → −8.32 | −1.012 → −1.012 | +8.07 → **+6.22** | — |
+| pink-prog | −4.94 → −4.94 | unchanged | +7.58 → +7.58 | — |
+| sine 90 Hz | — | — | — | 0.13% → **0.13%** |
+| sine 1 kHz | — | — | — | 0.07% → **0.07%** |
+
+`square100` was the tell: **+2.49 LU**. Weighting the output spectrum by 1/f⁴,
+since cone displacement for constant drive falls as 1/f²:
+
+| material | tilt change | **displacement change** |
+|---|---|---|
+| music1 | −1.11 dB | **+1.39 dB** |
+| music2 | −1.85 dB | **+2.41 dB** |
+| square100 | −3.82 dB | **+4.26 dB** |
+
+`envb` de-emphasises bass in GOTT's *detector*, so the bass band is compressed
+less and more of it comes out. On a Bluetooth speaker with a real woofer that is
+a flatter response. On a sealed micro-speaker resonating at 761 Hz it is
+excursion the driver cannot turn into sound — and stage 11 exists to stop
+exactly that.
+
+**The two cannot be separated, because they are the same lever.** Clawing the
+excursion back with the bass band's downward compression returns the tilt in
+equal measure:
+
+| setting | tilt (music1 / square100) | displacement |
+|---|---|---|
+| `envb=2` | −1.11 / −3.82 | +1.39 / +4.26 |
+| `envb=2`, `td_1=.05 rd_1=5` | −0.47 / +0.17 | +0.64 / −0.18 |
+| `envb=2`, `td_1=.03 rd_1=6` | +1.11 / +3.66 | −1.03 / −3.56 |
+
+The middle row lands back on baseline for both. The "tonal improvement" *is* the
+extra bass.
+
+**And it was inaudible.** Applied to the live chain with `pw-cli set-param` and
+A/B'd at a matched level on the built-in speaker: no difference heard. Which is
+what the displacement number predicts — the extra energy is below where this
+driver radiates, so it costs excursion and returns nothing.
+
+Nothing else on the plugin was free either. `sc_mode` (0/1/3) and `prot`
+produced **bit-identical** output — the sidechain ports are inert in the
+non-`sc_` GOTT variant. `lkahead = 10 ms` was a small net negative (tilt +0.23,
+LUFS −0.03).
+
+So `envb = 0` internally and `envb = 2` externally is not an inconsistency to be
+tidied up later. The chains disagree because the hardware disagrees.
+
+**Method note.** Tilt alone would have shipped this. A bass-affecting change on a
+driver that cannot radiate bass must be judged on displacement, not balance —
+weight the output power spectrum by 1/f⁴ over 20–500 Hz and compare. The tilt
+figures in this section come from that same script's own band aggregation and
+read baseline as 6.89 where `--bands` says 6.08; they are consistent with each
+other, not with the rest of this file.
+
 ### What was measured and rejected
 
 Kept here so it is not re-proposed. All on `music1` through the external chain.
