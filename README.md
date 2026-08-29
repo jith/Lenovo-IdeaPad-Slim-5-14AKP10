@@ -376,6 +376,53 @@ Note also that `speaker-dsp` does **not** pin the virtual sink to unity. With
 one entry in GNOME that sink is your volume control, and forcing it to 100%
 would jump the level to full every time you switched on.
 
+### Bluetooth after a resume
+
+A suspend takes the controller down without closing the AVDTP session, so the
+receiver is left holding a stream endpoint for a host that is gone. The resume
+then cannot set the stream up again:
+
+```
+SET_CONFIGURATION request rejected: Stream End Point in Use (19)
+Discover: Connection timed out (110)
+```
+
+Both resumes on record did it -- 28 Aug 2026 19:05 and 29 Aug 09:22, each
+within a second of "Finished systemd-suspend.service" -- and BlueZ retried its
+way out of both, which is why it read as a slow reconnect rather than a fault.
+
+When it does not recover, nothing on this side helps, and it is worth knowing
+that before spending an hour on it. The pairing is intact: an L2CAP channel to
+PSM 25 opens at security level 2, so the link key still authenticates and
+encrypts, and SDP answers on that very PSM with
+
+```
+Service Class ID List:    "Audio Sink" (0x110b)
+Protocol Descriptor List: "L2CAP" PSM: 25, "AVDTP" 0x0102
+```
+
+while an AVDTP Discover written straight down the channel -- bypassing
+bluetoothd, WirePlumber and PipeWire alike -- goes unanswered. Restarting
+bluetooth.service, `bluetoothctl power off/on` and restarting the whole PipeWire
+stack change nothing. The DEVICE has to be reset: power-cycle it, or pair it
+again. Pairing again works not because the key was stale but because it resets
+the receiver.
+
+`files/55-bt-sleep-disconnect` is what stops it happening. Installed as a
+systemd sleep hook, it disconnects Bluetooth audio sinks before the suspend --
+a deliberate disconnect closes the stream properly -- and reconnects them
+after. Either half can be run without suspending:
+
+```sh
+sudo /usr/lib/systemd/system-sleep/55-speaker-dsp-bt pre
+sudo /usr/lib/systemd/system-sleep/55-speaker-dsp-bt post
+```
+
+The same stale-endpoint trap follows a `systemctl --user restart wireplumber`
+while a receiver is connected, and there the disconnect has to be done by hand
+first.
+
+
 ## Sample rate is pinned
 
 Stages 2 and 11 use `bq_raw`, which takes raw biquad coefficients. Those are

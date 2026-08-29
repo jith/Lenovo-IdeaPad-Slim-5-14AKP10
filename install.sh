@@ -22,6 +22,10 @@ EXT_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/52-external-target.conf
 EXT_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/52-external-target.lua
 SYNC_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/54-volume-sync.conf
 SYNC_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/54-volume-sync.lua
+# A suspend leaves a Bluetooth receiver holding a stream endpoint for a host
+# that has gone away, and the resume then cannot set the stream up again. The
+# hook disconnects audio sinks before the suspend so there is nothing stale.
+SLEEP_HOOK_DEST=/usr/lib/systemd/system-sleep/55-speaker-dsp-bt
 EXT_UNIT_OLD=/etc/systemd/user/external-dsp.service
 
 print_user_restart_instructions() {
@@ -40,6 +44,7 @@ uninstall() {
         "$EXT_SCRIPT_DEST" \
         "$SYNC_CONF_DEST" \
         "$SYNC_SCRIPT_DEST" \
+        "$SLEEP_HOOK_DEST" \
         "$EXT_UNIT_OLD" \
         /etc/systemd/user/external-dsp.service \
         /usr/local/bin/gen-external-chains.py \
@@ -96,6 +101,10 @@ install_filter() {
         echo "missing external switch helper: $FILES_DIR/external-dsp" >&2
         exit 1
     }
+    [ -f "$FILES_DIR/55-bt-sleep-disconnect" ] || {
+        echo "missing suspend hook: $FILES_DIR/55-bt-sleep-disconnect" >&2
+        exit 1
+    }
 
     # The target script is not optional. Without it the external chain has no
     # resolved target, and PipeWire routes its output into the INTERNAL chain --
@@ -113,6 +122,7 @@ install_filter() {
     install -D -m644 "$FILES_DIR/52-external-target.lua" "$EXT_SCRIPT_DEST"
     install -D -m644 "$FILES_DIR/54-volume-sync.conf" "$SYNC_CONF_DEST"
     install -D -m644 "$FILES_DIR/54-volume-sync.lua" "$SYNC_SCRIPT_DEST"
+    install -D -m755 "$FILES_DIR/55-bt-sleep-disconnect" "$SLEEP_HOOK_DEST"
 
     # The chains are per CLASS of output, not per device, so this expands to the
     # same file every time and can be generated here rather than by hand or by

@@ -1,0 +1,66 @@
+#!/bin/sh
+# Close the Bluetooth audio session before the machine suspends, and open it
+# again on the way back.
+#
+# THE CONTROLLER POWERS DOWN WITHOUT CLOSING AVDTP, so the receiver is left
+# holding a stream endpoint for a host that is no longer there. Every resume on
+# this machine is followed by the same failure to set the stream up again:
+#
+#   SET_CONFIGURATION request rejected: Stream End Point in Use (19)
+#   Discover: Connection timed out (110)
+#
+# 28 Aug 2026 19:05 and 29 Aug 09:22, each within a second of "Finished
+# systemd-suspend.service". BlueZ usually retries its way out over a minute or
+# two, which is why this looked like nothing more than a slow reconnect.
+#
+# WHEN IT DOES NOT, NOTHING ON THIS SIDE CAN FIX IT. The pairing is not the
+# problem: an L2CAP channel to PSM 25 opens at security level 2, so the link key
+# still authenticates and encrypts, and SDP answers with Audio Sink on that very
+# PSM -- while every AVDTP command sent down the channel is ignored. Restarting
+# bluetoothd, power-cycling the adapter and restarting the whole PipeWire stack
+# change nothing. Only resetting the DEVICE clears it: power-cycle it, or pair
+# it again. Measured 29 Aug 2026 on 88:C6:26:FD:EE:68.
+#
+# A deliberate disconnect closes the stream properly, so the resume has nothing
+# stale to trip over.
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+STATE=/run/speaker-dsp-bt-suspended
+
+# Audio sinks only. A mouse or a keyboard has no stream to close, and would just
+# come back slower for having been disconnected here.
+audio_sinks () {
+    bluetoothctl devices Connected 2>/dev/null | awk '/^Device /{print $2}' |
+    while read -r mac; do
+        if bluetoothctl info "$mac" 2>/dev/null | grep -q "Audio Sink"; then
+            echo "$mac"
+        fi
+    done
+}
+
+case "$1" in
+    pre)
+        audio_sinks > "$STATE" 2>/dev/null
+        while read -r mac; do
+            [ -n "$mac" ] || continue
+            timeout 10 bluetoothctl disconnect "$mac" >/dev/null 2>&1
+        done < "$STATE"
+        ;;
+    post)
+        [ -s "$STATE" ] || exit 0
+        # The controller is not ready the instant this runs, and an attempt made
+        # too early fails without the device ever hearing it.
+        sleep 3
+        while read -r mac; do
+            [ -n "$mac" ] || continue
+            n=0
+            while [ "$n" -lt 2 ]; do
+                timeout 12 bluetoothctl connect "$mac" >/dev/null 2>&1 && break
+                n=$((n + 1))
+                sleep 3
+            done
+        done < "$STATE"
+        rm -f "$STATE"
+        ;;
+esac
+exit 0
