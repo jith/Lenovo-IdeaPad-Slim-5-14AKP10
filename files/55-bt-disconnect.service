@@ -5,12 +5,20 @@
 Description=Close Bluetooth audio sessions before shutdown
 After=bluetooth.service dbus.service
 Wants=bluetooth.service
+# A oneshot+RemainAfterExit unit only runs ExecStop while it is ACTIVE, so
+# "systemctl stop" disarms it silently until the next boot -- and the next
+# shutdown is exactly what it is armed for. Found the hard way: the isolated
+# ExecStop test suggested for verifying this unit left it inactive, one reboot
+# away from proving nothing.
+RefuseManualStop=yes
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/bin/true
-ExecStop=/usr/local/bin/speaker-dsp-bt-disconnect stop
+# "-": after an uninstall the script is gone while the started unit lingers in
+# memory, and a missing ExecStop must not be reported as a shutdown failure.
+ExecStop=-/usr/local/bin/speaker-dsp-bt-disconnect stop
 # A hung disconnect must never hold up a shutdown.
 TimeoutStopSec=20
 

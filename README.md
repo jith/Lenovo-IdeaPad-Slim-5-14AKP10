@@ -438,6 +438,38 @@ suspend. Nothing reconnects on the way up, because nothing needs to.
 The shutdown half is the measured one. The suspend half is the same teardown and
 is covered on that reasoning alone.
 
+Confirmed over one full cycle on 29 Aug 2026. Shutdown at 12:52:06: the unit
+stopped two seconds before bluetooth.service, bluetoothd logged "No matching
+connection for device", and there was no `device_disconnected: 21`. The boot
+after it came up connected with the sink in place.
+
+The unit carries `RefuseManualStop=yes` for a reason worth knowing. It is
+oneshot with RemainAfterExit, so ExecStop only runs while it is ACTIVE, and
+`systemctl stop` therefore disarms it silently until the next boot -- with the
+next shutdown being the thing it was armed for. That is not hypothetical: the
+"test ExecStop in isolation" step suggested here first left it inactive, one
+reboot away from proving nothing.
+
+### The login screen flickers, and that one is Ubuntu's
+
+Between bluetoothd starting and someone logging in, BlueZ has NO A2DP endpoints
+registered, because WirePlumber is what registers them and Ubuntu does not run
+it for the greeter:
+
+```
+systemd[2123]: wireplumber.service ... skipped, unmet condition check ConditionGroup=!gdm
+```
+
+The greeter gets pipewire and pipewire-pulse and no session manager. So a
+receiver reconnecting at the login screen finds a host with no audio profile,
+its connect attempts get nowhere, and the shell's Bluetooth icon flickers.
+All 21 endpoints appear at the instant the user's WirePlumber starts, and the
+sink follows.
+
+Nothing to fix here, and nothing to worry about: no A2DP session is ever
+established before login, so there is no stream endpoint left stale, which is
+what the dead end above is made of.
+
 An earlier version of this was a sleep hook that ALSO reconnected, and it was
 reverted for being worse than nothing: its bounded attempts gave up inside the
 ninety-second window, and it was written before any of this was measured.
