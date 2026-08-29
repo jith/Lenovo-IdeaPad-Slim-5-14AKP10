@@ -376,52 +376,60 @@ Note also that `speaker-dsp` does **not** pin the virtual sink to unity. With
 one entry in GNOME that sink is your volume control, and forcing it to 100%
 would jump the level to full every time you switched on.
 
-### Bluetooth after a resume
+### Bluetooth reconnects the slow way, and a clean disconnect does not help
 
-A suspend takes the controller down without closing the AVDTP session, so the
-receiver is left holding a stream endpoint for a host that is gone. The resume
-then cannot set the stream up again:
+A reconnect to the Logitech receiver fails for about a minute and a half before
+it works. The shape is always the same:
 
 ```
+SetConfiguration: Connection timed out (110)
+avdtp_connect_cb() connect: Device or resource busy (16)
 SET_CONFIGURATION request rejected: Stream End Point in Use (19)
-Discover: Connection timed out (110)
+a2dp.c:invalidate_remote_cache() Invalidating Remote SEP from cache
+a2dp.c:load_remote_sep() Unable to load LastUsed: rseid 1 not found
+                                            ... and then the sink appears
 ```
 
-Both resumes on record did it -- 28 Aug 2026 19:05 and 29 Aug 09:22, each
-within a second of "Finished systemd-suspend.service" -- and BlueZ retried its
-way out of both, which is why it read as a slow reconnect rather than a fault.
+Three episodes on record -- 28 Aug 2026 19:06, 29 Aug 11:26 and 29 Aug 12:18 --
+and every one of them recovers on the line after `invalidate_remote_cache()`.
+BlueZ caches the remote's stream endpoints and reconnects straight into
+SetConfiguration on the cached SEID; the receiver rejects it as in use; BlueZ
+drops the cache, runs Discover again and succeeds. The wait is that round trip,
+not the device waking up. Pairing again is a shortcut to the same place, because
+removing the device deletes the cached endpoints with it -- it is not repairing
+the pairing.
 
-When it does not recover, nothing on this side helps, and it is worth knowing
-that before spending an hour on it. The pairing is intact: an L2CAP channel to
-PSM 25 opens at security level 2, so the link key still authenticates and
-encrypts, and SDP answers on that very PSM with
+The pairing is provably not the problem. Measured while it was refusing to
+connect at all: an L2CAP channel to PSM 25 opens and negotiates security level
+2, so the link key still authenticates AND encrypts, and SDP answers on that
+very PSM with
 
 ```
 Service Class ID List:    "Audio Sink" (0x110b)
 Protocol Descriptor List: "L2CAP" PSM: 25, "AVDTP" 0x0102
 ```
 
-while an AVDTP Discover written straight down the channel -- bypassing
-bluetoothd, WirePlumber and PipeWire alike -- goes unanswered. Restarting
-bluetooth.service, `bluetoothctl power off/on` and restarting the whole PipeWire
-stack change nothing. The DEVICE has to be reset: power-cycle it, or pair it
-again. Pairing again works not because the key was stale but because it resets
-the receiver.
+Restarting bluetooth.service, `bluetoothctl power off/on` and restarting the
+whole PipeWire stack change none of it.
 
-`files/55-bt-sleep-disconnect` is what stops it happening. Installed as a
-systemd sleep hook, it disconnects Bluetooth audio sinks before the suspend --
-a deliberate disconnect closes the stream properly -- and reconnects them
-after. Either half can be run without suspending:
+There is a worse state past this one, seen once, on 29 Aug between 11:41 and
+12:16: an AVDTP Discover written straight down a raw socket -- bypassing
+bluetoothd, WirePlumber and PipeWire alike -- goes unanswered, so the device
+answers SDP but ignores AVDTP entirely. Nothing on this side clears that. The
+DEVICE has to be reset: power-cycle it, or pair it again.
 
-```sh
-sudo /usr/lib/systemd/system-sleep/55-speaker-dsp-bt pre
-sudo /usr/lib/systemd/system-sleep/55-speaker-dsp-bt post
-```
+**A sleep hook that disconnects the receiver before suspending does not prevent
+any of it, so it is not worth writing again.** The idea was that the controller
+powering down without closing AVDTP is what leaves the endpoint in use, and
+that a deliberate disconnect would close it properly. Tested 29 Aug 12:17 with
+exactly that disconnect, unhurried and successful: the reconnect two minutes
+later still hit `SET_CONFIGURATION request rejected: Stream End Point in Use`,
+and still took until `invalidate_remote_cache()` to come back. The teardown is
+not the variable. A hook also makes the resume worse, because a bounded set of
+reconnect attempts gives up inside the window where it heals by itself.
 
-The same stale-endpoint trap follows a `systemctl --user restart wireplumber`
-while a receiver is connected, and there the disconnect has to be done by hand
-first.
-
+So the answer is to wait about ninety seconds. If the sink has not appeared by
+then, the device is in the harder state and wants a power cycle.
 
 ## Sample rate is pinned
 
