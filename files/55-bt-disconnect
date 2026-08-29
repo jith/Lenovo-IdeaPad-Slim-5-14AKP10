@@ -1,0 +1,47 @@
+#!/bin/sh
+# Close Bluetooth audio sessions before the machine goes down or suspends.
+#
+# Called two ways, and it does the same thing either way:
+#   ExecStop of speaker-dsp-bt-disconnect.service   -> "stop"
+#   /usr/lib/systemd/system-sleep hook              -> "pre" / "post"
+#
+# WHAT THIS IS FOR. When the host goes down with an A2DP session open, the
+# receiver is left holding a stream endpoint for a host that is gone, and the
+# next connect is answered with silence: BlueZ logs Discover: Connection timed
+# out (110) and org.bluez.Error.Failed br-connection-unknown, forever. Not a
+# stall -- a dead end. The pairing is fine (an L2CAP channel to PSM 25
+# negotiates security level 2) and so is SDP; restarting bluetooth.service,
+# power-cycling the adapter, restarting PipeWire and POWER-CYCLING THE RECEIVER
+# ITSELF all leave it exactly as it was. Only re-pairing cleared it.
+#
+# Measured on 29 Aug 2026, with the shutdown log as the discriminator:
+#
+#   12:23:55  connected at shutdown, "device_disconnected: 21"  -> next boot dead
+#   12:43:40  disconnected by hand first, no such line          -> next boot clean
+#
+# The clean boot had no AVDTP errors at all and the device came back by itself,
+# which is why nothing here reconnects on the way up. Reconnecting was tried in
+# an earlier version and was worse than useless: its bounded attempts gave up
+# inside the window BlueZ needs to re-Discover on its own.
+#
+# The shutdown path is the measured one. Suspend is the same teardown and is
+# covered on that reasoning, not on its own measurement.
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+case "${1:-stop}" in
+    post) exit 0 ;;
+    pre|stop) ;;
+    *) exit 0 ;;
+esac
+
+# Audio sinks only. A mouse has no stream to close and would come back slower
+# for having been disconnected here.
+bluetoothctl devices Connected 2>/dev/null | awk '/^Device /{print $2}' |
+while read -r mac; do
+    [ -n "$mac" ] || continue
+    if bluetoothctl info "$mac" 2>/dev/null | grep -q "Audio Sink"; then
+        timeout 10 bluetoothctl disconnect "$mac" >/dev/null 2>&1
+    fi
+done
+exit 0

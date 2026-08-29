@@ -22,10 +22,13 @@ EXT_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/52-external-target.conf
 EXT_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/52-external-target.lua
 SYNC_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/54-volume-sync.conf
 SYNC_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/54-volume-sync.lua
-# Retired: a sleep hook that disconnected Bluetooth audio sinks before a
-# suspend. It did not prevent the reconnect stall it was written for -- see
-# README, "Bluetooth reconnects the slow way" -- so it is only removed now.
-SLEEP_HOOK_OLD=/usr/lib/systemd/system-sleep/55-speaker-dsp-bt
+# Going down with an A2DP session open leaves the receiver holding a stream
+# endpoint for a host that is gone, and the next connect is answered with
+# silence until the device is re-paired. The same script closes the session from
+# the unit's ExecStop on shutdown and from the sleep hook before a suspend.
+BT_SCRIPT_DEST=/usr/local/bin/speaker-dsp-bt-disconnect
+BT_UNIT_DEST=/etc/systemd/system/speaker-dsp-bt-disconnect.service
+BT_SLEEP_DEST=/usr/lib/systemd/system-sleep/55-speaker-dsp-bt
 EXT_UNIT_OLD=/etc/systemd/user/external-dsp.service
 
 print_user_restart_instructions() {
@@ -34,6 +37,8 @@ print_user_restart_instructions() {
 }
 
 uninstall() {
+    systemctl disable --now speaker-dsp-bt-disconnect.service >/dev/null 2>&1 || true
+
     rm -f -- \
         "$FILTER_DEST" \
         "$HIDE_CONF_DEST" \
@@ -44,7 +49,9 @@ uninstall() {
         "$EXT_SCRIPT_DEST" \
         "$SYNC_CONF_DEST" \
         "$SYNC_SCRIPT_DEST" \
-        "$SLEEP_HOOK_OLD" \
+        "$BT_SCRIPT_DEST" \
+        "$BT_UNIT_DEST" \
+        "$BT_SLEEP_DEST" \
         "$EXT_UNIT_OLD" \
         /etc/systemd/user/external-dsp.service \
         /usr/local/bin/gen-external-chains.py \
@@ -101,6 +108,14 @@ install_filter() {
         echo "missing external switch helper: $FILES_DIR/external-dsp" >&2
         exit 1
     }
+    [ -f "$FILES_DIR/55-bt-disconnect" ] || {
+        echo "missing Bluetooth teardown script: $FILES_DIR/55-bt-disconnect" >&2
+        exit 1
+    }
+    [ -f "$FILES_DIR/55-bt-disconnect.service" ] || {
+        echo "missing Bluetooth teardown unit: $FILES_DIR/55-bt-disconnect.service" >&2
+        exit 1
+    }
 
     # The target script is not optional. Without it the external chain has no
     # resolved target, and PipeWire routes its output into the INTERNAL chain --
@@ -131,8 +146,17 @@ install_filter() {
     # has just written, so deleting them removed the files it had installed a
     # few lines earlier -- and still reported success, which is exactly how two
     # installs in a row appeared to do nothing at all.
-    rm -f "$EXT_UNIT_OLD" "$SLEEP_HOOK_OLD"
+    rm -f "$EXT_UNIT_OLD"
     install -D -m755 "$FILES_DIR/external-dsp" /usr/local/bin/external-dsp
+
+    # One script, two callers: ExecStop on the way down, the sleep hook before a
+    # suspend. Started as well as enabled, or ExecStop would not run until the
+    # unit had been started once -- which for a shutdown-only unit means never.
+    install -D -m755 "$FILES_DIR/55-bt-disconnect" "$BT_SCRIPT_DEST"
+    install -D -m755 "$FILES_DIR/55-bt-disconnect" "$BT_SLEEP_DEST"
+    install -D -m644 "$FILES_DIR/55-bt-disconnect.service" "$BT_UNIT_DEST"
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl enable --now speaker-dsp-bt-disconnect.service >/dev/null 2>&1 || true
 
     echo "Installed the fourteen-stage Speaker DSP filter chain (internal)"
     echo "and the six-stage External (Tuning) chain for every other output."

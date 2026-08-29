@@ -1,0 +1,18 @@
+# Runs nothing on the way up; its whole purpose is ExecStop. Ordered After
+# bluetooth.service and dbus.service, so on the way down it stops BEFORE them
+# and bluetoothd is still alive to carry out the disconnect.
+[Unit]
+Description=Close Bluetooth audio sessions before shutdown
+After=bluetooth.service dbus.service
+Wants=bluetooth.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop=/usr/local/bin/speaker-dsp-bt-disconnect stop
+# A hung disconnect must never hold up a shutdown.
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

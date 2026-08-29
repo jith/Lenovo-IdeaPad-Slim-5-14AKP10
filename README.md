@@ -412,24 +412,44 @@ Protocol Descriptor List: "L2CAP" PSM: 25, "AVDTP" 0x0102
 Restarting bluetooth.service, `bluetoothctl power off/on` and restarting the
 whole PipeWire stack change none of it.
 
-There is a worse state past this one, seen once, on 29 Aug between 11:41 and
-12:16: an AVDTP Discover written straight down a raw socket -- bypassing
-bluetoothd, WirePlumber and PipeWire alike -- goes unanswered, so the device
-answers SDP but ignores AVDTP entirely. Nothing on this side clears that. The
-DEVICE has to be reset: power-cycle it, or pair it again.
+There is a worse state past this one, and it is a different fault, not a longer
+version of the same one: an AVDTP Discover written straight down a raw socket --
+bypassing bluetoothd, WirePlumber and PipeWire alike -- goes unanswered, so the
+device answers SDP and ignores AVDTP entirely. That one never heals. Restarting
+bluetooth.service, `bluetoothctl power off/on`, restarting the whole PipeWire
+stack and POWER-CYCLING THE RECEIVER ITSELF all leave it exactly as it was; only
+re-pairing cleared it. Assuming a power cycle would do -- both are "resetting the
+device" -- was wrong, and cost two reboots to find out.
 
-**A sleep hook that disconnects the receiver before suspending does not prevent
-any of it, so it is not worth writing again.** The idea was that the controller
-powering down without closing AVDTP is what leaves the endpoint in use, and
-that a deliberate disconnect would close it properly. Tested 29 Aug 12:17 with
-exactly that disconnect, unhurried and successful: the reconnect two minutes
-later still hit `SET_CONFIGURATION request rejected: Stream End Point in Use`,
-and still took until `invalidate_remote_cache()` to come back. The teardown is
-not the variable. A hook also makes the resume worse, because a bounded set of
-reconnect attempts gives up inside the window where it heals by itself.
+**Which of the two you get depends on whether the device was connected when the
+host went down**, and the shutdown log says which:
 
-So the answer is to wait about ninety seconds. If the sink has not appeared by
-then, the device is in the harder state and wants a power cycle.
+```
+12:23:55  connected at shutdown -- "device_disconnected: 21"   -> next boot dead
+12:43:40  disconnected by hand first -- no such line           -> next boot clean
+```
+
+The clean boot had no AVDTP errors at all and the receiver came back on its own.
+So `files/55-bt-disconnect` closes the session first: `ExecStop` on
+speaker-dsp-bt-disconnect.service, ordered After bluetooth.service so it runs
+while bluetoothd is still alive, and the same script as a sleep hook before a
+suspend. Nothing reconnects on the way up, because nothing needs to.
+
+The shutdown half is the measured one. The suspend half is the same teardown and
+is covered on that reasoning alone.
+
+An earlier version of this was a sleep hook that ALSO reconnected, and it was
+reverted for being worse than nothing: its bounded attempts gave up inside the
+ninety-second window, and it was written before any of this was measured.
+
+So: if the sink has not appeared within ninety seconds, it is the second fault,
+and it wants a re-pair. `bluetoothctl remove <addr>` and pair again. Before
+that, one cheap thing is worth trying -- query SDP and connect immediately after
+it answers, which is what broke the deadlock once:
+
+```sh
+sdptool search --bdaddr 88:C6:26:FD:EE:68 A2SNK && bluetoothctl connect 88:C6:26:FD:EE:68
+```
 
 ## Sample rate is pinned
 
