@@ -165,19 +165,46 @@ end
 -- that client saw the entire graph.
 applied = {}
 
+-- OBJECT IDS ARE REUSED TOO, and a permission does not outlive the object it
+-- was set on: a global arriving on a retired id starts at the client's default,
+-- which is visible. The raw speaker sink and the raw headphone sink take each
+-- other's id every time the card changes profile, so the recreated speaker sink
+-- kept appearing on an id this table already held as hidden -- the write was
+-- skipped as already applied, and the raw speaker sat in the shell's output
+-- list beside "Speaker (Tuning)". Only long-lived clients showed it: GNOME
+-- Settings, opened afterwards with an empty table, listed the right three while
+-- the shell listed four. Reported 29 Aug 2026, reproduced by destroying a null
+-- sink and creating another onto the same id.
+--
+-- object.serial is the one identifier PipeWire never hands out twice, so the
+-- key carries it and a reused id can no longer pass for an object already dealt
+-- with. Entries for dead objects are left behind: the table grows only with
+-- device churn, and a skipped hide is the thing this is here to prevent.
+local function perm_key (obj)
+  local id = obj["bound-id"]
+  if id == nil then return nil end
+  -- An unreadable property here would throw out of a signal handler and take
+  -- the whole hide with it, so a failed read falls back to the bare id: the
+  -- old behaviour, not a worse one.
+  local ok, serial = pcall (function () return obj.properties["object.serial"] end)
+  if not ok or serial == nil then return tostring (id) end
+  return tostring (id) .. "/" .. tostring (serial)
+end
+
 local function set_perm (client, obj, allow)
   if not is_gvc_mixer_client (client) then return end
   local id = obj["bound-id"]
   local cid = client["bound-id"]
-  if id == nil or cid == nil then return end
+  local key = perm_key (obj)
+  if id == nil or cid == nil or key == nil then return end
   local seen = applied[cid]
   if seen == nil then seen = {}; applied[cid] = seen end
-  if seen[id] == allow then return end
+  if seen[key] == allow then return end
   local ok, err = pcall (function ()
     client:update_permissions { [id] = allow and "rwxm" or "-" }
   end)
   if ok then
-    seen[id] = allow
+    seen[key] = allow
   else
     log:warning ("could not set permission on " .. tostring (id) .. ": "
         .. tostring (err))
