@@ -2581,9 +2581,10 @@ image-only scans with no text layer — use the HTML page for searchable text.
   `files/hide-speaker-tuning.lua` — keep **Speaker (Tuning)** as the single
   laptop-speaker entry GNOME shows. The raw sink stays available to PipeWire
   and `pactl`.
-- `files/54-volume-sync.conf`, `files/54-volume-sync.lua` — carry the
-  listening level across an output change, clamped to 60% on everything but
-  the built-in speaker.
+- `files/54-volume-memory.conf`, `files/54-volume-memory.lua` — let every
+  output keep and remember its own level, and hold the hidden headphone sink
+  at unity. Replaces `54-volume-sync`, which carried one level onto all of
+  them.
 - `files/speaker-dsp` → `/usr/local/bin/speaker-dsp`.
 
 The physical sink node name appears in `files/50-speaker-tuning.conf`
@@ -3404,35 +3405,101 @@ next pass.
 The hidden set is now expressed once, in `hidden_from_gnome()`, so the
 permission pass and the default-release pass cannot drift apart again.
 
-### Carrying the level across an output change
+### A level per output, remembered
 
-`files/54-volume-sync.lua`.
+`files/54-volume-memory.lua`.
 
-There is no master volume in PipeWire to sync a per-device volume *to* — the
-per-device volume is the only volume there is, and GNOME's slider drives
-whichever sink is currently default. Nothing carried a level from one output to
-the next, so each drifted to wherever it was last left: **Speaker (Tuning) at
-65% beside the wired chain at 28%**, a 22 dB jump on a slider nobody had
-touched.
+Every output keeps its own level and remembers it. Nothing is copied from one
+output to another. WirePlumber already stores a level per output; the job of
+this file is now to stay out of the way of that, and to hold at unity the one
+node in the chain that has no slider anywhere.
 
-So the script does the reachable thing. When the selection changes, the level
-you were listening at is copied onto the newly selected output. Switch away and
-back and you land where you left off, because the level travelled both ways.
+Where each level actually lives, because it is not one place:
 
-Everything except the built-in speaker is clamped to **60%**, the same ceiling
-`external-dsp level` enforces (`EXTERNAL_DSP_MAX_LEVEL`). Carrying a level *onto*
-headphones or a powered speaker is exactly where an unclamped copy would hurt.
-The built-in speaker is exempt: it is quiet at full scale, and its slider sits
-*before* the filter graph, where backing off starves the DSP rather than
-protecting anyone's ears.
-
-Measured, with a null sink standing in for a second selectable output:
-
-| step | Speaker (Tuning) | second output |
+| output | the node GNOME's slider drives | remembered in |
 |---|---|---|
-| start, speaker selected | 80% | 100% |
-| select the second output | 80% | **60%** (carried 80%, clamped) |
-| set it to 50%, select the speaker | **50%** | 50% |
+| built-in speaker | `effect_input.speaker-tuning` | `stream-properties`, keyed by `media.name` |
+| headphone jack | `effect_input.tuned-wired` | `stream-properties`, keyed by `media.name` |
+| a Bluetooth device | `bluez_output.<MAC>` | `default-routes`, keyed by **card** and route |
+| a USB speaker | `alsa_output.usb-…` | `default-routes`, keyed by **card** and route |
+
+The virtual chain sinks land in `stream-properties` because they have no device
+routes — `node/state-stream` restores exactly that case — and both carry
+`state.restore-props = true` for it. The chains that are only ever plumbing
+carry `false` and come up at unity every time.
+
+Keying the real devices by *card* is what makes two Bluetooth speakers two
+levels rather than one.
+
+Measured 30 Aug 2026, after the carry was removed:
+
+| step | Speaker (Tuning) | Logitech BT Receiver |
+|---|---|---|
+| start | 41% | 41% |
+| select the speaker, set 55% | **55%** | 41% |
+| select the receiver, set 25% | 55% | **25%** |
+| select the speaker | **55%** | 25% |
+| select the receiver | 55% | **25%** |
+| `restart pipewire pipewire-pulse wireplumber` | **55%** | **25%** |
+
+The second Bluetooth device, which was not connected during any of this, still
+held its own `0.300740` in `default-routes` throughout.
+
+#### It used to carry one level onto every output, and that was the bug
+
+Until 30 Aug 2026 this file did the opposite. On each selection change it read
+the level off the sink being left and wrote it onto the sink being chosen, so
+one slider position meant one loudness wherever you listened. That was asked
+for on 22 Aug 2026, when nothing carried a level at all and each output drifted
+to wherever it was last left: **Speaker (Tuning) at 65% beside the wired chain
+at 28%**, a 22 dB jump on a slider nobody had touched.
+
+What carrying it *both ways* actually means only showed up in use: there is
+then only ever **one level in the whole system**. Every output is overwritten by
+whichever one you listened to last, so no output can be set to its own level and
+none can remember one. Measured 30 Aug 2026, with the receiver selected at 41%:
+
+```
+$ pactl set-sink-volume effect_input.speaker-tuning 55%
+$ pactl get-sink-volume effect_input.speaker-tuning     # 55%
+$ pactl set-default-sink effect_input.speaker-tuning
+$ pactl get-sink-volume effect_input.speaker-tuning     # 41%
+```
+
+The built-in speaker was set to 55% and was back at 41% a second later, because
+selecting it carried the receiver's level onto it. Reported as *"master volume
+same for all connected devices and internal speaker — it should be separate for
+each device, and remembered for each device"*.
+
+The **60% clamp** went with it. It existed because a level copied *onto*
+headphones or a powered speaker is a level nobody chose. Nothing is copied onto
+anything now — every level on every output is one the listener put there — so
+there is nothing to clamp. `external-dsp level` still enforces
+`EXTERNAL_DSP_MAX_LEVEL` for the levels it writes itself.
+
+The two behaviours are exact opposites and both have been asked for. If one
+slider position meaning one loudness is ever wanted again, it needs a
+*different* mechanism — a per-output offset applied on top of a shared level —
+not a copy that destroys the value it lands on.
+
+#### Still shared: the wired chain stands in two roles
+
+Not fixed by this, and worth knowing. `effect_input.tuned-wired` matches
+`^alsa_output%.`, which is both the onboard headphone sink **and** a USB
+speaker. For the jack it is the listening level; for USB it is plumbing that
+should be at unity. It cannot be both, so a level set on headphones is still
+applied to the USB path — before the graph, where it also starves the
+compressor, and on top of the USB device's own level.
+
+Bluetooth is unaffected: `effect_input.tuned-bluetooth` carries
+`state.restore-props = false`, comes up at unity, and is never the selected
+output.
+
+The fix is to split the wired class in two — one chain for the jack, one for
+USB — so that no chain input is ever a listening level and plumbing at
+different times. Pinning it to unity when USB is selected is *not* the fix: it
+would let unity be saved as the jack's remembered level, and the jack coming
+back at 100% is the hazard recorded two sections down.
 
 #### `external-dsp on` was pinning the master volume to 100%
 

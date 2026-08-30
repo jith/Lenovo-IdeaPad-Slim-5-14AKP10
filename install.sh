@@ -20,8 +20,14 @@ HIDE_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/hide-speaker-tuning.lua
 EXT_FILTER_DEST=/etc/pipewire/pipewire.conf.d/52-external-tuning.conf
 EXT_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/52-external-target.conf
 EXT_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/52-external-target.lua
-SYNC_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/54-volume-sync.conf
-SYNC_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/54-volume-sync.lua
+MEM_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/54-volume-memory.conf
+MEM_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/54-volume-memory.lua
+# 54-volume-memory replaced 54-volume-sync, which carried ONE level onto
+# every output. Both halves of the old pair have to go: WirePlumber loads
+# every conf.d file it finds, so a leftover 54-volume-sync.conf would keep
+# loading the carry beside the script that exists to not do it.
+SYNC_CONF_OLD=/etc/wireplumber/wireplumber.conf.d/54-volume-sync.conf
+SYNC_SCRIPT_OLD=/usr/local/share/wireplumber/scripts/54-volume-sync.lua
 # Going down with an A2DP session open leaves the receiver holding a stream
 # endpoint for a host that is gone, and the next connect is answered with
 # silence until the device is re-paired. The same script closes the session from
@@ -47,8 +53,10 @@ uninstall() {
         "$EXT_FILTER_DEST" \
         "$EXT_CONF_DEST" \
         "$EXT_SCRIPT_DEST" \
-        "$SYNC_CONF_DEST" \
-        "$SYNC_SCRIPT_DEST" \
+        "$MEM_CONF_DEST" \
+        "$MEM_SCRIPT_DEST" \
+        "$SYNC_CONF_OLD" \
+        "$SYNC_SCRIPT_OLD" \
         "$BT_SCRIPT_DEST" \
         "$BT_UNIT_DEST" \
         "$BT_SLEEP_DEST" \
@@ -108,6 +116,14 @@ install_filter() {
         echo "missing external switch helper: $FILES_DIR/external-dsp" >&2
         exit 1
     }
+    [ -f "$FILES_DIR/54-volume-memory.conf" ] || {
+        echo "missing volume config: $FILES_DIR/54-volume-memory.conf" >&2
+        exit 1
+    }
+    [ -f "$FILES_DIR/54-volume-memory.lua" ] || {
+        echo "missing volume script: $FILES_DIR/54-volume-memory.lua" >&2
+        exit 1
+    }
     [ -f "$FILES_DIR/55-bt-disconnect" ] || {
         echo "missing Bluetooth teardown script: $FILES_DIR/55-bt-disconnect" >&2
         exit 1
@@ -131,8 +147,11 @@ install_filter() {
         /usr/local/share/speaker-dsp/52-external-tuning.conf
     install -D -m644 "$FILES_DIR/52-external-target.conf" "$EXT_CONF_DEST"
     install -D -m644 "$FILES_DIR/52-external-target.lua" "$EXT_SCRIPT_DEST"
-    install -D -m644 "$FILES_DIR/54-volume-sync.conf" "$SYNC_CONF_DEST"
-    install -D -m644 "$FILES_DIR/54-volume-sync.lua" "$SYNC_SCRIPT_DEST"
+    install -D -m644 "$FILES_DIR/54-volume-memory.conf" "$MEM_CONF_DEST"
+    install -D -m644 "$FILES_DIR/54-volume-memory.lua" "$MEM_SCRIPT_DEST"
+    # Not the same paths this has just written, so this is safe to do here:
+    # the old pair is genuinely a different name.
+    rm -f "$SYNC_CONF_OLD" "$SYNC_SCRIPT_OLD"
 
     # The chains are per CLASS of output, not per device, so this expands to the
     # same file every time and can be generated here rather than by hand or by

@@ -91,7 +91,7 @@ LISTENING_LEVEL = """\
                 # The headphone jack is listed by GNOME as its own output, and
                 # the entry IS this chain -- so this sink's volume is the slider
                 # the listener actually moves, and the device behind it is held
-                # at unity by 54-volume-sync.lua instead.
+                # at unity by 54-volume-memory.lua instead.
                 #
                 # So it has to be remembered. state.restore-props = false made
                 # it come back at 100% after every restart, which is the "does
