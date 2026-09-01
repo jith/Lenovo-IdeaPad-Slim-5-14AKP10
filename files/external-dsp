@@ -453,9 +453,34 @@ eq_set() {
         case "$_g" in
             *[!0-9.+-]*|"") echo "eq: '$_g' is not a number of dB" >&2; return 2 ;;
         esac
-        # +-12 dB is not a safety limit -- the limiter holds well past it,
-        # measured to +15 -- it is a typo guard. Past this it is not a voicing,
-        # it is a different speaker.
+        # +-12 dB is a typo guard. It was also once described here as "not a
+        # safety limit -- the limiter holds well past it, measured to +15",
+        # and that claim was measured on the wrong instrument. The +0..+15 dB
+        # sweep behind it read LRA and sample peak, both of which are blind to
+        # intermodulation. Peak genuinely does not move: true peak sits at
+        # -1.48 dBTP flat and under every boost tested.
+        #
+        # What moves is IMD. SMPTE 60 + 2650 Hz at 4:1 through this chain,
+        # BASS shelf only, by tools/imd.py:
+        #
+        #     bass    IMD -6 dBFS   IMD -3 dBFS   preset
+        #     +0         0.000         7.604      flat
+        #     +3         5.979        14.383      warm
+        #     +5        11.327        17.650      bass
+        #     +12       21.940        25.214      this clamp
+        #
+        # Two shipped presets sit in that table. On real programme it is much
+        # smaller -- a +6 dB shelf costs 6.0% more gain modulation (p95-p5
+        # 12.464 -> 13.213 on 2-4 kHz), so this is a stress result, not a
+        # defect. But a dominant low sine into a limiter is closer to ordinary
+        # use here than on the internal speaker: earbuds, the bass preset and
+        # bass-heavy material are the same case.
+        #
+        # The clamp is LEFT AT +-12 rather than tightened, because where to put
+        # it is a listening decision and nothing here has been listened to.
+        # The presence bell is clean by the same instrument -- +6 dB leaves
+        # IMD -6 at 0.000 and +12 reaches only 10.237 at -3 dBFS -- so if this
+        # is ever tightened, tighten BASS and not the whole surface.
         awk -v g="$_g" 'BEGIN{exit !(g>=-12 && g<=12)}' || {
             echo "eq: ${_g} dB is outside -12..+12" >&2; return 2; }
         for _n in $_nodes; do

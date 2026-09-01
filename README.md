@@ -2901,6 +2901,45 @@ without squashing, which is what it was sized to do. Compensating cost 4.7 LU of
 level to move the tilt by 0.12 dB, so it was removed. The ±12 dB clamp in
 `external-dsp eq` is a typo guard, not a safety limit.
 
+**That sweep was measuring the wrong thing, 1 Sep 2026.** LRA and sample peak
+are both blind to intermodulation, and intermodulation is what a bass boost
+into a limiter actually costs. The peak really does not move — true peak sits at
+−1.48 dBTP flat and under every boost tested, so the table above is not wrong,
+only incomplete. SMPTE 60 + 2650 Hz at 4:1 through this chain, bass shelf only,
+by `tools/imd.py`:
+
+| bass shelf | IMD −6 dBFS | IMD −3 dBFS | preset that sets it |
+|---|---|---|---|
+| +0 dB | 0.000 | 7.604 | `flat` |
+| **+3 dB** | **5.979** | 14.383 | **`warm`** |
+| **+5 dB** | **11.327** | 17.650 | **`bass`** |
+| +6 dB | 13.142 | 19.115 | — |
+| +12 dB | 21.940 | 25.214 | the clamp |
+
+Two shipped presets sit in that table. Size it honestly before acting on it: the
+signal is deliberately bass-dominant, and on real stressed programme a +6 dB
+shelf costs **6.0%** more gain modulation (p95−p5 12.464 → 13.213 over 2–4 kHz),
+not 13%. It is a stress result, the same way the internal chain's two-tone knee
+is. But it is closer to ordinary use here than there — earbuds, the `bass`
+preset and bass-heavy material are the same case, and that case *is* a dominant
+low sine into a limiter.
+
+**The presence bell is clean by the same instrument**: +6 dB leaves IMD −6 dBFS
+at 0.000 and IMD −3 at 9.113, and even +12 dB only reaches 10.237. So the
+problem is the shelf, not the voicing surface. If the clamp is ever tightened,
+tighten bass alone.
+
+**What was NOT done, and why.** The obvious move is the internal chain's stage
+10c treatment — rebuild the shelf as a parallel branch and compress it. It does
+not transfer. The identity that makes that exact for a bell,
+`dry + k·bandpass ≡ bq_peaking`, has no shelf counterpart: fitting
+`1 + k·lowpass` against `bq_lowshelf` at 150 Hz leaves **1.2 dB** of shape error
+at +3 and **1.9 dB** at +6, against machine precision for the bell. A dynamic
+shelf here would need `mb_compressor` in Boost mode on a sub-120 Hz crossover
+band, which replaces a shelf with a band and re-opens the "a band makeup cannot
+be aimed" objection that stage 10c was built to avoid. Left alone pending a
+listening decision.
+
 #### Why this one is by ear
 
 Every other stage in this repo is measured. This one cannot be: voicing needs a
@@ -2922,6 +2961,33 @@ startup and nothing runs at login to reapply them, so a restart loses it — whi
 is right while a curve is being auditioned. Once one is chosen it belongs in the
 template as that class's shipped default, where it survives everything and needs
 no machinery.
+
+#### The external GOTT was carrying 5 ms it never used
+
+`lkahead` was **unwritten** in `52-external-tuning.conf`, and the LV2 port
+default is **5 ms**. The internal chain found the same port on the same day and
+measured what it buys: nothing — LUFS and true peak identical to 0.001 dB on
+every signal in the battery, `square100` included, which is the transient case a
+lookahead exists for. Written as `0.0` now.
+
+**Confirm a port default on the real module, never offline.**
+`tools/offline-chain.py` cannot see this at all: an impulse through the external
+chain reads **+8.58 ms either way**, because ffmpeg initialises unspecified
+ports differently from PipeWire's filter-chain. The filter-chain module *does*
+apply the LV2 default, and the way to prove it is to read unwritten ports back
+off a live node — four unwritten GOTT ports on the internal chain each report
+their TTL default exactly:
+
+| port | live value | LV2 default |
+|---|---|---|
+| `kn_1` | 0.707946 | 0.707946 |
+| `react` | 0.2 | 0.2 |
+| `drywet` | 100.0 | 100.0 |
+| `prot` | 1.0 | 1.0 |
+
+This is a **second** divergence between the harness and the real module, after
+the mono-plugin one found the same day. The rule that follows: the harness is
+exact for what a config *writes*, and silent about what it *omits*.
 
 ### GOTT was running with its defining half switched off
 
