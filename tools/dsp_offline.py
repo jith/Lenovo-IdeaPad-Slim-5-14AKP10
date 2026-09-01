@@ -214,6 +214,12 @@ def lv2(x, uri, controls, rate=RATE, sidechain=None):
     the plugin's port order. Named form `lv2=p=URI:c=name=value` also works on
     recent ffmpeg and is what is used here, being far less fragile.
     """
+    # Output channels are the plugin's AUDIO inputs, not a fixed 2. Feeding a
+    # *_mono plugin a duplicated stereo pair is not the same as running it
+    # mono: ffmpeg adapts the channel count around the plugin and the level
+    # the detector sees changes, which for a compressor changes the gain
+    # reduction. Measured 0.316 dB on a real branch signal -- see the README.
+    out_nch = x.shape[1]
     if sidechain is not None:
         x = np.concatenate([x, sidechain], axis=1)
     spec = "|".join(f"{k}={v}" for k, v in controls.items())
@@ -228,7 +234,7 @@ def lv2(x, uri, controls, rate=RATE, sidechain=None):
         ["ffmpeg", "-v", "error",
          "-f", "f32le", "-ar", str(rate), "-ac", str(nch), "-i", "-",
          "-af", f"lv2=p={safe}:c={spec}",
-         "-f", "f32le", "-ar", str(rate), "-ac", "2", "-"],
+         "-f", "f32le", "-ar", str(rate), "-ac", str(out_nch), "-"],
         input=np.ascontiguousarray(x, "<f4").tobytes(),
         capture_output=True)
     if proc.returncode != 0:
@@ -236,7 +242,7 @@ def lv2(x, uri, controls, rate=RATE, sidechain=None):
             f"ffmpeg lv2 failed for {uri}:\n{proc.stderr.decode()[:800]}\n"
             "LSP plugins present? `sudo apt install lsp-plugins-lv2`, and "
             "check `ffmpeg -filters | grep lv2`.")
-    return np.frombuffer(proc.stdout, "<f4").reshape(-1, 2).astype(np.float64)
+    return np.frombuffer(proc.stdout, "<f4").reshape(-1, out_nch).astype(np.float64)
 
 
 # -- config parsing ----------------------------------------------------------

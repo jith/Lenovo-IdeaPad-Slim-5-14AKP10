@@ -53,7 +53,8 @@ LV2 = lv2
 
 
 def _lv2_bypass(x, uri, controls, rate=RATE, sidechain=None):
-    return x[:, :2] * controls.get("g_out", 1.0)
+    nch = 1 if x.shape[1] == 1 else 2
+    return x[:, :nch] * controls.get("g_out", 1.0)
 
 
 def run_node(node, name, inputs):
@@ -102,7 +103,15 @@ def run_node(node, name, inputs):
     if node["kind"] == "lv2":
         uri = node["plugin"]
         ports = sorted(inputs)
-        stereo = np.stack([inputs[ports[0]], inputs[ports[1 if len(ports) > 1 else 0]]], 1)
+        if len(ports) == 1:                    # a *_mono plugin: run it MONO.
+            # Duplicating into a stereo pair reads 0.316 dB low on a
+            # compressor, because ffmpeg adapts channels around the plugin and
+            # the detector then sees a different level. It hid in stage 7,
+            # whose branch enters at Gain 3 = 0.06, and did not hide in stage
+            # 10c, whose branch enters at 0.5849.
+            y = LV2(inputs[ports[0]][:, None], uri, ctrl)
+            return {0: y[:, 0]}
+        stereo = np.stack([inputs[ports[0]], inputs[ports[1]]], 1)
         side = None
         if len(ports) == 4:                    # stage 11: audio pair + sidechain pair
             side = np.stack([inputs[ports[2]], inputs[ports[3]]], 1)

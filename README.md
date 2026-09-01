@@ -47,7 +47,7 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
 | 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` +11.60 dB, `mk_2` **0.00 dB**, `mk_3` −0.17 dB, `mk_4` −3.15 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −1.65 dB taken 1 Sep 2026 to hold that tilt when stage 11 went multiband; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
 | 10b | Resonance notch | `s10res_*` | builtin `bq_peaking` | 760 Hz, Q 3.0, **−3.7 dB** | **active** — since 14 Aug 2026 the *second and last* instrument aimed at the 761 Hz resonance, after stage 2. Deepened from −3.0 to absorb `mk_2`'s share so that flat band cut could be removed. Stages 11–12 hand some back | — |
-| 10c | Presence lift | `s10pbp_*`, `s10pdyn_*`, `s10psum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + builtin `mixer` | 2650 Hz, Q 1.4262 branch, `cr` 2.0, `al` −20 dBFS, branch gain 0.5849 | **active, and dynamic since 1 Sep 2026** — a parallel bandpass with a compressed branch, which is exactly a `bq_peaking` Q 1.2 whose Gain moves between about +2.3 and +4.0 dB. Anchored at the *fitted* +4.0 rather than frozen at the +3.0 the static version had to accept. Delivers +0.67 dB more at 2500 Hz than the static bell **and 29% less two-tone IMD** | — |
+| 10c | Presence lift | `s10pbp_*`, `s10pdyn_*`, `s10psum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + builtin `mixer` | 2650 Hz, Q 1.4262 branch, `cr` 2.0, `al` −22 dBFS, branch gain 0.5849 | **active, and dynamic since 1 Sep 2026** — a parallel bandpass with a compressed branch, which is exactly a `bq_peaking` Q 1.2 whose Gain moves between about +2.3 and +4.0 dB. Anchored at the *fitted* +4.0 rather than frozen at the +3.0 the static version had to accept. Delivers **+0.73 dB** more at 2500 Hz than the static bell **and 22% less two-tone IMD**, confirmed on hardware | — |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → **LSP sidechain MULTIBAND comp** | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate, **band 0 only, split 1 kHz** | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress. **Multiband since 1 Sep 2026**: a cone has one displacement and it is a low-frequency quantity, so ducking 3 kHz was collateral, not protection | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −1.01 dBFS sample → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** — `th` pays for the sweep so `g_out` can spend | — |
@@ -219,7 +219,7 @@ Stages 10 to 13 are plain stereo in series.
              ● s10res_l/r   bq_peaking  760 Hz Q 3.0  -3.7 dB
              │                                 761 Hz cone resonance
              ● s10pbp_l/r   bq_bandpass 2650 Hz Q 1.4262
-             ● s10pdyn_l/r  compressor_mono  cr 2.0  al -20 dBFS
+             ● s10pdyn_l/r  compressor_mono  cr 2.0  al -22 dBFS
              ● s10psum_l/r  mixer  dry 1.0 + branch 0.5849
              │                                 presence, same A/B, now
              │                                 level-dependent: +2.3 to +4.0 dB
@@ -2409,12 +2409,14 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | Stage 10b is aimed at a real driver resonance | **session D, acoustic** | pass — with the source file on both devices the driver separates from the chain, and it peaks **+7.8 dB at 800 Hz** re its own 1.6–4 kHz plateau. The chain cuts 12.8 dB there and the acoustic result matches the iPhone to **−0.2 dB**. First confirmation on material 10b was not tuned on |
 | Stage 10c dynamic rebuild is the same filter when disarmed | **current, offline** | pass — at `cr` 1.0 with branch gain 0.4125 the parallel construction renders **identical LUFS, sample peak and true peak on all five signals**, and the bell node itself nulls at **−99.4 dB rms**. The identity `dry + k·bandpass ≡ bq_peaking`, `k = 10^(G/20)−1`, `Q_bp = 10^(G/40)·Q_pk`, holds to **9.6e-15 dB** analytically |
 | A null test cannot be run through the limiter on a full-scale sweep | **current, offline** | **noted, and it is not a defect** — the disarmed rebuild nulls at −111 to −115 dBFS on all real programme but only **−49.2 dBFS on the sweep**, all of it after t = 18 s, which is 2.6 kHz on a log sweep. A −99 dB perturbation at the bell flips gain trajectories in stages 11–12. Every *metric* is unchanged, so the residual is trajectory jitter, not a level error. Read metrics, not nulls, downstream of a limiter |
-| Stage 10c dynamic beats the static bell on presence AND distortion | **current, offline** | pass — the point of the change. `b2500` on music1 **10.18 → 10.85 dB** (+0.67, i.e. 71% of the fitted +4.0's delivery) while SMPTE IMD at −3 dBFS falls **5.307% → 3.770%** and at −6 dBFS is unchanged at 0.072%. The static +4.0 buys +0.95 dB for **0.280%** at −6 dBFS, 3.9× worse. Every armed row in the `al`/`cr` sweep beats the static +3.0 on both axes at once |
+| Stage 10c dynamic beats the static bell on presence AND distortion | **current, offline + hardware** | pass — the point of the change. `b2500` on music1 **10.18 → 10.91 dB** (+0.73, i.e. 77% of the fitted +4.0's delivery) while SMPTE IMD at −3 dBFS falls **5.202% → 4.053%** and at −6 dBFS is unchanged at 0.075%. The static +4.0 buys +0.95 dB for **0.323%** at −6 dBFS, 4.3× worse. **Not every armed row passes**: `al` −18 reads 5.330%, worse than the filter it replaces, which is why the shipped value sits two steps back from it |
 | The dynamic bell is keyed on 2.6 kHz, not on the bass | **current, offline** | pass, and it is why no cross-band ducking is introduced — measured branch level (5 ms RMS): the two-tone stress signals sit at **−15.3 and −12.3 dBFS** where music1's p99 is −19.7 and music2's is −14.8. A detector that only ever looks at 2.6 kHz already separates the stress case from programme by 5–12 dB, so `al` = −20 dBFS reaches it without a bass sidechain |
-| The dynamic bell changes nothing but the band it is aimed at | **current, offline** | pass — third-octave against the static bell, worst change **outside 1.6–4 kHz is +0.23 dB** (music1, 5 kHz — the bell's own skirt) and **+0.09** (music2). Below 1 kHz nothing moves more than **0.02 dB** |
+| The dynamic bell changes nothing but the band it is aimed at | **current, offline + hardware** | pass — on hardware, worst change **below 1 kHz is 0.08 dB** (music1) and **0.04** (music2), against an offline prediction of exactly 0.08 and 0.04. The lift itself reads +0.73 (music1) and +0.34 (music2) at 2500 Hz, offline and hardware agreeing to **0.00 and 0.01 dB** |
 | The dynamic bell does not pump | **current, offline** | pass — README's gain-modulation instrument on music2 pushed to −6.8 LUFS and clipped, 2–4 kHz, 5 ms envelopes: sd **2.923 → 2.968**, p95−p5 **8.890 → 9.106**. 2.4% more spread, against the 2% the static +4.0 was accepted for — and this buys 29% *less* IMD, which that did not |
 | The dynamic bell costs no headroom and no THD | **current, offline** | pass — true peak **−0.996 → −0.996** (music1), −0.917 → −0.903 (music2), −0.789 → −0.791 (sweep); sample peak unchanged. THD 90 Hz **7.05 → 7.05%**, 400 Hz 1.38 → 1.40, 1 kHz and 2650 Hz unchanged. Latency unchanged: two biquads and a mixer are 0, and `compressor_mono` at `sla = 0` measures **0.00 ms** |
-| The dynamic rebuild loads in the real filter-chain module | **current** | pass — isolated `pipewire` daemon, `PIPEWIRE_DEBUG=3`: `loaded module libpipewire-module-filter-chain`, all twelve new links resolved by name, **zero errors** and no leftover `s10pres`. Not yet run on hardware |
+| The dynamic rebuild loads in the real filter-chain module | **current** | pass — isolated `pipewire` daemon, `PIPEWIRE_DEBUG=3`: `loaded module libpipewire-module-filter-chain`, all twelve new links resolved by name, **zero errors** and no leftover `s10pres`. Then confirmed live: every control read back off the running `-TEST` node matches the config, `sla` included |
+| The offline harness predicts hardware on the dynamic stage | **current** | pass, **after fixing the harness** — it fed `*_mono` plugins a duplicated stereo pair, worth 0.316 dB on a compressor. Before the fix the dynamic chain mispredicted by 0.28 dB at 2500 Hz; after it, hardware and offline agree to **0.00 dB in every third-octave band** and **−81.5 dBFS** sample residual. This also revises the 0.04 dB figure under *offline-chain matches hardware*, which was this bug all along |
+| A capture pair must be alignment-gated before it is read | **current** | **noted** — one `pw-cat` pair this session cross-correlated at **0.137** and produced a spurious **0.66 dB at 50 Hz**. Re-captured it aligned at **1.000** and the same band read 0.04. Check the normalised correlation before reporting any band table taken from two separate playbacks |
 | Stage 10c closes the gap it was built for | **session D, acoustic** | pass — **+0.2 dB** at 2500 Hz and +0.5 at 3150 against the iPhone. Read as "matched": both are inside the 1.4 dB re-setup repeatability, not resolved to 0.2 dB |
 | The 400–630 Hz excess is not a defect | **session D, acoustic + listening** | pass, and **tested** — the iPhone reads 6–12 dB quieter there, but the driver has no resonance at 500 Hz and both curves are clean rolloffs differing only in knee. A −5 dB bell at 500 Hz Q 1.6 was built as a separate `-TEST` sink, verified end to end (delivering −2.9 dB acoustically, nothing above 1.25 kHz moving, no headroom cost) and A/B'd. **The uncut chain won.** Do not re-propose it |
 | The chain is time-coherent | **session D, offline** | pass — group delay flat within **2.2 ms** from 50 Hz to 12.5 kHz on a −46 dBFS impulse, the one excursion being −1.3 ms at 800 Hz where 10b's notch is. Impulse energy spreads 0.1 ms |
@@ -3584,30 +3586,82 @@ sidebands to the 5th order:
 
 | variant | `b2500` | IMD −6 dBFS | IMD −3 dBFS |
 |---|---|---|---|
-| +3.0 static (what shipped) | 10.18 | 0.072 | 5.307 |
-| +4.0 static (the fit) | 11.13 | 0.280 | 7.474 |
-| `al` −18, `cr` 2.0 | 10.97 | 0.072 | 4.353 |
-| **`al` −20, `cr` 2.0 — taken** | **10.85** | **0.072** | **3.770** |
-| `al` −22, `cr` 2.0 | 10.67 | 0.072 | 3.308 |
-| `al` −24, `cr` 3.0 | 10.27 | 0.072 | 2.155 |
+| +3.0 static (what shipped) | 10.18 | 0.075 | 5.202 |
+| +4.0 static (the fit) | 11.13 | 0.323 | 7.536 |
+| `al` −18, `cr` 2.0 | 11.09 | 0.075 | **5.330 — fails** |
+| `al` −20, `cr` 2.0 | 11.02 | 0.075 | 4.656 |
+| **`al` −22, `cr` 2.0 — taken** | **10.91** | **0.075** | **4.053** |
+| `al` −24, `cr` 2.0 | 10.76 | 0.075 | 3.548 |
 
-**Every armed row beats the static +3.0 on both axes at once**, which is the
-whole reason this is worth four extra nodes: the static bell had to trade
-presence against intermodulation and this one does not. −20/2.0 takes 71% of the
-fitted gain and still reads 29% *less* IMD at −3 dBFS than the filter it
-replaces. The more conservative of the two top rows is taken, for the same
-reason +3.0 was taken over +4.0 in the first place.
+**These are not the numbers this stage was first fitted on.** The first sweep ran
+through a harness bug — see *The harness was feeding mono plugins a stereo pair*
+below — which flattered every aggressive row. `al` −18 looked like it passed and
+does not: at 5.330 it is *worse* than the static filter it replaces, which is the
+one thing this change is not allowed to be.
+
+−22 is taken rather than −20. Both pass, but −20 sits directly against the
+failing row for 0.11 dB of presence, where −22 doubles the distortion margin:
+22% below the static bell against 10%. That is the same trade that took +3.0
+over +4.0 in the first place. It still delivers 77% of the fitted gain.
 
 The delivery is level-dependent by construction, which is visible in the band
-table: music1 gets **+0.67 dB** at 2500 Hz and the louder music2 gets **+0.20**,
+table: music1 gets **+0.73 dB** at 2500 Hz and the louder music2 gets **+0.34**,
 because its branch sits further into the compressor. The lift is spent where
 there is room for it.
 
-Note the IMD figures here are from a scratch instrument and do not share a scale
-with the ones recorded under *What a boost costs that a cut does not* — the
+Note the IMD figures here are from `tools/imd.py` and do not share a scale with
+the ones recorded under *What a boost costs that a cut does not* — the
 comparisons above are internally consistent, not comparable across sections.
 
-**Not yet on hardware.** Everything above is `tools/offline-chain.py`.
+#### Confirmed on hardware
+
+Both chains live at once through the `-TEST` sink, same session, both virtual
+sinks at unity, captured at the hardware sink monitor. Third-octave, new against
+old:
+
+| | offline | hardware |
+|---|---|---|
+| music1, 2500 Hz | +0.73 dB | **+0.73 dB** |
+| music1, worst below 1 kHz | 0.08 dB | **0.08 dB** |
+| music2, 2500 Hz | +0.35 dB | **+0.34 dB** |
+| music2, worst below 1 kHz | 0.04 dB | **0.04 dB** |
+
+Sample peak on hardware is **−1.012 dBFS** on both chains, the figure the offline
+harness predicts exactly. Capture repeatability, same sink twice, is **0.00 dB**
+on music2 and 0.23 dB worst on music1, so music1's numbers carry that much noise
+and music2's carry none.
+
+**Gate an alignment before trusting a capture pair.** One pair in this session
+cross-correlated at 0.137 and produced a spurious 0.66 dB at 50 Hz; re-captured,
+it aligned at 1.000 and the same band read 0.04. Two `pw-cat` playbacks do not
+start at the same offset, and a bad alignment looks like a bass anomaly.
+
+### The harness was feeding mono plugins a stereo pair
+
+Found by the hardware A/B above, which is the point of running one.
+`tools/offline-chain.py` fed every `*_mono` LSP plugin a **duplicated stereo
+pair** rather than one channel. ffmpeg adapts the channel count around the
+plugin, the detector then sees a different level, and for a compressor that
+changes the gain reduction. Measured on a real branch signal: **0.316 dB**.
+
+It had been there all along and hid in **stage 7**, whose six `compressor_mono`
+nodes enter stage 8 at `Gain 3` = 0.06, so a 0.3 dB branch error lands as about
+0.01 dB at the output. It did not hide in stage 10c, whose branch enters at
+0.5849 — 20 dB louder — where it showed up as the offline render under-predicting
+hardware by **0.28 dB at 2500 Hz**.
+
+The fix is to run a one-input LV2 node as true mono, and to size the output
+channel count from the plugin's audio inputs instead of hardcoding 2. What it
+buys is worth recording, because it revises a figure this repo has relied on:
+
+| | before the fix | after |
+|---|---|---|
+| hardware vs offline, static chain | 0.00 dB mean, **sd 0.03–0.04** | 0.00 dB mean, **sd 0.00** |
+| hardware vs offline, dynamic chain | +0.06 mean, **+0.28 at 2500 Hz** | 0.00, **0.00** |
+| sample-level residual | — | **−81.5 dBFS** |
+
+The 0.04 dB agreement recorded under *offline-chain matches hardware* was never
+the measurement floor. It was this bug, attenuated by `Gain 3`.
 
 ### The rest of the modern-dynamics survey, and why the budget decides it
 
