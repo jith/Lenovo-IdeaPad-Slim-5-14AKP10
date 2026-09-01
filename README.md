@@ -3381,7 +3381,33 @@ does nothing mechanical. That was collateral damage, not protection.
 It is now `sc_mb_compressor_stereo`, split at 1 kHz, with the broadband settings
 moved onto band 0 unchanged — `scs = 5` (Max), `scm = 0` (Peak), `al = 0.708`,
 `cr = 6`, `at = 5`, `rt = 100`, `kn = 0.501`, `scr` and `sla` on the same
-defaults the broadband plugin had. Only the frequency range changed.
+defaults the broadband plugin had. Every port name and default matches; `sct`
+(Sidechain type) is the one that does not exist on the multiband, and per-band
+`sce_0 = 1` (External) replaces it.
+
+**But the settings transferring does not make it a drop-in.** Collapsed to a
+single band with every control matched, the two do *not* null, and driven with
+the same signal on the bench the multiband compresses far less:
+
+| isolated, music1 at programme level | broadband | multiband |
+|---|---|---|
+| gain reduction | **−6.51 dB** | **−0.41 dB** |
+
+So equivalence cannot be argued from the settings — it has to be measured *in
+the chain*, where stage 11 sees a post-GOTT signal with a very different crest
+factor from anything on a bench. There the two land in the same place. All
+three bypass methods (`ce_0 = 0`, `enabled = 0`, `cr_0 = 1`) agree exactly:
+
+| loudness this stage removes | broadband | multiband |
+|---|---|---|
+| music1 | 0.91 dB | 0.91 dB |
+| music2 | 1.05 dB | 0.95 dB |
+| **square100** | 1.89 dB | **3.89 dB** |
+
+Same depth on music, twice the depth on the signal this stage exists for. That
+is an *in-situ* claim and it must stay one — a bench comparison of the two
+plugins says something quite different, and it is the bench that is misleading
+here, not the chain.
 
 **The split is not a tuning choice — it is where `Hx` runs out.** Band 1 was
 tested driven by the same external sidechain at the same threshold and ratio 6,
