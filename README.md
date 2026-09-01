@@ -45,13 +45,13 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | −20 dBFS, 20:1 — levels the n-th power law | **active** | CN115442709B, US10382857 |
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.6`, `Gain 3 = 0.06` | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
-| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, downward thresholds −20/−15/−9/−9 dB, `g_out` +10.63 dB, `mk_2` **0.00 dB**, `mk_3` +1.48 dB, `mk_4` −1.50 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry a matched −1.5 dB **tilt** correction; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b | US12342139B2 |
+| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` +11.60 dB, `mk_2` **0.00 dB**, `mk_3` −0.17 dB, `mk_4` −3.15 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −1.65 dB taken 1 Sep 2026 to hold that tilt when stage 11 went multiband; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
 | 10b | Resonance notch | `s10res_*` | builtin `bq_peaking` | 760 Hz, Q 3.0, **−3.7 dB** | **active** — since 14 Aug 2026 the *second and last* instrument aimed at the 761 Hz resonance, after stage 2. Deepened from −3.0 to absorb `mk_2`'s share so that flat band cut could be removed. Stages 11–12 hand some back | — |
 | 10c | Presence lift | `s10pres_*` | builtin `bq_peaking` | 2650 Hz, Q 1.2, +3.0 dB | **active** — finishes what `mk_3` started against the iPhone 13. Delivers +2.6 to +2.8 dB on programme. Sized below its own fit (+4.0) for two-tone IMD margin | — |
-| 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → LSP sidechain comp | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress | US12445775B2, CN115442709B |
+| 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → **LSP sidechain MULTIBAND comp** | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate, **band 0 only, split 1 kHz** | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress. **Multiband since 1 Sep 2026**: a cone has one displacement and it is a low-frequency quantity, so ducking 3 kHz was collateral, not protection | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −1.01 dBFS sample → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** — `th` pays for the sweep so `g_out` can spend | — |
-| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left hot, by 3.44 LU as measured at `g_out` 2.40 | ITU-R BS.1770 |
+| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left hot, by **4.71 LU** as re-measured at `g_out` 3.80 | ITU-R BS.1770 |
 
 ## Signal flow
 
@@ -226,14 +226,18 @@ Stages 10 to 13 are plain stereo in series.
              │
              ├─ ● s11hx_l/r  bq_lowpass 761 Hz Q 2.63  displacement estimate
              │                                 ↓
-             └→ ● s11xcur   LSP sc_compressor_stereo
+             └→ ● s11xcur   LSP sc_mb_compressor_stereo   band 0 only
                 │                              ↑ external sidechain, peak,
                 │                                max of the two channels
                 │                                threshold -3 dBFS, 6:1
+                │                                split 1 kHz; above it the
+                │                                estimate has no energy, so
+                │                                band 1 is off and the mids
+                │                                no longer duck with the bass
                 │
                 ● s12brick  LSP limiter_stereo   true peak, never bypassed
                 │
-                ● s13trim_l/r  linear  Mult 0.991973   -0.07 dB A/B trim
+                ● s13trim_l/r  linear  Mult 1.0        unity, see stage 13
                 │
                 └→ alsa_output.pci-0000_04_00.6.HiFi__Speaker__sink
 ```
@@ -590,11 +594,12 @@ graph will not clip internally; the hand-off to ALSA will, which is what stage
 | All builtin nodes (biquads, mixers, `mult`, `invert`, `dcblock`, `linear`) | 0 |
 | Stage 3 `delay`, at `Delay (s) = 0` | 0 |
 | Stage 7 and 11 LSP compressors (`sla = 0`) | 0 |
-| Stage 10 LSP GOTT, group delay **measured** | **5.0 ms** |
+| Stage 11 LSP multiband crossover, `mode = 1` (Modern), **measured** | 0 |
+| Stage 10 LSP GOTT, `lkahead = 0`, group delay **measured** | **0.3 ms** |
 | Stage 12 LSP limiter, true-peak oversampling + `lk = 1` | **3.6 ms** |
-| **Total added by the stages** | **8.6 ms** |
+| **Total added by the stages** | **3.9 ms** |
 | Virtual sink quantum, 1024 @ 48 kHz (already present in the pass-through) | 21.3 ms |
-| **Virtual path total, against playing straight to hardware** | **29.9 ms** |
+| **Virtual path total, against playing straight to hardware** | **25.2 ms** |
 
 This table was wrong until the GOTT swap. Calf's `lv2info` says "has latency:
 no", so stage 10 was recorded as 0 — but measured against the unprocessed
@@ -608,8 +613,52 @@ That costs nothing: the ceiling is held at exactly −0.300 dBFS at 5, 2 and eve
 (Modern) is the one to use.
 
 Enabling true-peak limiting later took lookahead down again, from 2 ms to 1,
-to pay for the oversampler's 2.16 ms. The path sits at 29.9 ms of the 30 ms
-budget — there is no room left for another latency-bearing stage.
+to pay for the oversampler's 2.16 ms. The path then sat at 29.9 ms of the 30 ms
+budget, with no room left for another latency-bearing stage.
+
+**And 5 ms of that was a port default nobody had written.** Reviewing the
+plugin against what it can actually do, 1 Sep 2026: GOTT's `lkahead` defaults
+to **5 ms**, and that default was the whole of stage 10's measured group delay.
+
+| `lkahead` | impulse peak out |
+|---|---|
+| 5 ms (the default, and what was shipping) | **5.00 ms** |
+| 2 ms | 2.00 ms |
+| 1 ms | 1.00 ms |
+| **0 (now set explicitly)** | **0.33 ms** |
+
+The crossover costs almost nothing; the lookahead cost all of it. So the two
+compromises the budget forced — the limiter's lookahead cut from 5 ms to 2, and
+then from 2 to 1 — were both paid to a port that was never in the config.
+
+It buys nothing on any signal in the battery:
+
+| signal | `lkahead = 5` | `lkahead = 0` |
+|---|---|---|
+| music1 | −10.57 LUFS | **−10.55** |
+| music2 | −8.50 | −8.50 |
+| square100 | −8.64 | −8.64 |
+
+True peak identical to 0.001 dB on all three — `square100` included, and that is
+the transient case a lookahead exists for. **That is the third time this plugin
+has hidden behaviour behind a default**, after `ru_* = 1.0` being the port's
+minimum rather than neutral and `tm_*` defaulting equal to `tu_*`. Write every
+port a stage depends on, including the ones you want at zero.
+
+**The freed 4.7 ms is banked, not spent.** Giving the limiter its lookahead back
+was the obvious use and it measures *worse* — longer lookahead is quieter for no
+distortion benefit, so `lk = 1` was never the compromise it was recorded as:
+
+| `lk` | music1 | music2 | square100 | THD 90 Hz | THD 400 Hz |
+|---|---|---|---|---|---|
+| **1 ms (shipped)** | **−10.35** | **−8.18** | **−10.24** | 6.99 % | 1.46 % |
+| 3 ms | −10.43 | −8.37 | −11.54 | 6.99 % | 1.46 % |
+| 5 ms | −10.46 | −8.43 | −11.84 | 6.99 % | 1.46 % |
+
+The path now sits at **25.2 ms**, so there is 4.8 ms of room for a
+latency-bearing stage where there was none. Note what that does *not* buy: the
+quantum is 21.3 ms of the 25.2, so the DSP is no longer the expensive part of
+this budget and never was by much.
 
 ### The brickwall must limit true peak, not sample peak
 
@@ -3319,6 +3368,177 @@ weight the output power spectrum by 1/f⁴ over 20–500 Hz and compare. The til
 figures in this section come from that same script's own band aggregation and
 read baseline as 6.89 where `--bands` says 6.08; they are consistent with each
 other, not with the rest of this file.
+
+### Excursion protection went multiband, and the mids stopped ducking
+
+1 Sep 2026. Stage 11 was a broadband `sc_compressor_stereo` driven by the `Hx`
+displacement estimate. Whenever a bass transient crossed its threshold it pulled
+**the whole spectrum** down — vocals dipped with the kick.
+
+A cone has one displacement and it is a low-frequency quantity. Ducking 3 kHz
+does nothing mechanical. That was collateral damage, not protection.
+
+It is now `sc_mb_compressor_stereo`, split at 1 kHz, with the broadband settings
+moved onto band 0 unchanged — `scs = 5` (Max), `scm = 0` (Peak), `al = 0.708`,
+`cr = 6`, `at = 5`, `rt = 100`, `kn = 0.501`, `scr` and `sla` on the same
+defaults the broadband plugin had. Only the frequency range changed.
+
+**The split is not a tuning choice — it is where `Hx` runs out.** Band 1 was
+tested driven by the same external sidechain at the same threshold and ratio 6,
+and again on `sce_1 = 2` (Link). All three measured **bit-identical** to
+`ce_1 = 0`:
+
+| band 1 setting | music1 | music2 |
+|---|---|---|
+| `ce_1 = 0` (shipped) | −10.35 LUFS, tilt +6.80 | −8.18, +9.54 |
+| `sce_1 = 1` external, `cr_1 = 6` | −10.35, +6.80 | −8.18, +9.54 |
+| `sce_1 = 2` link, `cr_1 = 6` | −10.35, +6.80 | −8.18, +9.54 |
+| `sce_1 = 2` link, `cr_1 = 2` | −10.35, +6.80 | −8.18, +9.54 |
+
+`Hx` is a 761 Hz low-pass falling 12 dB/octave, so above 1 kHz its detector
+never reaches threshold however it is wired. `ce_1 = 0` states what the plugin
+does anyway. **Do not move the split down**: 400–1000 Hz is where `Hx` peaks and
+where the driver measurably runs out of travel, so that region must stay inside
+band 0.
+
+**Protection is not weaker, it is better placed.** `Hx` applied to the chain
+*output* — the displacement the cone actually sees:
+
+| signal | `Hx` peak | `Hx` rms | 1/f⁴ displacement |
+|---|---|---|---|
+| music1 | +0.21 dB | +0.05 | +0.01 |
+| music2 | −0.24 | −0.08 | −0.07 |
+| pink-prog | −0.17 | −0.05 | −0.07 |
+| **square100** | −0.04 | **−2.32** | **−2.21** |
+
+`square100` is the case this stage exists for, and it is 2.2 dB better
+protected — all of the gain reduction now lands in the band the square's energy
+is in, instead of being spread over a spectrum that was not causing the
+excursion.
+
+**Two things that had to be checked before this could ship.** The crossover is
+transparent when it is not working: `mode = 1` (Modern), and two renders of a
+below-threshold signal null at **−109.7 dB**. And it adds **no latency** —
+0.00 ms by impulse, against the broadband plugin's 0.
+
+**`envb = 0` is load-bearing.** This plugin defaults it to `1` (Pink BT) where
+GOTT defaults it to `0`, so a drop-in arrives with envelope boost already on —
+and the section above measured that weighting the detector away from bass costs
+this driver 1.4–4.3 dB of excursion it cannot radiate. Wrong on any stage here,
+and worst on this one.
+
+#### It returns level as tilt, and that had to be paid for
+
+The level comes back above 1 kHz, and how much depends on how hard the material
+was driving the cone:
+
+| track | tilt change |
+|---|---|
+| music1 | **+0.82 dB** |
+| music2 | **+1.55 dB** |
+| pink-prog | +0.19 dB |
+
+The 14 Aug listener correction took 1.41 dB of tilt *out*. Shipping this without
+a trim would have quietly put most of it back — and `--bands` is the only thing
+in the harness that would have caught it, exactly as recorded in *The tilt, and
+why nothing here had found it*.
+
+Note the shape of the problem: what was removed is **dynamic** and
+programme-dependent, and nothing static can put it back on all material. A flat
+−1.19 dB on `mk_3`/`mk_4` lands music1 within 0.03 dB and leaves music2 +0.47
+and pink-prog −0.66. That residual spread is the honest cost of the change and
+it is not removable — the broadband stage had been acting as an accidental
+bass-triggered tilt control.
+
+**What it is worth even at zero loudness**: `--bands` averages over the track. A
+static makeup restores the average but not the *pumping*. Same average voicing,
+mids that no longer move with the bass.
+
+### The loudness that bought, and what the cone paid for it
+
+Taken in the same change, and to be read as one setting with the trim above.
+
+True peak **stopped being the constraint**. With the brickwall pinning it, the
+worst signal in the whole battery sits at −0.789 dBTP against a −0.20 ceiling
+and stays there all the way to `g_out` 4.50. What costs is displacement. Held at
+matched tilt, against the chain as it stood before:
+
+| `g_out` | `mk` cut | music1 loudness | music1 displacement | music2 loudness | music2 displacement |
+|---|---|---|---|---|---|
+| 3.40 | −1.19 dB | −0.03 LU | +0.07 dB | +0.09 LU | +0.00 dB |
+| **3.80** | **−1.65 dB** | **+0.52 LU** | **+0.64 dB** | **+0.43 LU** | **+0.42 dB** |
+| 4.25 | −2.09 dB | +0.97 LU | +1.16 dB | +0.73 LU | +0.79 dB |
+
+Roughly **1 dB of displacement per 1 LU**, and the margin being spent is the
+2.6 dB between stage 11's threshold and the driver's measured 1 dB compression
+point. 3.80 spends 0.5 dB of that. 4.25 is available and is *not* taken here:
+half the margin for 1 LU is the wrong trade on a driver whose `x_max` is unknown.
+Do not take it without re-running `tools/max-level.sh`.
+
+What it costs elsewhere:
+
+- THD at 400 Hz / −3 dBFS: 1.18 % → 1.38 %. At −12 dBFS it does not move
+  (0.96 % → 0.95 %). 90 Hz: 6.86 % → 7.05 %.
+- **Stationary material loses**: pink-prog −0.25 LU, pink −0.41. They pay the
+  `mk` cut and collect none of stage 11's return, because pink has no bass
+  transients for the old broadband stage to have been ducking on. The gain is
+  transient-dependent by construction — **do not tune it on noise**.
+- `square100` −1.20 LU and 1.67 dB *less* displacement. That is stage 11
+  working, and it is the direction that signal should move.
+
+#### Confirmed on hardware
+
+Both chains run side by side through the `-TEST` sink method below, same
+session, same hardware, both virtual sinks at unity, captured at the physical
+sink:
+
+| | offline predicted | hardware measured |
+|---|---|---|
+| music1 loudness | +0.52 LU | **+0.48 LU** |
+| music1 tilt | −0.46 dB | **−0.47 dB** |
+| true peak | −0.996 → −0.996 dBTP | −0.996 → −1.001 dBTP |
+
+Agreement to 0.01 dB on tilt and 0.04 LU on loudness. The band table shows
+exactly the intended shape — bass and low-mid up 0.4–0.5 dB, presence flat to
+0.03 dB — which is what "louder at held voicing" is supposed to look like.
+
+### The rest of the modern-dynamics survey, and why the budget decides it
+
+Measured 1 Sep 2026 while looking for more frequency-dependent dynamics than
+GOTT's four bands give. Impulse in, peak out, 48 kHz, through the same
+`ffmpeg -af lv2` path `tools/dsp_offline.py` uses. Latency is what settles most
+of this, so it is the first column.
+
+| plugin | mode | latency | verdict |
+|---|---|---|---|
+| `mb_compressor_stereo`, 8 bands | Modern | **0.00 ms** | viable — 8 bands, per-band sidechain filters, per-band Down/Up/**Boost** |
+| `sc_mb_compressor_stereo` | Modern | **0.00 ms** | **shipped**, stage 11 |
+| `mb_dyna_processor_stereo` | Modern | **0.00 ms** | viable — arbitrary per-band curve |
+| `loud_comp_stereo` | **IIR** | **0.00 ms** | viable *on latency*; still blocked on plumbing |
+| `mb_compressor_stereo` | Classic | 0 ms, but 20.7 ms of crossover ringing | avoid |
+| `mb_compressor_stereo` | Linear Phase | 85.33 ms | ✗ |
+| `mb_limiter_stereo` | Classic / Modern | 10.0 / 95.3 ms | ✗ — and already rejected on quality above |
+| `clipper_stereo` | — | 25.0 ms | ✗ |
+| `mb_clipper_stereo` | Classic / Modern | 37.4 / 122.8 ms | ✗ |
+| `beat_breather_stereo` | default | 285.3 ms | ✗ |
+
+**Per-band clipping is the one real loss.** It is what modern mastering reaches
+for when compression has run out, and on a driver that already distorts it would
+mostly hide. At 37 ms minimum it does not fit a 30 ms budget even with the
+4.7 ms `lkahead` bought back. It becomes possible only if the quantum drops —
+which is where the budget actually is: **21.3 ms of the 25.2 is the 1024
+quantum**, and `clock.min-quantum` on this machine is 32. That, not the DSP, is
+the thing to attack if a latency-bearing stage is ever wanted.
+
+**`loud_comp_stereo`: latency was never the blocker.** Its default `mode = 0` is
+FFT and costs 85.33 ms, but `mode = 1` (IIR) measures **0.00 ms** at any
+`approx`, with ISO226-2023 available on `std = 4`. The objection recorded above
+stands unchanged and is the only one: its `volume` port *is* an output volume, so
+it cannot sit beside the existing volume control — it has to become it, and
+filter-chain controls cannot be set from WirePlumber Lua. Still needs the
+listening level to move onto a daemon. Worth revisiting, because the internal
+chain sees post-volume audio and its voicing therefore already shifts with the
+slider.
 
 ### What was measured and rejected
 
