@@ -47,7 +47,7 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
 | 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` +11.60 dB, `mk_2` **0.00 dB**, `mk_3` −0.17 dB, `mk_4` −3.15 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −1.65 dB taken 1 Sep 2026 to hold that tilt when stage 11 went multiband; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
 | 10b | Resonance notch | `s10res_*` | builtin `bq_peaking` | 760 Hz, Q 3.0, **−3.7 dB** | **active** — since 14 Aug 2026 the *second and last* instrument aimed at the 761 Hz resonance, after stage 2. Deepened from −3.0 to absorb `mk_2`'s share so that flat band cut could be removed. Stages 11–12 hand some back | — |
-| 10c | Presence lift | `s10pbp_*`, `s10pdyn_*`, `s10psum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + builtin `mixer` | 2650 Hz, Q 1.4262 branch, `cr` 2.0, `al` −22 dBFS, branch gain 0.5849 | **active, and dynamic since 1 Sep 2026** — a parallel bandpass with a compressed branch, which is exactly a `bq_peaking` Q 1.2 whose Gain moves between about +2.3 and +4.0 dB. Anchored at the *fitted* +4.0 rather than frozen at the +3.0 the static version had to accept. Delivers **+0.73 dB** more at 2500 Hz than the static bell **and 22% less two-tone IMD**, confirmed on hardware | — |
+| 10c | Presence lift | `s10pbp_*`, `s10pdyn_*`, `s10psum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + builtin `mixer` | 2650 Hz, Q 1.4262 branch, `cr` 4.0, `al` −20 dBFS, `rt` 300 ms, branch gain 0.5849 | **active, and dynamic since 1 Sep 2026** — a parallel bandpass with a compressed branch, which is exactly a `bq_peaking` Q 1.2 whose Gain moves between about +2.3 and +4.0 dB. Anchored at the *fitted* +4.0 rather than frozen at the +3.0 the static version had to accept. Delivers **+0.73 dB** more at 2500 Hz than the static bell **and 22% less two-tone IMD**, confirmed on hardware | — |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → **LSP sidechain MULTIBAND comp** | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate, **band 0 only, split 1 kHz** | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress. **Multiband since 1 Sep 2026**: a cone has one displacement and it is a low-frequency quantity, so ducking 3 kHz was collateral, not protection | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −1.01 dBFS sample → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** — `th` pays for the sweep so `g_out` can spend | — |
@@ -219,7 +219,7 @@ Stages 10 to 13 are plain stereo in series.
              ● s10res_l/r   bq_peaking  760 Hz Q 3.0  -3.7 dB
              │                                 761 Hz cone resonance
              ● s10pbp_l/r   bq_bandpass 2650 Hz Q 1.4262
-             ● s10pdyn_l/r  compressor_mono  cr 2.0  al -22 dBFS
+             ● s10pdyn_l/r  compressor_mono  cr 4.0  al -20 dBFS  rt 300 ms
              ● s10psum_l/r  mixer  dry 1.0 + branch 0.5849
              │                                 presence, same A/B, now
              │                                 level-dependent: +2.3 to +4.0 dB
@@ -2407,6 +2407,8 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | Drivers not the binding constraint at the chain's own output | current | pass — **~20 dB of margin** at 800 Hz, the one frequency that compresses, on programme-level pink through the whole graph after the `g_out` 3.00 change |
 | Stage 11's `Hx` centre matches where the drivers actually run out | current | pass — 800 Hz measured, `Hx` peaks at 761 Hz; threshold sits 2.6 dB conservative |
 | Stage 10b is aimed at a real driver resonance | **session D, acoustic** | pass — with the source file on both devices the driver separates from the chain, and it peaks **+7.8 dB at 800 Hz** re its own 1.6–4 kHz plateau. The chain cuts 12.8 dB there and the acoustic result matches the iPhone to **−0.2 dB**. First confirmation on material 10b was not tuned on |
+| Every signal under the ceiling, `g_out` 3.80 + the 1.65 dB `mk` trim + multiband stage 11 | **current** | pass — worst **−0.791 dBTP** (sweep), **0.591 dB spare**, on a six-signal set including three real masters. The row below it stops at `g_out` 3.40 because this one was measured but never written down; it is the shipped configuration. True peak has **stopped being the binding constraint** — it stays flat as `g_out` rises because the brickwall pins it, and what binds now is displacement: 3.80 spends **0.5 dB** of the 2.6 dB between stage 11's threshold and the driver's measured 1 dB compression point. Confirmed on hardware at the time of the change: music1 +0.48 LU measured against +0.52 predicted, tilt −0.47 against −0.46 |
+| Displacement, not peak, is what a loudness change costs | **current** | measured — 1/f⁴-weighted 20–500 Hz on the shipped chain: music1 **−7.60**, music2 −6.73, pink-prog −0.55, square100 −14.89, sweep +4.44. `g_out` 4.25 is available and **not taken**: +0.97 LU for **1.16 dB** of displacement, half the remaining cone margin. Do not take it without re-running `tools/max-level.sh` |
 | Stage 10c dynamic rebuild is the same filter when disarmed | **current, offline** | pass — at `cr` 1.0 with branch gain 0.4125 the parallel construction renders **identical LUFS, sample peak and true peak on all five signals**, and the bell node itself nulls at **−99.4 dB rms**. The identity `dry + k·bandpass ≡ bq_peaking`, `k = 10^(G/20)−1`, `Q_bp = 10^(G/40)·Q_pk`, holds to **9.6e-15 dB** analytically |
 | A null test cannot be run through the limiter on a full-scale sweep | **current, offline** | **noted, and it is not a defect** — the disarmed rebuild nulls at −111 to −115 dBFS on all real programme but only **−49.2 dBFS on the sweep**, all of it after t = 18 s, which is 2.6 kHz on a log sweep. A −99 dB perturbation at the bell flips gain trajectories in stages 11–12. Every *metric* is unchanged, so the residual is trajectory jitter, not a level error. Read metrics, not nulls, downstream of a limiter |
 | Stage 10c dynamic beats the static bell on presence AND distortion | **current, offline + hardware** | pass — the point of the change. `b2500` on music1 **10.18 → 10.91 dB** (+0.73, i.e. 77% of the fitted +4.0's delivery) while SMPTE IMD at −3 dBFS falls **5.202% → 4.053%** and at −6 dBFS is unchanged at 0.075%. The static +4.0 buys +0.95 dB for **0.323%** at −6 dBFS, 4.3× worse. **Not every armed row passes**: `al` −18 reads 5.330%, worse than the filter it replaces, which is why the shipped value sits two steps back from it |
@@ -3590,8 +3592,32 @@ sidebands to the 5th order:
 | +4.0 static (the fit) | 11.13 | 0.323 | 7.536 |
 | `al` −18, `cr` 2.0 | 11.09 | 0.075 | **5.330 — fails** |
 | `al` −20, `cr` 2.0 | 11.02 | 0.075 | 4.656 |
-| **`al` −22, `cr` 2.0 — taken** | **10.91** | **0.075** | **4.053** |
+| `al` −22, `cr` 2.0 | 10.91 | 0.075 | 4.053 |
 | `al` −24, `cr` 2.0 | 10.76 | 0.075 | 3.548 |
+
+Then **`cr` and `rt` were swept too, and that changes the answer.** A higher
+ratio lets the threshold go back up, because it leaves quiet material alone for
+longer and clamps harder once it does engage. Modulation is p95−p5 of the
+2–4 kHz gain on the clipped stress fixture — the instrument a ratio change has to
+answer to, since IMD does not see pumping:
+
+| variant | `b2500` | IMD −3 | modulation |
+|---|---|---|---|
+| +3.0 static | 10.18 | 5.202 | 8.895 |
+| `cr` 2.0, `al` −22, `rt` 150 | 10.91 | 4.053 | 9.152 |
+| `cr` 3.0, `al` −20 | 10.99 | 3.900 | — |
+| `cr` 3.0, `al` −18 | 11.07 | 4.695 | — |
+| `cr` 4.0, `al` −18 | 11.07 | 4.388 | — |
+| `cr` 4.0, `al` −20, `rt` 150 | 10.97 | 3.581 | 9.194 |
+| **`cr` 4.0, `al` −20, `rt` 300 — taken** | **10.93** | **3.580** | **9.093** |
+| `cr` 6.0, `al` −18 | 11.06 | 4.119 | — |
+
+The shipped row is the only one that improves on `cr` 2.0 in **all three columns
+at once**: the same presence to 0.02 dB, 12% less intermodulation, and *less*
+gain modulation than the setting it replaces — 9.093 against 9.152, where the
+static filter it ultimately replaces reads 8.895. A slower release buys that
+last column; `rt` 150 at the same `cr` and `al` reads 9.194, the worst of the
+three. True peak is unmoved at −0.791 dBTP on the sweep.
 
 **These are not the numbers this stage was first fitted on.** The first sweep ran
 through a harness bug — see *The harness was feeding mono plugins a stereo pair*
@@ -3599,10 +3625,10 @@ below — which flattered every aggressive row. `al` −18 looked like it passed
 does not: at 5.330 it is *worse* than the static filter it replaces, which is the
 one thing this change is not allowed to be.
 
-−22 is taken rather than −20. Both pass, but −20 sits directly against the
-failing row for 0.11 dB of presence, where −22 doubles the distortion margin:
-22% below the static bell against 10%. That is the same trade that took +3.0
-over +4.0 in the first place. It still delivers 77% of the fitted gain.
+With `cr` fixed at 2.0, −22 was taken over −20, because −20 sat directly against
+the failing row. The ratio sweep above supersedes that: at `cr` 4.0 the
+threshold returns to −20 with *lower* distortion than `cr` 2.0 reached at −22.
+The shipped setting delivers 79% of the fitted gain.
 
 The delivery is level-dependent by construction, which is visible in the band
 table: music1 gets **+0.73 dB** at 2500 Hz and the louder music2 gets **+0.34**,
@@ -3625,6 +3651,22 @@ old:
 | music1, worst below 1 kHz | 0.08 dB | **0.08 dB** |
 | music2, 2500 Hz | +0.35 dB | **+0.34 dB** |
 | music2, worst below 1 kHz | 0.04 dB | **0.04 dB** |
+
+**Read the constants on that table.** It was taken at `cr` 2.0 / `al` −22 /
+`rt` 150, before the ratio sweep moved them. What it confirms is the
+*architecture* — that a parallel bandpass with a compressed branch behaves on
+hardware exactly as the harness says, that the delivered bell is the intended
+shape, and that nothing below 1 kHz moves. At the shipped constants the same
+excerpts predict **+0.74 dB** (music1) and **+0.30** (music2) at 2500 Hz, with
+0.08 and 0.03 below 1 kHz — inside the 0.23 dB capture repeatability of the
+music1 pair, and a 0.04 dB move on music2.
+
+Those predictions are not hardware-confirmed and do not need to be by capture:
+the same session established that this harness reproduces the installed graph to
+**0.00 dB in every third-octave band**, verified again after the install. What
+is *not* covered is a listening pass — no A/B by ear has been done on this stage
+at any setting, which is a gap this repo has never shipped a voicing change with
+before.
 
 Sample peak on hardware is **−1.012 dBFS** on both chains, the figure the offline
 harness predicts exactly. Capture repeatability, same sink twice, is **0.00 dB**
