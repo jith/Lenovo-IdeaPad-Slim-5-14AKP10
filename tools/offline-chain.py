@@ -326,11 +326,11 @@ def self_test():
     # hardcoded on purpose: they are the guard that catches a node added to the
     # config and not to the stage table.
     nodes, links = parse_config(CONFIG)
-    check("node count", len(nodes), 102, 0)
-    check("link count", len(links), 190, 0)
+    check("node count", len(nodes), 106, 0)
+    check("link count", len(links), 196, 0)
     check("bq_raw coefficients parsed", nodes["s2lt_l"]["control"]["b0"], 0.9618034723, 1e-9)
-    for name in ("s0trim_l", "s2lt_l", "s10mbc", "s10res_l", "s10pres_l",
-                 "s11xcur", "s12lp_l", "s12brick"):
+    for name in ("s0trim_l", "s2lt_l", "s10mbc", "s10res_l", "s10pbp_l",
+                 "s10pdyn_l", "s10psum_l", "s11xcur", "s12lp_l", "s12brick"):
         check(f"{name} present", 1.0 if name in nodes else 0.0, 1.0, 0)
 
     # Run the whole graph with the LSP stages bypassed. This does not check the

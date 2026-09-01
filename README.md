@@ -47,7 +47,7 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
 | 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` +11.60 dB, `mk_2` **0.00 dB**, `mk_3` −0.17 dB, `mk_4` −3.15 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −1.65 dB taken 1 Sep 2026 to hold that tilt when stage 11 went multiband; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
 | 10b | Resonance notch | `s10res_*` | builtin `bq_peaking` | 760 Hz, Q 3.0, **−3.7 dB** | **active** — since 14 Aug 2026 the *second and last* instrument aimed at the 761 Hz resonance, after stage 2. Deepened from −3.0 to absorb `mk_2`'s share so that flat band cut could be removed. Stages 11–12 hand some back | — |
-| 10c | Presence lift | `s10pres_*` | builtin `bq_peaking` | 2650 Hz, Q 1.2, +3.0 dB | **active** — finishes what `mk_3` started against the iPhone 13. Delivers +2.6 to +2.8 dB on programme. Sized below its own fit (+4.0) for two-tone IMD margin | — |
+| 10c | Presence lift | `s10pbp_*`, `s10pdyn_*`, `s10psum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + builtin `mixer` | 2650 Hz, Q 1.4262 branch, `cr` 2.0, `al` −20 dBFS, branch gain 0.5849 | **active, and dynamic since 1 Sep 2026** — a parallel bandpass with a compressed branch, which is exactly a `bq_peaking` Q 1.2 whose Gain moves between about +2.3 and +4.0 dB. Anchored at the *fitted* +4.0 rather than frozen at the +3.0 the static version had to accept. Delivers +0.67 dB more at 2500 Hz than the static bell **and 29% less two-tone IMD** | — |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → **LSP sidechain MULTIBAND comp** | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate, **band 0 only, split 1 kHz** | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress. **Multiband since 1 Sep 2026**: a cone has one displacement and it is a low-frequency quantity, so ducking 3 kHz was collateral, not protection | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −1.01 dBFS sample → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** — `th` pays for the sweep so `g_out` can spend | — |
@@ -216,10 +216,13 @@ Stages 10 to 13 are plain stereo in series.
              │           mk_2 = 0.89 (-1.01 dB), mk_3 = 1.41 (+2.98 dB)
              │                                 -- voicing, from the iPhone A/B
              │
-             ● s10res_l/r   bq_peaking  760 Hz Q 3.0  -3.0 dB
+             ● s10res_l/r   bq_peaking  760 Hz Q 3.0  -3.7 dB
              │                                 761 Hz cone resonance
-             ● s10pres_l/r  bq_peaking 2650 Hz Q 1.2  +3.0 dB
-             │                                 presence, same A/B
+             ● s10pbp_l/r   bq_bandpass 2650 Hz Q 1.4262
+             ● s10pdyn_l/r  compressor_mono  cr 2.0  al -20 dBFS
+             ● s10psum_l/r  mixer  dry 1.0 + branch 0.5849
+             │                                 presence, same A/B, now
+             │                                 level-dependent: +2.3 to +4.0 dB
              │           fixed corrections, after GOTT so no band makeup
              │           can drift them, before 11 so its detector sees
              │           them, before 12 so the brickwall keeps the ceiling
@@ -2404,6 +2407,14 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | Drivers not the binding constraint at the chain's own output | current | pass — **~20 dB of margin** at 800 Hz, the one frequency that compresses, on programme-level pink through the whole graph after the `g_out` 3.00 change |
 | Stage 11's `Hx` centre matches where the drivers actually run out | current | pass — 800 Hz measured, `Hx` peaks at 761 Hz; threshold sits 2.6 dB conservative |
 | Stage 10b is aimed at a real driver resonance | **session D, acoustic** | pass — with the source file on both devices the driver separates from the chain, and it peaks **+7.8 dB at 800 Hz** re its own 1.6–4 kHz plateau. The chain cuts 12.8 dB there and the acoustic result matches the iPhone to **−0.2 dB**. First confirmation on material 10b was not tuned on |
+| Stage 10c dynamic rebuild is the same filter when disarmed | **current, offline** | pass — at `cr` 1.0 with branch gain 0.4125 the parallel construction renders **identical LUFS, sample peak and true peak on all five signals**, and the bell node itself nulls at **−99.4 dB rms**. The identity `dry + k·bandpass ≡ bq_peaking`, `k = 10^(G/20)−1`, `Q_bp = 10^(G/40)·Q_pk`, holds to **9.6e-15 dB** analytically |
+| A null test cannot be run through the limiter on a full-scale sweep | **current, offline** | **noted, and it is not a defect** — the disarmed rebuild nulls at −111 to −115 dBFS on all real programme but only **−49.2 dBFS on the sweep**, all of it after t = 18 s, which is 2.6 kHz on a log sweep. A −99 dB perturbation at the bell flips gain trajectories in stages 11–12. Every *metric* is unchanged, so the residual is trajectory jitter, not a level error. Read metrics, not nulls, downstream of a limiter |
+| Stage 10c dynamic beats the static bell on presence AND distortion | **current, offline** | pass — the point of the change. `b2500` on music1 **10.18 → 10.85 dB** (+0.67, i.e. 71% of the fitted +4.0's delivery) while SMPTE IMD at −3 dBFS falls **5.307% → 3.770%** and at −6 dBFS is unchanged at 0.072%. The static +4.0 buys +0.95 dB for **0.280%** at −6 dBFS, 3.9× worse. Every armed row in the `al`/`cr` sweep beats the static +3.0 on both axes at once |
+| The dynamic bell is keyed on 2.6 kHz, not on the bass | **current, offline** | pass, and it is why no cross-band ducking is introduced — measured branch level (5 ms RMS): the two-tone stress signals sit at **−15.3 and −12.3 dBFS** where music1's p99 is −19.7 and music2's is −14.8. A detector that only ever looks at 2.6 kHz already separates the stress case from programme by 5–12 dB, so `al` = −20 dBFS reaches it without a bass sidechain |
+| The dynamic bell changes nothing but the band it is aimed at | **current, offline** | pass — third-octave against the static bell, worst change **outside 1.6–4 kHz is +0.23 dB** (music1, 5 kHz — the bell's own skirt) and **+0.09** (music2). Below 1 kHz nothing moves more than **0.02 dB** |
+| The dynamic bell does not pump | **current, offline** | pass — README's gain-modulation instrument on music2 pushed to −6.8 LUFS and clipped, 2–4 kHz, 5 ms envelopes: sd **2.923 → 2.968**, p95−p5 **8.890 → 9.106**. 2.4% more spread, against the 2% the static +4.0 was accepted for — and this buys 29% *less* IMD, which that did not |
+| The dynamic bell costs no headroom and no THD | **current, offline** | pass — true peak **−0.996 → −0.996** (music1), −0.917 → −0.903 (music2), −0.789 → −0.791 (sweep); sample peak unchanged. THD 90 Hz **7.05 → 7.05%**, 400 Hz 1.38 → 1.40, 1 kHz and 2650 Hz unchanged. Latency unchanged: two biquads and a mixer are 0, and `compressor_mono` at `sla = 0` measures **0.00 ms** |
+| The dynamic rebuild loads in the real filter-chain module | **current** | pass — isolated `pipewire` daemon, `PIPEWIRE_DEBUG=3`: `loaded module libpipewire-module-filter-chain`, all twelve new links resolved by name, **zero errors** and no leftover `s10pres`. Not yet run on hardware |
 | Stage 10c closes the gap it was built for | **session D, acoustic** | pass — **+0.2 dB** at 2500 Hz and +0.5 at 3150 against the iPhone. Read as "matched": both are inside the 1.4 dB re-setup repeatability, not resolved to 0.2 dB |
 | The 400–630 Hz excess is not a defect | **session D, acoustic + listening** | pass, and **tested** — the iPhone reads 6–12 dB quieter there, but the driver has no resonance at 500 Hz and both curves are clean rolloffs differing only in knee. A −5 dB bell at 500 Hz Q 1.6 was built as a separate `-TEST` sink, verified end to end (delivering −2.9 dB acoustically, nothing above 1.25 kHz moving, no headroom cost) and A/B'd. **The uncut chain won.** Do not re-propose it |
 | The chain is time-coherent | **session D, offline** | pass — group delay flat within **2.2 ms** from 50 Hz to 12.5 kHz on a −46 dBFS impulse, the one excursion being −1.3 ms at 800 Hz where 10b's notch is. Impulse energy spreads 0.1 ms |
@@ -2654,6 +2665,7 @@ the config rather than a transcription of it, so none of it can quietly drift.
 | `tools/lt-coeffs.py` | Linkwitz transform coefficients for stage 2, with `--self-test`. |
 | `tools/sweep-response.py` | Response curve, `fc` and `Qtc` from a mic capture. Needs `--reference` or the numbers tilt. |
 | `tools/measure-speaker.sh` | Plays the sweep and captures it on Mic2. |
+| `tools/imd.py` | SMPTE intermodulation, 60 + 2650 Hz at 4:1, sidebands to the 5th order. The instrument stage 10c is sized on — single-tone THD cannot see the limiter's bass-rate pumping at all. Compare only against numbers from this script. |
 | `tools/max-level.sh`, `tools/max-level.py` | Drives the raw sink with sine bursts at rising levels and reads the mic, to find where the *drivers* distort. `--ref` brackets every test level with a reference one, which is what it takes to resolve 1 dB. |
 | `tools/make-test-material.sh` | Synthesises pink, sweep and square; `--music` ingests your own tracks. |
 | `tools/null-test.sh`, `tools/null_residual.py` | Capture both paths and measure what the chain changed. |
@@ -3527,6 +3539,75 @@ sink:
 Agreement to 0.01 dB on tilt and 0.04 LU on loudness. The band table shows
 exactly the intended shape — bass and low-mid up 0.4–0.5 dB, presence flat to
 0.03 dB — which is what "louder at held voicing" is supposed to look like.
+
+### The presence lift went dynamic, and stopped having to choose
+
+Stage 10c shipped at **+3.0 dB when its own fit wanted +4.0**, and the reason was
+never the fit — it was a two-tone knee. A 60 Hz sine carrying most of the
+amplitude drives stage 12 into periodic gain reduction at 60 Hz, which
+amplitude-modulates everything else present, and raising 2650 Hz gave it more to
+modulate. A *static* filter has to pay that margin at every level, including the
+overwhelming majority of the time when no such signal exists.
+
+**The rebuild is an identity, not an approximation.** A parallel bandpass
+reproduces a peaking filter exactly:
+
+```
+dry + k · bandpass(f0, Q_bp)  ≡  bq_peaking(f0, Q_pk, G)
+      k = 10^(G/20) − 1        Q_bp = 10^(G/40) · Q_pk
+```
+
+verified to **9.6e-15 dB** at 2650/1.2/+3.0. So the branch gain *is* the bell's
+Gain control, and a compressor on the branch is a dynamic EQ. `Q_bp` is frozen at
+the +3.0 value (1.4262) and only `k` moves; the peak gain stays exact at every
+setting and the worst shape error over +1 to +4 dB is **0.113 dB**.
+
+**It is keyed on 2.6 kHz, not on the bass**, even though bass is what triggers
+the knee. Keying on bass would be cross-band ducking, which the multiband stage
+11 change exists to remove — and it is unnecessary, because the branch level
+already separates the two cases:
+
+| signal | p50 | p90 | p99 | max |
+|---|---|---|---|---|
+| music1 | −32.4 | −24.0 | −19.7 | −16.5 |
+| music2 | −25.8 | −18.7 | −14.8 | −10.8 |
+| `imd60_2650_6` | −15.3 | −15.3 | −15.3 | −15.3 |
+| `imd60_2650_3` | −12.4 | −12.3 | −12.3 | −12.3 |
+
+A bare 2650 Hz sine concentrates in this bandpass where broadband music spreads,
+so the stress signals read **5 to 12 dB hotter in the branch than programme
+does**. A detector that only ever looks at 2.6 kHz reaches them.
+
+`al` and `cr` swept with the branch anchored at the fitted +4.0. `b2500` is
+delivered third-octave at 2500 Hz on music1; IMD is SMPTE 60 + 2650 Hz at 4:1,
+sidebands to the 5th order:
+
+| variant | `b2500` | IMD −6 dBFS | IMD −3 dBFS |
+|---|---|---|---|
+| +3.0 static (what shipped) | 10.18 | 0.072 | 5.307 |
+| +4.0 static (the fit) | 11.13 | 0.280 | 7.474 |
+| `al` −18, `cr` 2.0 | 10.97 | 0.072 | 4.353 |
+| **`al` −20, `cr` 2.0 — taken** | **10.85** | **0.072** | **3.770** |
+| `al` −22, `cr` 2.0 | 10.67 | 0.072 | 3.308 |
+| `al` −24, `cr` 3.0 | 10.27 | 0.072 | 2.155 |
+
+**Every armed row beats the static +3.0 on both axes at once**, which is the
+whole reason this is worth four extra nodes: the static bell had to trade
+presence against intermodulation and this one does not. −20/2.0 takes 71% of the
+fitted gain and still reads 29% *less* IMD at −3 dBFS than the filter it
+replaces. The more conservative of the two top rows is taken, for the same
+reason +3.0 was taken over +4.0 in the first place.
+
+The delivery is level-dependent by construction, which is visible in the band
+table: music1 gets **+0.67 dB** at 2500 Hz and the louder music2 gets **+0.20**,
+because its branch sits further into the compressor. The lift is spent where
+there is room for it.
+
+Note the IMD figures here are from a scratch instrument and do not share a scale
+with the ones recorded under *What a boost costs that a cut does not* — the
+comparisons above are internally consistent, not comparable across sections.
+
+**Not yet on hardware.** Everything above is `tools/offline-chain.py`.
 
 ### The rest of the modern-dynamics survey, and why the budget decides it
 
