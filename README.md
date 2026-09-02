@@ -46,7 +46,7 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.6`, `Gain 3 = 0.06` | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
 | 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` +11.60 dB, `mk_2` **0.00 dB**, `mk_3` −0.17 dB, `mk_4` −3.15 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −1.65 dB taken 1 Sep 2026 to hold that tilt when stage 11 went multiband; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
-| 10b | Resonance notch | `s10res_*` | builtin `bq_peaking` | 760 Hz, Q 3.0, **−3.7 dB** | **active** — since 14 Aug 2026 the *second and last* instrument aimed at the 761 Hz resonance, after stage 2. Deepened from −3.0 to absorb `mk_2`'s share so that flat band cut could be removed. Stages 11–12 hand some back | — |
+| 10b | Resonance notch | `s10rbp_*`, `s10rdyn_*`, `s10rneg_*`, `s10rsum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + `invert` + `mixer` | branch 760 Hz Q 1.4262 → **Qbp 2.4245**, anchor **−5.5 dB** (`Gain 2` = 0.4691156), `cr` **1.0** | **active** — since 14 Aug 2026 the *second and last* instrument aimed at the 761 Hz resonance, after stage 2. **Rebuilt as a parallel bandpass 2 Sep 2026 and deepened −3.7 → −5.5**, which is where the frozen Qbp runs out and close to the 4.7 dB residual the A/B measured. The branch compressor is a **wire, by measurement** — both directions were swept and neither has a job, because stages 11–12's give-back is keyed on broadband level, not on 760 Hz | — |
 | 10c | Presence lift | `s10pbp_*`, `s10pdyn_*`, `s10psum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + builtin `mixer` | 2650 Hz, Q 1.4262 branch, `cr` 4.0, `al` −20 dBFS, `rt` 300 ms, branch gain 0.5849 | **active, and dynamic since 1 Sep 2026** — a parallel bandpass with a compressed branch, which is exactly a `bq_peaking` Q 1.2 whose Gain moves between about +2.3 and +4.0 dB. Anchored at the *fitted* +4.0 rather than frozen at the +3.0 the static version had to accept. Delivers **+0.73 dB** more at 2500 Hz than the static bell **and 22% less two-tone IMD**, confirmed on hardware | — |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → **LSP sidechain MULTIBAND comp** | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate, **band 0 only, split 1 kHz** | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress. **Multiband since 1 Sep 2026**: a cone has one displacement and it is a low-frequency quantity, so ducking 3 kHz was collateral, not protection | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
@@ -96,10 +96,12 @@ All fourteen stages and what each one is for. Node-level detail follows below.
                                 The only loudness lever in the chain, and
                                 via mk_2/mk_3 a voicing control too:
                                 -1.01 dB at 120-1k, +2.98 dB at 1-6k
-        [10b] resonance notch   bq_peaking 760 Hz Q3.0 -3.0 dB
-        [10c] presence lift     bq_peaking 2650 Hz Q1.2 +3.0 dB
-                                both fixed, both from the iPhone 13 A/B,
-                                both after GOTT so no makeup can drift them
+        [10b] resonance notch   parallel bandpass, anchor -5.5 dB
+                                branch compressor inert (cr = 1.0)
+        [10c] presence lift     parallel bandpass, +2.3 to +4.0 dB
+                                branch compressor live (cr = 4.0)
+                                both from the iPhone 13 A/B, both after
+                                GOTT so no band makeup can drift them
          [11] excursion limit   sidechain = Hx displacement estimate
                                 (low-pass 761 Hz Q2.63), -3 dBFS 6:1
         [12a] band limit        low-pass 22 kHz Q0.707 -- first unblocked g_out
@@ -216,8 +218,12 @@ Stages 10 to 13 are plain stereo in series.
              │           mk_2 = 0.89 (-1.01 dB), mk_3 = 1.41 (+2.98 dB)
              │                                 -- voicing, from the iPhone A/B
              │
-             ● s10res_l/r   bq_peaking  760 Hz Q 3.0  -3.7 dB
-             │                                 761 Hz cone resonance
+             ● s10rbp_l/r   bq_bandpass 760 Hz Q 2.4245
+             ● s10rdyn_l/r  compressor_mono  cr 1.0 -- a wire, measured
+             ● s10rneg_l/r  invert
+             ● s10rsum_l/r  mixer  dry 1.0 - branch 0.4691156
+             │                                 761 Hz cone resonance,
+             │                                 -5.5 dB, delivering 2.8-4.0
              ● s10pbp_l/r   bq_bandpass 2650 Hz Q 1.4262
              ● s10pdyn_l/r  compressor_mono  cr 4.0  al -20 dBFS  rt 300 ms
              ● s10psum_l/r  mixer  dry 1.0 + branch 0.5849
@@ -3747,6 +3753,147 @@ and music2's carry none.
 cross-correlated at 0.137 and produced a spurious 0.66 dB at 50 Hz; re-captured,
 it aligned at 1.000 and the same band read 0.04. Two `pw-cat` playbacks do not
 start at the same offset, and a bad alignment looks like a bass anomaly.
+
+### The resonance notch went parallel, and the dynamics turned out to have no job
+
+Asked 2 Sep 2026, straight after an audit of what in this chain is still a
+fixed number: stage 10b was the **only static tonal correction left** in either
+chain. Everything else static is structural — trims, splits, the M/S matrix,
+the `Hx` detector shape, the 22 kHz band limit. So it was the one candidate,
+and stage 10c had just proved the pattern for converting one.
+
+It was converted, and the conversion was worth it. The **dynamics** were not,
+and that is the more useful half of the result.
+
+#### The identity holds for a cut, and the frozen Q reaches further than it looked
+
+Same identity 10c documents, negative `k`:
+
+```
+dry - |k| * bandpass(f0, Qbp)  ==  bq_peaking(f0, Qpk, G)
+   k   = 10^(G/20) - 1        Qbp = 10^(G/40) * Qpk
+```
+
+Verified to 4.4e-13 dB at 760/3.0/−3.7 against this file's own `_rbj` — the
+same order as the 3.3e-13 already recorded for it. With `Qbp` frozen at the
+−3.7 dB value, peak gain stays exact at every anchor and only the shape drifts.
+**Where the shape error lands is what decides how deep the anchor can go**, and
+the first pass here read the wrong column:
+
+| anchor | \|k\| | peak got | err in 500–1300 Hz | err outside |
+|---|---|---|---|---|
+| −3.7 | 0.3468694 | −3.700 | 0.000 | 0.000 |
+| −4.5 | 0.4043379 | −4.500 | 0.101 | 0.046 |
+| −5.0 | 0.4376587 | −5.000 | 0.182 | 0.081 |
+| **−5.5** | **0.4691156** | **−5.500** | 0.276 | **0.122** |
+| −6.0 | 0.4988128 | −6.000 | 0.382 | 0.167 |
+
+This chain's 0.13 dB "nothing else moves" bar was measured **out of band** — the
+largest third-octave change outside 500–1300 Hz. The frozen-Q error is
+overwhelmingly *inside* the notch, which is the notch coming out slightly the
+wrong width rather than leaking somewhere else. Out of band the bar holds to
+−5.5 and breaks at −6.0. Reading the middle column instead capped the anchor at
+−4.6 for an afternoon.
+
+#### The static value was under-correcting, not over-correcting
+
+The note this stage carried said the give-back from stages 11 and 12 was in the
+useful direction and the value should not be raised to compensate. Measuring
+what the notch actually **delivers** — chain with the branch, over chain with
+`Gain 2 = 0`, third-octave at 800 Hz — says the problem was the other way round:
+
+| anchor | music1 | music2 | pink-prog | square100 | sweep | music1 LUFS | dBTP |
+|---|---|---|---|---|---|---|---|
+| −3.7 (was shipped) | −2.18 | −2.50 | −2.82 | −1.50 | −1.85 | −9.98 | −0.995 |
+| −4.5 | −2.57 | −2.99 | −3.37 | −1.73 | −2.27 | −9.99 | −0.996 |
+| **−5.5 (shipped)** | **−3.00** | **−3.58** | **−4.01** | **−1.97** | **−2.79** | **−10.00** | **−0.998** |
+
+Against a measured acoustic residual of **4.7 dB**, −3.7 electrical was
+delivering 1.85–2.82. It was short everywhere, on every signal in the battery.
+
+And deepening it is free, which is what the file's own rule predicts: *test a
+boost for intermodulation and a cut for headroom*. Headroom: true peak
+−0.995 → −0.998 dBTP, sample peak pinned, 0.02 LU. Intermodulation, for
+completeness: 3.580 % → 3.565 % at −3 dBFS and 0.075 % → 0.075 % at −6 dBFS —
+a cut has nothing to modulate. `--bands` on music1 confirms it stays where it
+was aimed, the whole change inside 500–1300 Hz:
+
+```
+    500   +4.53 -> +4.46      1250   +4.91 -> +4.84
+    630   +0.69 -> +0.35      1600   +7.73 -> +7.71
+    800   -3.61 -> -4.43      2000   +9.33 -> +9.32
+   1000   +0.28 -> -0.03      2500  +10.93 -> +10.93
+```
+
+Largest change anywhere outside that window: **0.04 dB**. Tilt +6.29 → +6.26.
+
+#### Both directions of dynamics were swept, and neither has a job
+
+This is what the stage was rebuilt *for*, so it was measured properly. Anchor
+−5.5 throughout, delivered depth at 800 Hz:
+
+| branch setting | music1 | music2 | pink-prog | square100 | sweep |
+|---|---|---|---|---|---|
+| **`cr` = 1.0 — a wire** | −3.00 | −3.58 | −4.01 | −1.97 | −2.79 |
+| compressor, −16 dBFS 4:1 | −2.71 | −2.81 | −4.01 | −1.82 | −1.45 |
+| compressor, −12 dBFS 4:1 | −2.96 | −3.34 | −4.01 | −1.96 | −2.07 |
+| expander `em`=1 `er`=1.5 | −3.22 | −4.26 | −4.01 | −2.07 | −4.55 |
+| expander `em`=1 `er`=2.0 | −3.44 | −5.03 | −4.02 | −2.17 | −6.72 |
+
+A compressor only hands the anchor back. An expander only runs away on the
+sweep. **Neither flattens the row**, and the reason is the finding:
+
+> What makes the delivered depth programme-dependent is stages 11 and 12
+> handing part of any cut back, and their give-back is keyed on **broadband
+> level**, not on how much 760 Hz is present. `square100` gets the most back
+> because it drives the excursion limiter hardest — and no gain applied to a
+> 760 Hz branch can reach that.
+
+Which is also why 10c's conversion worked and this one's did not. A **boost**
+costs intermodulation at high level, so backing it off buys that cost back and
+the dynamics have something to trade. A **cut** has no such cost. The two
+stages look symmetrical in the config and are not symmetrical at all.
+
+The node stays, inert, for the reason the whole chain was built as a skeleton
+first: if stage 11 or 12 ever changes what it hands back, this becomes a value
+edit rather than a topology edit.
+
+#### Confirmed on hardware
+
+Both chains run side by side through the `-TEST` sink method, same session,
+same hardware, both virtual sinks at 100%, captured at the physical sink's
+monitor. `pink-prog` rather than music: the first attempt used `music1` and the
+out-of-band bands scattered ±0.2 dB, which is capture alignment and not
+spectrum — the same trap the `envb` change hit, and the same fix.
+
+| band | hardware | offline predicted | agreement |
+|---|---|---|---|
+| 500 Hz | −0.11 | −0.11 | −0.00 |
+| 630 | −0.45 | −0.45 | 0.00 |
+| **800** | **−1.17** | **−1.19** | **0.01** |
+| 1000 | −0.27 | −0.26 | −0.00 |
+| 1250 | −0.09 | −0.08 | −0.00 |
+
+Every band in the table agrees to 0.01 dB, and so does every band outside it.
+Largest hardware change anywhere outside 500–1300 Hz: **0.07 dB**, against the
+0.13 dB bar. The offline harness matching hardware exactly is not new — it has
+done so since the mono-plugin fix — but it is worth re-recording that it does so
+on a *topology* change and not only on a control value.
+
+#### The regression gate
+
+Set `Gain 2` to 0.3468694474, `Q` to 2.4244947873 and `cr` to 1.0, and the
+chain must reproduce the `bq_peaking` it replaced. On music1: residual
+**−120.0 dBFS, 106.6 dB below the signal**, worst sample difference 1.6e−05 —
+under a 16-bit LSB.
+
+Not bit-exact, and it cannot be. The branch takes one extra float32 round-trip
+through ffmpeg that the numpy biquad did not, and stages 10c, 11 and 12 amplify
+that at their gain decisions; `compressor_mono` at `cr` = 1.0 is otherwise
+exactly a wire, checked in isolation at 1.49e−08, which is float32 epsilon on
+that signal and nothing more. The harness itself is bit-deterministic — same
+config twice gives `array_equal` — so that floor is the structure, not run-to-run
+noise. Writing `k` and `Qbp` to four decimals rather than ten costs 7 dB of it.
 
 ### The harness was feeding mono plugins a stereo pair
 
