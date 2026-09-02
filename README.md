@@ -3572,6 +3572,80 @@ bass-triggered tilt control.
 static makeup restores the average but not the *pumping*. Same average voicing,
 mids that no longer move with the bass.
 
+##### The dynamic version was built, and a compressor cannot deliver it
+
+Attempted 2 Sep 2026, after the same audit that produced stage 10b's rebuild.
+Kept here so it is not re-proposed, because the *mechanism* checks out and only
+the instrument fails — which is exactly the shape of idea that gets tried twice.
+
+**The residual is real, and larger than the figure above.** That −0.66/+0.47
+was taken at `g_out` 3.40 / −1.19 dB. At the shipped 3.80 / −1.65, measured as
+the tilt each track lands at against the pre-multiband chain (broadband
+`sc_compressor_stereo`, `mk_3`/`mk_4` uncut at 1.1864/0.8414):
+
+| track | tilt now | pre-change | residual | stage 11 activity |
+|---|---|---|---|---|
+| pink-prog | +6.31 | +7.48 | **−1.18** | 28 |
+| music1 | +6.26 | +6.73 | −0.47 | 91 |
+| music2 | +8.72 | +8.19 | +0.53 | 220 |
+| square100 | +3.90 | +2.99 | **+0.91** | 838 |
+
+2.09 dB across the battery, 1.71 on real programme. "Activity" is % of 5 ms
+frames the `Hx` estimate spends over stage 11's threshold, times the mean
+excess. **It predicts the residual: r = +0.82, and the rank order is exact.**
+So the quantity that decides how much tilt comes back is not only real, it is
+already wired into the graph as stage 11's own sidechain.
+
+**Which makes the implementation nearly free.** Stage 11's band 1 — 1 kHz and
+up, the same region `mk_3`/`mk_4` trim — is already in the plugin and disabled
+only because `Hx` never reaches its −3 dBFS protection threshold. Give band 1
+its own lower threshold, `at_1` 500 ms / `rt_1` 2000 ms so it tracks material
+rather than beats, and it is "trim the top when the cone is working hard" at
+zero new nodes and zero added latency.
+
+**It passes the safety gate and still is not worth having.** Gain the chain
+applies to 2–4 kHz, 5 ms envelopes — the measure that licensed 10c:
+
+| | music1 sd | p95−p5 | music2 sd | p95−p5 |
+|---|---|---|---|---|
+| static payment | 3.364 | 8.434 | 3.223 | 9.383 |
+| band 1 live | 3.379 | 8.460 | 3.268 | 9.541 |
+
+No pumping reintroduced — the slow constants work. But the best any setting
+reaches is **1.47 dB of spread against 1.71**, and `music2` stays the outlier:
+
+| `scm` | `al_1` | `cr_1` | music1 | music2 | pink-prog | square100 | spread |
+|---|---|---|---|---|---|---|---|
+| Peak | −23 | 3.0 | +0.80 | +0.99 | −0.83 | +0.96 | 1.81 |
+| Peak | −16 | 3.0 | +1.06 | +1.83 | +0.34 | +1.17 | 1.48 |
+| Peak | −16 | 6.0 | +1.06 | +1.82 | +0.34 | +1.17 | 1.48 |
+| RMS | −23 | 3.0 | +0.79 | +0.93 | −0.53 | +0.99 | 1.53 |
+| RMS | −16 | 6.0 | +1.06 | +1.82 | +0.34 | +1.17 | 1.47 |
+
+**Why a compressor cannot do this job.** The correction wanted is 1.18 / 2.18 /
+0.47 / 2.56 dB — a **5.4× relative range on a 1–2 dB absolute amount**. A
+compressor ties those two together through its ratio, and both ends of the
+trade fail:
+
+- *Slow enough not to pump* → the detector settles near the mean level, gain
+  reduction saturates, and the ratio stops being a lever at all. `cr_1` 3.0 and
+  6.0 differ by 0.01 dB, and Peak and RMS give the same answer to two decimals.
+- *Low enough threshold to stay engaged* → differentiation returns, but tied to
+  a large absolute cut. At `al_1` −30 dB `cr_1` 4.0 the spread is **3.61** and at
+  −40 dB it is **7.08**, both far worse than doing nothing:
+
+| `al_1` | `cr_1` | music1 | music2 | pink-prog | square100 | spread |
+|---|---|---|---|---|---|---|
+| −30 | 2.0 | −0.60 | −1.16 | −3.19 | +0.42 | 3.61 |
+| −30 | 4.0 | −1.34 | −2.63 | −4.95 | +0.01 | 4.96 |
+| −40 | 2.0 | −4.78 | −5.92 | −8.43 | −1.35 | 7.08 |
+
+So the sentence above stands, and now it stands for a stated reason rather than
+for want of trying: **nothing static can put it back, and nothing dynamic that
+this plugin set offers can either.** Closing the last 1.47 dB needs an
+instrument whose output spread is independent of its output level — a per-track
+measurement, which is a daemon, which is the same wall `loud_comp` is behind.
+
 ### The loudness that bought, and what the cone paid for it
 
 Taken in the same change, and to be read as one setting with the trim above.
