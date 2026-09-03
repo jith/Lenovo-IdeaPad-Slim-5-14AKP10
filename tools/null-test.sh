@@ -43,8 +43,22 @@ shift
 # that pins the limiter. Passing paths is then only for adding music, and
 # note that in zsh an unquoted "$MAT" of several paths arrives as ONE argument:
 # use an array, or just take the default.
+#
+# The sweep here is sweep_quiet.wav (-18 dBFS), NOT sweep.wav. While stage 12's
+# limiter is engaging, the chain's output depends on where the input falls
+# relative to the processing block -- a one-sample shift moves it -21 dBFS --
+# so the -6 dBFS sweep FAILS at -18 to -20 dBFS on a graph that has not
+# changed. A default that always fails is worse than no default: it teaches
+# you to skim past failures, which is the one thing this script exists to stop.
+# The quiet sweep keeps the limiter idle and nulls at -80.5 dBFS.
+#
+# What that costs: the quiet sweep only checks the static filtering, because
+# anything quiet enough to null is too quiet to reach the dynamics. pink and
+# square100 are the ones that test the chain at full level. sweep.wav is still
+# there to be passed explicitly if you want to look at limiter behaviour -- it
+# just cannot be nulled. See README "Repeatability".
 [ $# -gt 0 ] || set -- tests/material/pink.wav \
-                       tests/material/sweep.wav \
+                       tests/material/sweep_quiet.wav \
                        tests/material/square100.wav
 
 require_node "$SINK_DSP"

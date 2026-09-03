@@ -2088,8 +2088,9 @@ tools/null-test.sh compare tests/captures/gout260
 tools/offline-chain.py --compare-dir tests/captures/gout260
 ```
 
-`null-test.sh` defaults to all three shipped signals, so there is no material
-list to get wrong. If you do pass paths from zsh, pass them as an array —
+`null-test.sh` defaults to `pink`, `sweep_quiet` and `square100`, so there is no
+material list to get wrong. Note the sweep in that list is the **quiet** one —
+`sweep.wav` cannot be nulled while the limiter engages, so it is not a default. If you do pass paths from zsh, pass them as an array —
 `MAT=(a.wav b.wav)` then `"${MAT[@]}"`. An unquoted `$MAT` holding several
 paths arrives as a single argument, because zsh does not word-split.
 
@@ -2364,10 +2365,16 @@ material at the ceiling** that breaks, which is exactly what a sweep is.
 the same input is byte-identical for both pink and sweep. The graph is
 deterministic; only the real-time partitioning of the input is not.
 
-**Practically:** null-test with `pink` and `square100`, which pass with 10 dB of
-margin. `sweep_quiet.wav` (−18 dBFS) is shipped for when a sweep-shaped check is
-wanted anyway — it nulls at −80.5 dBFS — but it only exercises the static
-filtering. A `sweep.wav` FAIL means nothing on its own now. A sweep quiet enough to null
+**Practically:** `null-test.sh` now defaults to `pink`, `sweep_quiet` and
+`square100`. `sweep.wav` was dropped from the defaults — a default that always
+fails teaches you to skim past failures, which is the one thing the script
+exists to stop. It can still be passed explicitly to look at limiter behaviour;
+it just cannot be nulled, and a `sweep.wav` FAIL means nothing on its own.
+
+`pink` and `square100` are the ones that test the chain at full level.
+`sweep_quiet` (−18 dBFS, nulls at −80.5 dBFS) only reaches the static
+filtering, because anything quiet enough to null is too quiet to drive the
+dynamics. A sweep quiet enough to null
 is also too quiet to exercise the stages worth testing, so this is a genuine
 loss of coverage rather than something to work around — the material that
 matters most is the material the method can no longer check.
