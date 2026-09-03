@@ -2556,11 +2556,25 @@ why a MacBook has no trouble here and this machine does.
 | Browser extension | Netflix audio is Widevine-protected; Web Audio gain cannot touch it |
 | 5.1 → stereo | measured 1.2–1.4 dB, and Brave already sends stereo — not the cause |
 | LADSPA (SC1–SC4, Dyson, limiters) | instantaneous detectors, same class as the above |
+| **Custom LV2: BS.1770 gated integrated autogain** | **built and it works** — converged to +10.01 dB against +10.00 expected, steady-state swing 0.03 dB, music untouched (0.0–0.7 dB swing vs LSP's 12.6–14.1); +8.5 dB on hardware. A/B'd against the plain chain and judged **no audible benefit**, so it was removed |
 
-**The only mechanism that would work is EBU R128 *integrated* loudness** —
-gated, averaged over minutes, so passages cannot move it. EasyEffects implements
-it (libebur128, selectable integrated window plus max-history). No installed LV2
-does. It needs a background service.
+**EBU R128 *integrated* loudness is the one mechanism that is not structurally
+broken** — gated, averaged over minutes, so passages cannot move it, and
+boost-only, so normal-loudness music asks for no gain and has nothing to pump.
+EasyEffects implements it (libebur128) as a background service. It was also
+implemented here directly as a ~220-line LV2 plugin, no service and no sudo:
+K-weighting designed for the running rate, 400 ms blocks at 75% overlap, −70
+LUFS absolute and −10 LU relative gating over a rolling 180 s window.
+
+**It worked, and it still was not worth keeping.** Every number came out right:
++10.01 dB applied against +10.00 expected, 0.03 dB steady-state swing, music
+through the full chain at +0.3 dB with LRA slightly *up*, +8.5 dB confirmed on a
+hardware capture. A/B'd against the plain chain it was judged to give no audible
+benefit, and it was removed. The lesson is not that the approach is wrong — it
+is that closing a 13.6 dB gap against a fixed limiter ceiling costs crest
+(15.3 → 12.8 dB here) no matter which mechanism spends it, and on this speaker
+that trade is not one worth making. Rebuild it from this paragraph if the
+question returns; do not re-derive it from scratch.
 
 **A caution recorded with it:** the crest figures above were first taken on
 `music2` attenuated to −27 LUFS, which turned out to be **9 dB less dynamic than
