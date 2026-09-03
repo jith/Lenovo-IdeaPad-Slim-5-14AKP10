@@ -42,6 +42,7 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 4 | Subband split | `s4lp_*`, `s4bp1..3_*` | `bq_lowpass` + 3× `bq_bandpass` | **f1 = 350 Hz**; centres 122.5 / 175 / 252 Hz, Q 2.0 | **active** | CN115442709B |
 | 5 | Harmonic generation | `s5pre1..3_*`, `s5h<band>x<order>_*` | `linear` pre-gain + `mult`, order n = x^n | pre-gain ×5, then orders 4/5/6, 3/4/5, 2/3/4 → 490–1008 Hz | **active** | CN115442709B, US5930373A |
 | 6 | Harmonic weighting | `s6w<band>x<order>_*`, `s6sum<band>_*` | `bq_peaking` per order | gain = ln(n)·R(f) scaled to +12 dB max | **active**, +1.9 to +12 dB | CN115442709B |
+| 0agc | Programme leveller | `s0agc` | LSP `autogain_stereo` | `level` −17.1 LUFS (s0trim-compensated), `tgrow_l`/`tfall_l` **10000 ms**, `max_amp` 12 | **active since 3 Sep 2026** — closes the platform loudness gap (Netflix/Hotstar ~−27 LUFS vs YouTube ~−14). +11.6 dB on film, 0 dB on normal programme. **Set the level with `spk-vol`, not the sink slider** — see below | — |
 | 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | −20 dBFS, 20:1 — levels the n-th power law | **active** | CN115442709B, US10382857 |
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.6`, `Gain 3 = 0.06` | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
@@ -2514,6 +2515,32 @@ level: the file is a stimulus played identically down both paths, so whatever
 is clipped in it is clipped the same way in both captures and cancels exactly
 in the null subtraction. Lowering the level would only move where the
 level-dependent stages sit.
+
+### The volume must be set downstream of the leveller
+
+Stage 0agc changed what the volume control has to be. A sink's own volume is
+applied **before** the graph, so the leveller sees it and undoes it — measured on
+−14 LUFS programme, moving the sink from 100% to 76% changed the output by
+**0.0 dB**. No `max_amp` rescues it: at a cap of 4 the slider is still only 38%
+effective *and* the film boost is nearly gone.
+
+`files/spk-vol` sets the level on the **device**, downstream of everything,
+where it is a plain attenuation the leveller cannot see — verified identical
+LUFS and dBTP at 100% and 76% on a hardware capture. `spk-vol --bind-keys` puts
+it on the volume keys and leaves GNOME's own bindings on the `<Ctrl>` variants
+as a way back. **The Settings slider is still the pre-graph one and will
+misbehave; use the keys.**
+
+Losing the pre-graph level-dependence costs nothing, which is measured rather
+than assumed: with the leveller in front, `--bands` is identical at 100/88/76%
+(bass +4.18 dB, presence +10.12, tilt +5.94). The compensation described under
+*Volume dependence* is already gone once anything levels the input.
+
+**What it costs.** On −27 LUFS film: −10.7 LUFS out, LRA 5.6, −0.918 dBTP — the
+gap closed with dynamics intact. On −14 LUFS programme: −9.3 LUFS (unchanged)
+but **LRA 4.0 → 2.8**. A slow leveller reduces long-term loudness variation by
+definition, so music gives up about 1.2 LU of it. That is the real price of
+merging this into the main chain rather than keeping it on a separate sink.
 
 ### Existing material is never overwritten
 

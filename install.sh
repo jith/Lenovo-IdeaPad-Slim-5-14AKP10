@@ -69,6 +69,7 @@ uninstall() {
         /etc/wireplumber/wireplumber.conf.d/53-hide-absent-tuned.conf \
         /usr/local/share/wireplumber/scripts/53-hide-absent-tuned.lua \
         /usr/local/bin/speaker-dsp \
+        /usr/local/bin/spk-vol \
         /usr/local/bin/external-dsp
 
     echo "Removed the system-wide Speaker DSP files."
@@ -143,6 +144,11 @@ install_filter() {
     install -D -m644 "$FILES_DIR/51-speaker-sink-priority.conf" "$PRIORITY_CONF_DEST"
     install -D -m644 "$FILES_DIR/hide-speaker-tuning.lua" "$HIDE_SCRIPT_DEST"
     install -D -m755 "$FILES_DIR/speaker-dsp" /usr/local/bin/speaker-dsp
+    # Sets the level on the DEVICE, downstream of the graph. The chain
+    # carries a leveller and a sink volume lands AHEAD of the graph, so a
+    # normal volume change is seen and undone. Bind the volume keys to it:
+    #   spk-vol --bind-keys
+    install -D -m755 "$FILES_DIR/spk-vol" /usr/local/bin/spk-vol
     install -D -m644 "$FILES_DIR/52-external-tuning.conf" \
         /usr/local/share/speaker-dsp/52-external-tuning.conf
     install -D -m644 "$FILES_DIR/52-external-target.conf" "$EXT_CONF_DEST"
