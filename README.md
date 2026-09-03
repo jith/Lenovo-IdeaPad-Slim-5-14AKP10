@@ -45,13 +45,13 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | −20 dBFS, 20:1 — levels the n-th power law | **active** | CN115442709B, US10382857 |
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.6`, `Gain 3 = 0.06` | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
-| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` +11.60 dB, `mk_2` **0.00 dB**, `mk_3` −0.17 dB, `mk_4` −3.15 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −1.65 dB taken 1 Sep 2026 to hold that tilt when stage 11 went multiband; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
+| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` +12.57 dB, `mk_2` **0.00 dB**, `mk_3` −0.61 dB, `mk_4` −3.59 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −2.09 dB, −1.65 of it taken 1 Sep 2026 to hold the tilt when stage 11 went multiband and the last −0.44 on 4 Sep 2026 to hold it again through `g_out` 3.80 → 4.25; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
 | 10b | Resonance notch | `s10rbp_*`, `s10rdyn_*`, `s10rneg_*`, `s10rsum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + `invert` + `mixer` | branch 760 Hz Q 1.4262 → **Qbp 2.4245**, anchor **−5.5 dB** (`Gain 2` = 0.4691156), `cr` **1.0** | **active** — since 14 Aug 2026 the *second and last* instrument aimed at the 761 Hz resonance, after stage 2. **Rebuilt as a parallel bandpass 2 Sep 2026 and deepened −3.7 → −5.5**, which is where the frozen Qbp runs out and close to the 4.7 dB residual the A/B measured. The branch compressor is a **wire, by measurement** — both directions were swept and neither has a job, because stages 11–12's give-back is keyed on broadband level, not on 760 Hz | — |
 | 10c | Presence lift | `s10pbp_*`, `s10pdyn_*`, `s10psum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + builtin `mixer` | 2650 Hz, Q 1.4262 branch, `cr` 4.0, `al` −20 dBFS, `rt` 300 ms, branch gain 0.5849 | **active, and dynamic since 1 Sep 2026** — a parallel bandpass with a compressed branch, which is exactly a `bq_peaking` Q 1.2 whose Gain moves between about +2.3 and +4.0 dB. Anchored at the *fitted* +4.0 rather than frozen at the +3.0 the static version had to accept. Delivers **+0.73 dB** more at 2500 Hz than the static bell **and 22% less two-tone IMD**, confirmed on hardware | — |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → **LSP sidechain MULTIBAND comp** | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate, **band 0 only, split 1 kHz** | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress. **Multiband since 1 Sep 2026**: a cone has one displacement and it is a low-frequency quantity, so ducking 3 kHz was collateral, not protection | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −1.01 dBFS sample → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** — `th` pays for the sweep so `g_out` can spend | — |
-| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left hot, by **4.71 LU** as re-measured at `g_out` 3.80 | ITU-R BS.1770 |
+| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left hot, by **5.20 LU** as re-measured at `g_out` 4.25 | ITU-R BS.1770 |
 
 ## Signal flow
 
@@ -2269,6 +2269,18 @@ about 1.1 dB of the margins in the table above, leaving roughly **20 dB at
 and the arithmetic is not close: nothing in this chain is limited by the
 speakers.
 
+**Re-run 4 Sep 2026, on the same grid, before taking `g_out` 4.25.** 800 Hz
+compresses **2.34 dB** at full scale against 2.35 here, 1 kHz **0.85** against
+0.82, and the 800 Hz 1 dB point interpolates to **−8.05 dBFS** against −8.1.
+The two load-bearing rows reproduce to 0.01 and 0.03 dB and the 1 dB point to
+0.05, so the driver has not changed and the margin quoted throughout this file
+is still the measured one. The rest of the grid moved by up to 0.37 dB, all of
+it inside the per-row reference scatter, which is what that column is for.
+One row is new rather than changed: **5 kHz reads 2.34 dB of compression at
+full scale with 1.33 dB of reference disagreement** — the noisiest row in the
+table, above scatter but not by much, and far above where displacement lives.
+It is recorded rather than acted on.
+
 **What would have to be true for this to be wrong.** The internal mic is
 uncalibrated and inside the chassis, so the absolute THD percentages are
 approximate. They are not load-bearing: compression is a level difference at
@@ -2724,8 +2736,8 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | Drivers not the binding constraint at the chain's own output | current | pass — **~20 dB of margin** at 800 Hz, the one frequency that compresses, on programme-level pink through the whole graph after the `g_out` 3.00 change |
 | Stage 11's `Hx` centre matches where the drivers actually run out | current | pass — 800 Hz measured, `Hx` peaks at 761 Hz; threshold sits 2.6 dB conservative |
 | Stage 10b is aimed at a real driver resonance | **session D, acoustic** | pass — with the source file on both devices the driver separates from the chain, and it peaks **+7.8 dB at 800 Hz** re its own 1.6–4 kHz plateau. The chain cuts 12.8 dB there and the acoustic result matches the iPhone to **−0.2 dB**. First confirmation on material 10b was not tuned on |
-| Every signal under the ceiling, `g_out` 3.80 + the 1.65 dB `mk` trim + multiband stage 11 | **current** | pass — worst **−0.791 dBTP** (sweep), **0.591 dB spare**, on a six-signal set including three real masters. The row below it stops at `g_out` 3.40 because this one was measured but never written down; it is the shipped configuration. True peak has **stopped being the binding constraint** — it stays flat as `g_out` rises because the brickwall pins it, and what binds now is displacement: 3.80 spends **0.5 dB** of the 2.6 dB between stage 11's threshold and the driver's measured 1 dB compression point. Confirmed on hardware at the time of the change: music1 +0.48 LU measured against +0.52 predicted, tilt −0.47 against −0.46 |
-| Displacement, not peak, is what a loudness change costs | **current** | measured — 1/f⁴-weighted 20–500 Hz on the shipped chain: music1 **−7.60**, music2 −6.73, pink-prog −0.55, square100 −14.89, sweep +4.44. `g_out` 4.25 is available and **not taken**: +0.97 LU for **1.16 dB** of displacement, half the remaining cone margin. Do not take it without re-running `tools/max-level.sh` |
+| Every signal under the ceiling, `g_out` 4.25 + the 2.09 dB `mk` trim + multiband stage 11 | **current** | pass — worst **−0.651 dBTP** (sweep), **0.451 dB spare**, on a seven-signal set including two real masters. True peak has **stopped being the binding constraint** — it stays flat as `g_out` rises because the brickwall pins it, and what binds now is displacement: 4.25 spends **1.16 dB** of the 2.6 dB between stage 11's threshold and the driver's measured 1 dB compression point. Confirmed on hardware at the time of the change: music1 +0.42 LU measured against +0.44 predicted, displacement +0.52 against +0.53, tilt held to 0.06 dB |
+| Displacement, not peak, is what a loudness change costs | **current** | measured by `displacement_db()` in `tools/offline-chain.py`, which `--measure` and `--sweep` both print. `g_out` 4.25 was **taken 4 Sep 2026** after re-running `tools/max-level.sh` as its own comment required: the driver's 800 Hz 1 dB point came back at **−8.05 dBFS** against the −8.1 recorded, so the margin is the same one the figure was derived from. About **1.0 dB of the 2.6 dB is left**, and the next step needs a new measurement rather than this one |
 | The external `lkahead` fix is live, not just written | **current** | pass — read back off the running `effect_input.tuned-wired` node: **`x2mbc:lkahead = 0.0`**, 14/14 controls matching the config. This is the *only* check that could confirm it: the harness is blind to port defaults, so the file saying `0.0` proves nothing on its own |
 | The installed external config differs from the repo, and should | **current** | pass — `52-external-tuning.conf` is **generated** per device class by `gen-external-chains.py`, so the installed file carries two chains and two `x2mbc`. The template at `/usr/local/share/speaker-dsp/` is byte-identical to the repo, and **both** generated chains carry `lkahead = 0.0`. A plain `diff` against `/etc` will always look wrong here |
 | An external chain with no device parks on the built-in speaker | **current** | pass, **by design** — both tuned chains link to `HiFi__Speaker__sink` when nothing external is connected. That is [52-external-target.lua](files/52-external-target.lua) working: without it PipeWire routes to the default sink, which is the *other* tuned sink, and the stream is processed twice by two differently-tuned chains |
@@ -3986,14 +3998,41 @@ matched tilt, against the chain as it stood before:
 | `g_out` | `mk` cut | music1 loudness | music1 displacement | music2 loudness | music2 displacement |
 |---|---|---|---|---|---|
 | 3.40 | −1.19 dB | −0.03 LU | +0.07 dB | +0.09 LU | +0.00 dB |
-| **3.80** | **−1.65 dB** | **+0.52 LU** | **+0.64 dB** | **+0.43 LU** | **+0.42 dB** |
-| 4.25 | −2.09 dB | +0.97 LU | +1.16 dB | +0.73 LU | +0.79 dB |
+| 3.80 | −1.65 dB | +0.52 LU | +0.64 dB | +0.43 LU | +0.42 dB |
+| **4.25** | **−2.09 dB** | **+0.97 LU** | **+1.16 dB** | **+0.73 LU** | **+0.79 dB** |
 
 Roughly **1 dB of displacement per 1 LU**, and the margin being spent is the
 2.6 dB between stage 11's threshold and the driver's measured 1 dB compression
-point. 3.80 spends 0.5 dB of that. 4.25 is available and is *not* taken here:
-half the margin for 1 LU is the wrong trade on a driver whose `x_max` is unknown.
-Do not take it without re-running `tools/max-level.sh`.
+point. 3.80 spends 0.5 dB of that.
+
+**4.25 was taken on 4 Sep 2026, and the gate was run first.** The instruction
+that stood here was not to take it without re-running `tools/max-level.sh`,
+because that margin is measured rather than assumed. It was re-run on the same
+grid, and the driver has not moved:
+
+| | 4 Sep 2026 | as recorded |
+|---|---|---|
+| 800 Hz compression at full scale | **2.34 dB** | 2.35 |
+| 1 kHz | 0.85 | 0.82 |
+| 800 Hz 1 dB point, interpolated | **−8.05 dBFS** | −8.1 |
+
+Everything else in the grid sits inside its own reference scatter, as it did
+before. **Confirmed on hardware**, captured at the physical sink either side of
+a live `pw-cli` change so that nothing else moved:
+
+| | predicted | measured |
+|---|---|---|
+| music1 loudness | +0.44 LU | **+0.42 LU** |
+| music1 displacement | +0.53 dB | **+0.52 dB** |
+| true peak | — | **−0.991 dBTP**, 0.791 dB inside the ceiling |
+| tilt | +0.03 dB | **−0.06 dB** |
+
+Worst true peak over a seven-signal battery is the sweep at −0.651 dBTP,
+0.451 dB inside the ceiling. **This spends 1.16 dB of the 2.6, leaving about
+1.0 dB — and the next step is not available on this reasoning.** Half a margin
+for 1 LU was the argument against 4.25 when there were 2.1 dB in hand; at 1.0 dB
+left it argues harder, not less. Anything above 4.25 needs a new measurement,
+not this one.
 
 What it costs elsewhere:
 
