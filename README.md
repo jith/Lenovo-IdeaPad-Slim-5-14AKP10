@@ -443,6 +443,14 @@ host went down**, and the shutdown log says which:
 ```
 
 The clean boot had no AVDTP errors at all and the receiver came back on its own.
+
+Note what that does *not* say. The trigger measured here is the **host going
+down** with a session open, and suspend is covered by the same teardown on
+reasoning rather than its own measurement. Restarting PipeWire or WirePlumber
+has never been shown to cause either fault -- a stack restart appears above only
+in the list of things that fail to *fix* one. Do not extend the rule to
+restarts without measuring it; `speaker-dsp-bt-disconnect` is armed for
+shutdown and suspend, and deliberately not for anything else.
 So `files/55-bt-disconnect` closes the session first: `ExecStop` on
 speaker-dsp-bt-disconnect.service, ordered After bluetooth.service so it runs
 while bluetoothd is still alive, and the same script as a sleep hook before a
