@@ -26,6 +26,13 @@ A 10.1 dB bass-to-presence tilt survived four tuning sessions that way -- two
 boosts, each measured alone, each nearly free alone, both pushing the same
 direction, sum never taken. --bands prints the total.
 
+AND JUDGE A BASS CHANGE ON DISPLACEMENT, NOT ON TILT. --measure and --sweep
+both print it. These drivers cannot radiate what they are asked for below about
+300 Hz, so extra bass energy is excursion, not sound, and a flatter tilt can be
+bought with excursion the cone has nowhere to put. `envb` looked free on tilt
+and cost up to 4.26 dB of displacement; it was shipped externally and not here.
+Absolute values mean nothing -- read the difference between two runs.
+
 ACCURACY, as checked by --verify: within 0.03 LU on integrated loudness, 0.04
 dB on g_out row-to-row deltas, and 1.5 percentage points on THD at 90 Hz. Trust
 it for differences. Confirm absolutes on hardware.
@@ -205,7 +212,8 @@ def process(x, nodes, links, verbose=False):
 
 def measure(y, tmp="/tmp/offline-chain-measure.wav", tone=None):
     write_wav(tmp, y)
-    row = {"lufs": lufs(tmp), "sample": sample_peak_db(y), "tp": true_peak_db(y)}
+    row = {"lufs": lufs(tmp), "sample": sample_peak_db(y), "tp": true_peak_db(y),
+           "disp": displacement_db(y)}
     if tone:
         row["thd"] = thd_percent(y, tone)
     return row
@@ -241,6 +249,39 @@ def band_power(x):
         sel = (freqs >= fc / 2 ** (1 / 6)) & (freqs < fc * 2 ** (1 / 6))
         out[fc] = acc[sel].sum() if sel.any() else np.nan
     return out
+
+
+# Displacement weighting reference. Arbitrary -- it sets where the metric reads
+# 0 dB and nothing else -- but it must not move, or two sessions' numbers stop
+# comparing. 1 kHz because that is what CENTRES is already anchored around.
+DISP_REF = 1000.0
+DISP_LO, DISP_HI = 20.0, 500.0
+
+
+def displacement_db(y):
+    """1/f^4-weighted OUTPUT power over 20-500 Hz. Differences only.
+
+    WHY THIS EXISTS. Tilt cannot judge a bass change on a driver that cannot
+    radiate bass. `envb` measured flatter on every music track and was shipped
+    nowhere near this chain, because the tonal improvement WAS the extra bass:
+    +1.39 to +4.26 dB of excursion the cone turns into heat rather than sound.
+    Cone displacement for constant drive falls as 1/f^2, so power falls as
+    1/f^4, and that weighting is the whole method.
+
+    ABSOLUTE VALUES ARE MEANINGLESS. band_power's FFT scaling and DISP_REF both
+    land in the constant, so only differences carry information -- which is the
+    only way README quotes it. A figure from this function compares to another
+    figure from this function and to nothing else.
+
+    It shares CENTRES and band_power with --bands deliberately. The ad-hoc
+    script these numbers first came from aggregated its own way and read tilt
+    6.89 where --bands said 6.08; two aggregations for one chain is how that
+    happens, and one function is the fix.
+    """
+    p = band_power(y)
+    acc = sum(p[fc] * (DISP_REF / fc) ** 4 for fc in CENTRES
+              if DISP_LO <= fc <= DISP_HI and np.isfinite(p[fc]))
+    return 10 * np.log10(acc)
 
 
 def bands(x, y):
@@ -319,6 +360,23 @@ def self_test():
     check("--bands sums both channels, not the mid",
           10 * np.log10(band_power(np.column_stack([probe[:, 0], -probe[:, 1]]))[100]
                         / pin[100]), 0.0, 0.05)
+
+    # Displacement: 1/f^4 means a tone an octave down weighs 16x, and two
+    # octaves down 256x. Checked as a DIFFERENCE, which is the only way the
+    # metric is ever read, and against the closed form rather than a stored
+    # number so a change to DISP_REF or to band_power cannot pass silently.
+    quiet = np.zeros((4 * RATE, 2))
+    tone50, tone200 = quiet.copy(), quiet.copy()
+    tt = np.arange(4 * RATE) / RATE
+    tone50[:, 0] = tone50[:, 1] = np.sin(2 * np.pi * 50 * tt)
+    tone200[:, 0] = tone200[:, 1] = np.sin(2 * np.pi * 200 * tt)
+    check("displacement: 50 Hz weighs (200/50)^4 over 200 Hz",
+          displacement_db(tone50) - displacement_db(tone200),
+          40 * np.log10(200 / 50), 0.15)
+    tone2500 = quiet.copy()
+    tone2500[:, 0] = tone2500[:, 1] = np.sin(2 * np.pi * 2500 * tt)
+    check("displacement ignores 2500 Hz, which is outside 20-500",
+          displacement_db(tone50 + tone2500) - displacement_db(tone50), 0.0, 0.05)
 
     # True peak: a 0 dBFS sine exactly at Nyquist/2 offset overshoots by a
     # known amount, and a DC signal cannot overshoot at all.
@@ -501,12 +559,14 @@ def main():
             nodes, links = build_graph(args.config, args.set + [f"{target}={v}"])
             row = measure(process(x, nodes, links), tone=args.tone)
             rows.append((v, row))
-        base = rows[0][1]["lufs"]
-        head = f"{target:<20} {'LUFS-I':>9} {'dLU':>7} {'sample':>9} {'true pk':>9}"
+        base, base_d = rows[0][1]["lufs"], rows[0][1]["disp"]
+        head = (f"{target:<20} {'LUFS-I':>9} {'dLU':>7} {'sample':>9} "
+                f"{'true pk':>9} {'disp':>9} {'dDisp':>8}")
         print(head + (f" {'THD%':>7}" if args.tone else ""))
         for v, r in rows:
             line = (f"{v:<20} {r['lufs']:9.2f} {r['lufs'] - base:+7.2f} "
-                    f"{r['sample']:9.3f} {r['tp']:9.3f}")
+                    f"{r['sample']:9.3f} {r['tp']:9.3f} "
+                    f"{r['disp']:9.2f} {r['disp'] - base_d:+8.2f}")
             print(line + (f" {r['thd']:7.2f}" if args.tone else ""))
         return 0
 
@@ -521,6 +581,8 @@ def main():
         print(f"  LUFS-I    {r['lufs']:.2f}")
         print(f"  sample pk {r['sample']:.3f} dBFS")
         print(f"  true pk   {r['tp']:.3f} dBTP")
+        print(f"  displace  {r['disp']:.2f} dB  1/f^4 20-500 Hz, "
+              f"differences only")
         if args.tone:
             print(f"  THD       {r['thd']:.2f} %")
         return 0

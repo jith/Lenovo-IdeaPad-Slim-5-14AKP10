@@ -1918,6 +1918,7 @@ so they are not tried again.
 | 8 | More harmonic injection | `Gain 3` 0.10 buys +0.02 LU for +65 % THD. It is a bass-perception control, not a loudness one. |
 | 9 | Widen above 300 Hz | `Gain 2` 1.6 = +2.32 LU, but only on fully decorrelated pink noise, and it raises peaks and moves the image. Not loudness. |
 | 10 | Lower the downward thresholds | −0.09 LU. Compression without makeup is just quieter. |
+| 10 | Raise `sf1`, so the hard threshold covers what actually moves the cone | **Rejected, and the port stops at 200 Hz.** +0.01 LU at matched displacement *and* tilt. See below. |
 | 10 | Per-band makeup instead of global | `mk_2,3` 1.6 = +2.42 LU with a −1.0/+3.3 dB tilt. It buys loudness by cutting bass, not for free. |
 | 10 | Upward compression | **Rejected — it fights the volume control.** See below. |
 | 12 | Raise the brickwall threshold | LUFS moves 0.01 dB across `th` 0.929 to 0.966. It is a ceiling, not a lever. |
@@ -1954,6 +1955,59 @@ there is nothing to relieve and removing the energy simply removes it:
 The same is true of every other way of freeing low-frequency headroom: raising
 stage 1, raising GOTT's `sf1` to 200 Hz, turning its band 1 down. All swept, all
 negative.
+
+**And `sf1` stays rejected once displacement is the bound, 4 Sep 2026.** That
+sweep was run against *true peak*, at `g_out` 2.40, when true peak was what
+bound the chain. It no longer is — see *The loudness that bought* — so the
+verdict was re-taken against displacement, the bound that binds now. It comes
+back the same, for two reasons that are independent of each other.
+
+**The port stops at 200 Hz.** `sf1` is declared `hasStrictBounds`, minimum 20,
+maximum 200. Values of 250, 280, 315, 350 and 400 all returned output identical
+to 200 — clamped silently, no warning. The argument for moving the split wants
+about 280 Hz, and **this plugin cannot go there at all.** That is the fourth
+GOTT port to behave differently from what the config appeared to say, after
+`ebe`, `ru_*` and `lkahead`; this one clamps rather than defaults, so the sweep
+looked like a curve flattening out rather than an error.
+
+**Inside the reachable range it converts displacement into tilt.** The mechanism
+is real — `square100`, the displacement tell, gives up 1.60 dB — but on music
+the return per dB of tonal damage halves at every step:
+
+| signal | `sf1` | ΔLU | Δ displacement | Δ tilt | dB displacement per dB tilt |
+|---|---|---|---|---|---|
+| music1 | 160 | −0.08 | −0.19 | +0.32 | 0.59 |
+| music1 | **200** | −0.14 | −0.26 | +0.52 | **0.35** |
+| music2 | 160 | −0.06 | −0.18 | +0.47 | 0.38 |
+| music2 | **200** | −0.12 | −0.23 | +0.73 | **0.19** |
+| square100 | 200 | −0.30 | **−1.60** | +1.84 | 0.87 |
+
+Read the last column, not the fourth. The displacement return is already
+saturating by 200 Hz while the tilt cost keeps accruing linearly, so a plugin
+that *could* split at 280 or 350 Hz would buy proportionally less displacement
+for proportionally more tilt. **That closes the escape route**: swapping stage
+10 for `mb_compressor_stereo`'s eight bands to reach past the bound is not worth
+doing for this.
+
+**Held honest on both axes it is worth nothing.** Re-spending the freed
+displacement on `g_out`, then paying the tilt back with the same `mk_3`/`mk_4`
+shelf the 1 Sep `g_out` move used:
+
+| configuration | ΔLU | Δ displacement | Δ tilt |
+|---|---|---|---|
+| **music1** — `sf1` 120, `g_out` 3.80 (shipped) | — | — | — |
+| `sf1` 200, `g_out` 4.00 — displacement matched | +0.11 | +0.00 | +0.69 |
+| + `mk` shelf −0.69 dB — tilt matched too | **+0.01** | +0.02 | +0.05 |
+| *for scale:* `sf1` 120, `g_out` 4.00 | **+0.23** | +0.24 | +0.20 |
+| **music2** — `sf1` 120, `g_out` 3.80 (shipped) | — | — | — |
+| `sf1` 200, `g_out` 4.00 | +0.06 | −0.05 | +0.88 |
+| + `mk` shelf −0.88 dB — tilt matched too | **−0.09** | +0.00 | +0.16 |
+| *for scale:* `sf1` 120, `g_out` 4.00 | **+0.17** | +0.16 | +0.17 |
+
+The *for scale* rows settle it: leaving the split alone and simply raising
+`g_out` beats the manoeuvre on every axis at once — more level, less tilt
+damage, and its displacement bought something. True peak never moved, staying
+within 0.03 dB of −0.998 on music1 and −0.905 on music2 across every row.
 
 **Stage 11 is working on ordinary music**, which the note at its node used to
 deny. Its extremes were all taken on the shipped test material, and
@@ -2930,7 +2984,7 @@ the config rather than a transcription of it, so none of it can quietly drift.
 
 | Tool | What it does |
 |---|---|
-| `tools/offline-chain.py` | Runs the installed graph over a wav without reinstalling. `--sweep` for parameter searches, `--measure` for LUFS / peaks / THD, `--self-test` for 23 checks that need no hardware. |
+| `tools/offline-chain.py` | Runs the installed graph over a wav without reinstalling. `--sweep` for parameter searches, `--measure` for LUFS / peaks / THD, both reporting **displacement**, `--self-test` for 32 checks that need no hardware. |
 | `tools/dsp_offline.py` | The machinery behind it: config parser, PipeWire builtins in numpy, LSP plugins through `ffmpeg -af lv2`, and the measurement functions. Imported, not run. |
 | `tools/true-peak.py` | Exact inter-sample peak, and `--compare` against the two ffmpeg meters that get it wrong. Exits non-zero above the ceiling, so it can gate a change. |
 | `tools/lt-coeffs.py` | Linkwitz transform coefficients for stage 2, with `--self-test`. |
@@ -3717,6 +3771,23 @@ weight the output power spectrum by 1/f⁴ over 20–500 Hz and compare. The til
 figures in this section come from that same script's own band aggregation and
 read baseline as 6.89 where `--bands` says 6.08; they are consistent with each
 other, not with the rest of this file.
+
+**That second aggregation is gone, 4 Sep 2026.** The metric is now
+`displacement_db()` in `tools/offline-chain.py`, sharing `CENTRES` and
+`band_power` with `--bands` so that one chain cannot have two band tables, and
+`--measure` and `--sweep` both print it. Absolute values are meaningless — the
+FFT scaling and `DISP_REF` land in a constant — so it is only ever read as a
+difference, which is how every figure above and below already uses it. The
+figures in this section predate the tool and are left as they were measured.
+
+**Checked against them before it was trusted.** Run over the shipped chain, the
+new function reproduces the spread of the displacement table in *The loudness
+that bought* to **0.05 dB** on music1→music2 and **0.17 dB** on
+music1→square100. `pink-prog` and `sweep` come back 1.8–2.2 dB off, and that is
+the material rather than the metric: both files were regenerated on 3 Sep 2026
+when the pink noise went to `sox -R` and the null test moved to the quiet sweep,
+so they are no longer the signals that table was taken on. The two real masters
+are, and they agree.
 
 ### Excursion protection went multiband, and the mids stopped ducking
 
