@@ -2542,11 +2542,26 @@ than assumed: with the leveller in front, `--bands` is identical at 100/88/76%
 (bass +4.18 dB, presence +10.12, tilt +5.94). The compensation described under
 *Volume dependence* is already gone once anything levels the input.
 
-**What it costs.** On −27 LUFS film: −10.7 LUFS out, LRA 5.6, −0.918 dBTP — the
-gap closed with dynamics intact. On −14 LUFS programme: −9.3 LUFS (unchanged)
-but **LRA 4.0 → 2.8**. A slow leveller reduces long-term loudness variation by
-definition, so music gives up about 1.2 LU of it. That is the real price of
-merging this into the main chain rather than keeping it on a separate sink.
+**`qamp` is not optional.** With the 10 s constants alone, every loud→quiet
+transition took about twelve seconds to correct and the quiet side started
+~15 dB low — reported from real use as a fade-in on dialogue after an action
+scene, and plainly audible. Gain applied across a loud→quiet cut, at
+t = 0/3/5/8/12 s:
+
+| | 0 s | 3 s | 5 s | 8 s | 12 s |
+|---|---|---|---|---|---|
+| `qamp = 0` | **−4.57** | −1.09 | +1.37 | +4.96 | +9.61 |
+| `qamp = 1` | **+11.48** | +8.06 | +9.06 | +11.97 | +11.19 |
+
+It fixes the cold start with the same port (+11.55 dB at t = 0 against +0.57).
+
+**What it costs.** On −27 LUFS film: −9.8 LUFS out, LRA 4.1, −0.918 dBTP. On
+−14 LUFS programme: −8.7 LUFS, LRA 2.3. Turning `qamp` on reads as a dynamics
+loss (film LRA 5.6 → 4.1) but that number should not be taken at face value: a
+leveller lagging 15 dB behind the programme registers its **own lag** as
+long-term loudness variation, so part of the 5.6 was the defect. 4.1 sits next
+to the 4.0 the same material has coming off YouTube. The ear found this before
+the LRA number did, which is the part worth remembering.
 
 ### Existing material is never overwritten
 
