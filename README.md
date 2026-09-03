@@ -2516,6 +2516,39 @@ is clipped in it is clipped the same way in both captures and cancels exactly
 in the null subtraction. Lowering the level would only move where the
 level-dependent stages sit.
 
+### The leveller is a separate sink, and that is not negotiable
+
+Netflix and Hotstar arrive near −27 LUFS against YouTube's −14, and the chain is
+level-linear below −20 LUFS, so 10.7 dB of that reaches the speaker untouched.
+An LSP `autogain_stereo` in front of the chain closes it. It **cannot be left on
+for music**, and this was learned the expensive way: the leveller was merged
+into the main chain on 3 Sep 2026 and taken back out the same day.
+
+Gain applied *within a single track* — a vocal dropping out and the backing
+swelling to replace it:
+
+| track | `qamp = 0` | `qamp = 1` |
+|---|---|---|
+| music1 | 10.8 dB swing (sd 2.56) | **16.4 dB** (sd 6.70) |
+| music2 | 5.3 dB swing (sd 1.53) | **14.1 dB** (sd 3.32) |
+
+**The trade has no middle.** Fast enough to fix a film scene change — a
+loud→quiet cut otherwise starts ~15 dB low and takes twelve seconds to recover —
+is fast enough to ride vocals. Slow enough to leave music alone is slow enough to
+lag film. `max_amp` bounds the pumping and bounds the film correction by exactly
+the same amount, and 12 dB is what the gap costs. So: two sinks, pick one per
+source. `qamp = 1` is right on a film-only output and wrong in a shared chain.
+
+Both times this went wrong, **the ear got there before the meter**. LRA called
+the film lag "dynamics" (5.6 against qamp's 4.1) and called the music pumping
+nothing at all.
+
+```sh
+gen-levelled-sink            # derive the film sink from the installed chain
+gen-levelled-sink --remove   # and drop it again
+systemctl --user restart pipewire pipewire-pulse wireplumber
+```
+
 ### The volume must be set downstream of the leveller
 
 Stage 0agc changed what the volume control has to be. A sink's own volume is

@@ -70,6 +70,7 @@ uninstall() {
         /usr/local/share/wireplumber/scripts/53-hide-absent-tuned.lua \
         /usr/local/bin/speaker-dsp \
         /usr/local/bin/spk-vol \
+        /usr/local/bin/gen-levelled-sink \
         /usr/local/bin/external-dsp
 
     echo "Removed the system-wide Speaker DSP files."
@@ -149,6 +150,11 @@ install_filter() {
     # normal volume change is seen and undone. Bind the volume keys to it:
     #   spk-vol --bind-keys
     install -D -m755 "$FILES_DIR/spk-vol" /usr/local/bin/spk-vol
+    # Derives the optional "Speaker (Levelled) - for film" sink from the
+    # chain installed above. NOT run here: it writes into the user's own
+    # config, and the leveller must not be on for music. Run it as the
+    # user if you want that second output.
+    install -D -m755 "$FILES_DIR/gen-levelled-sink.py" /usr/local/bin/gen-levelled-sink
     install -D -m644 "$FILES_DIR/52-external-tuning.conf" \
         /usr/local/share/speaker-dsp/52-external-tuning.conf
     install -D -m644 "$FILES_DIR/52-external-target.conf" "$EXT_CONF_DEST"

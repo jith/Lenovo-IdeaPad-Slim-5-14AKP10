@@ -335,9 +335,8 @@ def self_test():
     # hardcoded on purpose: they are the guard that catches a node added to the
     # config and not to the stage table.
     nodes, links = parse_config(CONFIG)
-    # 113/206 since the stage 0agc leveller landed (1 node, 2 links).
-    check("node count", len(nodes), 113, 0)
-    check("link count", len(links), 206, 0)
+    check("node count", len(nodes), 112, 0)
+    check("link count", len(links), 204, 0)
     check("bq_raw coefficients parsed", nodes["s2lt_l"]["control"]["b0"], 0.9618034723, 1e-9)
     for name in ("s0trim_l", "s2lt_l", "s10mbc", "s10rbp_l", "s10rdyn_l", "s10rsum_l", "s10pbp_l",
                  "s10pdyn_l", "s10psum_l", "s11xcur", "s12lp_l", "s12brick"):
