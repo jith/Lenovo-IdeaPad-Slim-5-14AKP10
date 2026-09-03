@@ -2524,6 +2524,12 @@ applied **before** the graph, so the leveller sees it and undoes it — measured
 **0.0 dB**. No `max_amp` rescues it: at a cap of 4 the slider is still only 38%
 effective *and* the film boost is nearly gone.
 
+`spk-vol` lives at `/usr/local/bin/spk-vol`, installed by `install.sh`. **Do not
+keep a second copy in `~/.local/bin`** — it shadows the installed one on PATH,
+the keybindings end up calling it by absolute path, and it goes stale on the
+next install. That happened while this was being built: the keys were bound to
+a copy that predated `--bind-keys`.
+
 `files/spk-vol` sets the level on the **device**, downstream of everything,
 where it is a plain attenuation the leveller cannot see — verified identical
 LUFS and dBTP at 100% and 76% on a hardware capture. `spk-vol --bind-keys` puts

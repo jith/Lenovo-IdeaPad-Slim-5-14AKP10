@@ -39,6 +39,22 @@ case "${1:-}" in
         # The volume keys must drive this, not the sink. GNOME's own bindings
         # are cleared off the bare keys and left on the <Ctrl> variants as a
         # way back to the old pre-graph behaviour.
+        # $0 as written is not safe to bind: run as `sh files/spk-vol
+        # --bind-keys` it is a RELATIVE path, and gsettings will happily store
+        # it, giving a key that silently does nothing from any other cwd.
+        # Resolve it, and say so if this is not the installed copy -- a second
+        # copy earlier on PATH shadows the installed one and goes stale on the
+        # next install, which is exactly how the keys ended up calling a script
+        # without this option in it.
+        self=$0
+        case "$self" in
+            /*) ;;
+            *)  self=$(cd "$(dirname -- "$self")" 2>/dev/null && pwd)/$(basename -- "$self") ;;
+        esac
+        if [ "$self" != /usr/local/bin/spk-vol ] && [ -x /usr/local/bin/spk-vol ]; then
+            echo "note: binding $self, not the installed /usr/local/bin/spk-vol." >&2
+            echo "      Run that one instead unless you mean to bind this copy." >&2
+        fi
         B=org.gnome.settings-daemon.plugins.media-keys
         P=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings
         gsettings set $B volume-up-static   "['<Ctrl>XF86AudioRaiseVolume']"
@@ -50,7 +66,7 @@ case "${1:-}" in
             else                  n='Speaker volume down'; c='down'; fi
             k=$([ "$i" = 0 ] && echo XF86AudioRaiseVolume || echo XF86AudioLowerVolume)
             gsettings set "$S" name "$n"
-            gsettings set "$S" command "$0 $c"
+            gsettings set "$S" command "$self $c"
             gsettings set "$S" binding "$k"
         done
         echo "volume keys bound to $0"; exit 0 ;;
