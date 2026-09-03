@@ -877,6 +877,13 @@ down without joining them:
 **The swap:** `mk_2` to 1.0, `s10res` from −3.0 to −3.7 dB. The bell absorbs
 what the band cut was doing at the resonance, and the low-mid is returned.
 
+`s10res` is a **historical node name** and will not be found in the current
+config. It was the single `bq_peaking` bell this section was measured against;
+on 2 Sep 2026 stage 10b was rebuilt as the parallel bandpass branch
+(`s10rbp_*` + `s10rdyn_*` + `s10rneg_*` + `s10rsum_*`) and deepened from
+−3.7 dB to **−5.5 dB**. The measurements below stand as taken; the depth and
+the node names have moved on. See the stage table at the top.
+
 | | 160 Hz | 250 | 400 | 630 | **800** |
 |---|---|---|---|---|---|
 | offline, music1 | +0.51 | +0.67 | +0.67 | +0.53 | **+0.06** |
@@ -2561,7 +2568,7 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | No warnings or errors in the PipeWire journal on load | current | pass — zero filter-chain lines since the restart |
 | `tools/lt-coeffs.py` standalone, self-test passes | current | pass — 15/15 |
 | `tools/offline-chain.py --self-test` | current | pass — 23/23, and it re-reads the config each run |
-| Null test residual below −60 dBFS above 30 Hz | **skeleton** | pass — **−inf dBFS**, captures bit-identical. Says nothing about the tuned chain |
+| Null test residual below −60 dBFS above 30 Hz | **skeleton** | pass — **−inf dBFS**, captures bit-identical. **No longer reproducible on the current graph** — the brickwall now engages and the loud sweep cannot be nulled; see *Repeatability*. Defaults moved to `pink`, `sweep_quiet`, `square100`, which pass at −81.8 / −81.0 / −70.3 dBFS. Says nothing about the tuned chain |
 | Loudness match within 0.1 LU before any trim | **skeleton + stages 0–2, 9, 10, 13** | pass — **+0.00 LU** as a skeleton, **+0.07 LU** with those stages |
 | Skeleton is bypass-equivalent apart from stage 1 | **skeleton** | pass — tracked a stage-1-only prediction to **±0.01 dB** |
 | Every capture under the −0.20 dBTP ceiling | `g_out` 2.40 | pass — worst −0.39 dBTP, by `tools/true-peak.py` |
@@ -2585,7 +2592,7 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | The tilt correction leaves bass alone | **current** | pass — **50 Hz moves +0.02 dB**, and the whole 50–400 Hz region moves +0.03 to +0.11. Confirmed on hardware through a `-TEST` sink at matched volume: **−0.03 dB over 50–400 Hz** against **−1.47 dB over 1.6–12.5 kHz**, versus −1.41 predicted offline |
 | The tilt correction adds no distortion | **current** | pass, and it **reduces** it — THD identical to two decimals at 90, 400 and 2650 Hz at both −12 and −3 dBFS; SMPTE 60 + 2650 Hz IMD at −3 dBFS falls **8.18% → 4.38%** and at −6 dBFS **0.317% → 0.145%**, its value before 10c. True peak improves on all four signals. It is a cut, so this is the expected direction — measured because the constraint is explicit |
 | The shipped config is what was listened to | **current** | pass — for **both** changes. The edited `files/50-speaker-tuning.conf` renders **bit-identical** (max sample difference 0.000e+00) to the variant built for the `-TEST` sink and approved by ear, checked again after every comment edit. Self-test 26/26 |
-| Removing `mk_2` does not weaken the 761 Hz correction | **current** | pass — `s10res` at −3.7 dB holds 800 Hz to **+0.06 dB (music1)** and **+0.01 (music2)** offline, and **+0.25 dB** on hardware, against a re-setup repeatability of 1.4 dB. The depth was fitted to two tracks, not one; −3.6 left +0.12/+0.08 and −3.8 overshot to 0.00/−0.06 |
+| Removing `mk_2` does not weaken the 761 Hz correction | **current** | pass — `s10res` (the pre-2-Sep bell, now the `s10r*` branch at −5.5 dB) at −3.7 dB holds 800 Hz to **+0.06 dB (music1)** and **+0.01 (music2)** offline, and **+0.25 dB** on hardware, against a re-setup repeatability of 1.4 dB. The depth was fitted to two tracks, not one; −3.6 left +0.12/+0.08 and −3.8 overshot to 0.00/−0.06 |
 | Removing `mk_2` returns the low-mid it was taxing | **current** | pass — **+0.79 dB mean over 160–630 Hz** measured at the hardware monitor through a `-TEST` sink at matched volume, against +0.61 predicted offline. The uniform ~0.18 dB offset is the 20 s excerpt compressing differently from the full file |
 | The `mk_2` swap's cost is known and accepted | **current** | **measured, and it is not free** — about **−0.2 dB at 40–100 Hz**, GOTT redistributing once band 2 is no longer held down. Warmth up, sub slightly down. Recorded rather than elided because it is the one thing a listener might later notice and mis-attribute |
 | The 761 Hz correction reproduces across programme | **current** | pass — measured on a −5.7 LUFS master with LRA 3.2 LU, then confirmed against two trailer tracks and two synthetic signals. Split-half spread on the acoustic A/B it came from: **sd 0.77 dB, worst 2.2 dB** |
