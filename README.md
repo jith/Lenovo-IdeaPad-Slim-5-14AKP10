@@ -45,13 +45,13 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | −20 dBFS, 20:1 — levels the n-th power law | **active** | CN115442709B, US10382857 |
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.6`, `Gain 3 = 0.06` | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
-| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` +12.57 dB, `mk_2` **0.00 dB**, `mk_3` −0.61 dB, `mk_4` −3.59 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −2.09 dB, −1.65 of it taken 1 Sep 2026 to hold the tilt when stage 11 went multiband and the last −0.44 on 4 Sep 2026 to hold it again through `g_out` 3.80 → 4.25; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
+| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` +12.57 dB, `mk_2` **0.00 dB**, `mk_3` −0.35 dB, `mk_4` −3.33 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −1.83 dB, −1.65 of it taken 1 Sep 2026 to hold the tilt when stage 11 went multiband and the last −0.18 on 4 Sep 2026 to hold it through `g_out` 3.80 → 4.25 — **sized at the listening level, not at unity**, see *The tilt correction is level-dependent*; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
 | 10b | Resonance notch | `s10rbp_*`, `s10rdyn_*`, `s10rneg_*`, `s10rsum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + `invert` + `mixer` | branch 760 Hz Q 1.4262 → **Qbp 2.4245**, anchor **−5.5 dB** (`Gain 2` = 0.4691156), `cr` **1.0** | **active** — since 14 Aug 2026 the *second and last* instrument aimed at the 761 Hz resonance, after stage 2. **Rebuilt as a parallel bandpass 2 Sep 2026 and deepened −3.7 → −5.5**, which is where the frozen Qbp runs out and close to the 4.7 dB residual the A/B measured. The branch compressor is a **wire, by measurement** — both directions were swept and neither has a job, because stages 11–12's give-back is keyed on broadband level, not on 760 Hz | — |
 | 10c | Presence lift | `s10pbp_*`, `s10pdyn_*`, `s10psum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + builtin `mixer` | 2650 Hz, Q 1.4262 branch, `cr` 4.0, `al` −20 dBFS, `rt` 300 ms, branch gain 0.5849 | **active, and dynamic since 1 Sep 2026** — a parallel bandpass with a compressed branch, which is exactly a `bq_peaking` Q 1.2 whose Gain moves between about +2.3 and +4.0 dB. Anchored at the *fitted* +4.0 rather than frozen at the +3.0 the static version had to accept. Delivers **+0.73 dB** more at 2500 Hz than the static bell **and 22% less two-tone IMD**, confirmed on hardware | — |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → **LSP sidechain MULTIBAND comp** | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate, **band 0 only, split 1 kHz** | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress. **Multiband since 1 Sep 2026**: a cone has one displacement and it is a low-frequency quantity, so ducking 3 kHz was collateral, not protection | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −1.01 dBFS sample → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** — `th` pays for the sweep so `g_out` can spend | — |
-| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left hot, by **5.20 LU** as re-measured at `g_out` 4.25 | ITU-R BS.1770 |
+| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left hot, by **5.23 LU** as re-measured at `g_out` 4.25 | ITU-R BS.1770 |
 
 ## Signal flow
 
@@ -4053,12 +4053,50 @@ a live `pw-cli` change so that nothing else moved:
 | true peak | — | **−0.991 dBTP**, 0.791 dB inside the ceiling |
 | tilt | +0.03 dB | **−0.06 dB** |
 
-Worst true peak over a seven-signal battery is the sweep at −0.651 dBTP,
-0.451 dB inside the ceiling. **This spends 1.16 dB of the 2.6, leaving about
+Worst true peak over a seven-signal battery is the sweep at −0.647 dBTP,
+0.447 dB inside the ceiling. **This spends 1.16 dB of the 2.6, leaving about
 1.0 dB — and the next step is not available on this reasoning.** Half a margin
 for 1 LU was the argument against 4.25 when there were 2.1 dB in hand; at 1.0 dB
 left it argues harder, not less. Anything above 4.25 needs a new measurement,
 not this one.
+
+#### The tilt correction is level-dependent, and was sized in the wrong place
+
+The `mk` cut that pays for a `g_out` step is not one number. `mk_3`/`mk_4` are
+makeup gains sitting **after** per-band compression, so how much of a change in
+them reaches the output depends on how hard those bands are compressing — which
+depends on drive. **A cut sized at unity is a different cut at the volume anyone
+listens at.**
+
+This was found the way this file keeps saying such things are found. The −0.44 dB
+the unity measurement asked for was taken, measured to hold the tilt to 0.03 dB,
+written up, installed — and then reported **dull** on a listening test at 80%.
+The measurement that followed agreed:
+
+| `mk` cut | Δ tilt at 80% | Δ tilt at unity | |
+|---|---|---|---|
+| **−0.44** | **−0.22** (−0.25 on hardware) | +0.02 | dull where it is actually used |
+| **−0.18** | **+0.03** (+0.03 on hardware) | +0.26 | **shipped** |
+
+**You can hold the tilt at 80% or at 100%, not both.** −0.18 is the choice to
+hold it at 80%, and the ear picked it before the second measurement was taken.
+
+The argument beyond *hold it where you listen*: this chain stops compressing
+below about −20 LUFS at the graph input — see *Volume dependence*. At 80% music
+arrives near −20.6 and film near −33, so nearly everything played on this
+machine sits in the regime where −0.18 holds the tilt and −0.44 over-corrects.
+−0.44 is only right for loud music near full volume.
+
+It costs nothing to move: the change is entirely above 1 kHz, so the 1/f⁴
+displacement metric does not see it (0.00 to −0.12 dB across the battery, i.e.
+unchanged or slightly less), and worst true peak goes −0.651 → −0.647 dBTP.
+
+**The general lesson, which is not about this stage.** Every acoustic
+measurement in this file was taken at 100% and this machine is listened to at
+76–88% — a caveat already written down under *Volume dependence* and walked past
+anyway. It bites hardest on anything implemented as a makeup gain behind a
+compressor, because that is where the level dependence lives. Size a voicing
+correction at the level it will be heard at, and check it at both ends.
 
 What it costs elsewhere:
 
