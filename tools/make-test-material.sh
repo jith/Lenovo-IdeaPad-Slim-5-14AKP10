@@ -202,6 +202,24 @@ if should_write sweep_fs.wav; then
     sox -n $FMT "$OUT/sweep_fs.wav" synth 30 sine 20/20000 gain 0
 fi
 
+# The same sweep 12 dB down, and the ONLY sweep that nulls. Stage 12's
+# limiter makes the chain block-alignment dependent while it is engaging: a
+# one-sample input shift moves the output by -21 dBFS, so the -6 dBFS sweep
+# above cannot be used with null-test.sh any more (it fails at -18 to -20 dBFS
+# on an unchanged graph). At -18 dBFS in, the chain lands at -7.9 dBFS out,
+# the limiter never engages, and the null comes back: -80.5 dBFS measured on
+# hardware against a -79.9 dBFS offline prediction.
+#
+# It is a weaker test than it looks. Anything quiet enough to null is too
+# quiet to exercise the stages worth testing, so this buys back a sweep-shaped
+# check of the static filtering and nothing about the dynamics. Prefer pink
+# and square100, which pass at full level. See README "Repeatability".
+if should_write sweep_quiet.wav; then
+    echo "log sweep, quiet ..."
+    # shellcheck disable=SC2086
+    sox -n $FMT "$OUT/sweep_quiet.wav" synth 30 sine 20/20000 gain -18
+fi
+
 # 100 Hz square, 5 s. Its own harmonic series is the reference the virtual
 # bass branch has to be judged against.
 if should_write square100.wav; then
@@ -211,7 +229,7 @@ if should_write square100.wav; then
 fi
 
 echo
-for f in pink sweep sweep_fs square100; do
+for f in pink sweep sweep_fs sweep_quiet square100; do
     printf '  %-14s RMS %8s dBFS\n' "$f.wav" "$(rms_dbfs "$OUT/$f.wav")"
 done
 

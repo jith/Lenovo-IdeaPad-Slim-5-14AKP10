@@ -2365,7 +2365,9 @@ the same input is byte-identical for both pink and sweep. The graph is
 deterministic; only the real-time partitioning of the input is not.
 
 **Practically:** null-test with `pink` and `square100`, which pass with 10 dB of
-margin. A sweep FAIL means nothing on its own now. A sweep quiet enough to null
+margin. `sweep_quiet.wav` (−18 dBFS) is shipped for when a sweep-shaped check is
+wanted anyway — it nulls at −80.5 dBFS — but it only exercises the static
+filtering. A `sweep.wav` FAIL means nothing on its own now. A sweep quiet enough to null
 is also too quiet to exercise the stages worth testing, so this is a genuine
 loss of coverage rather than something to work around — the material that
 matters most is the material the method can no longer check.
@@ -2425,6 +2427,10 @@ sox -n -r 48000 -c 2 -b 32 -e float sweep.wav synth 30 sine 20/20000 gain -6
 # show it. See "The full-scale sweep is the only signal that binds th" below.
 sox -n -r 48000 -c 2 -b 32 -e float sweep_fs.wav synth 30 sine 20/20000 gain 0
 
+# the same sweep 12 dB down -- the only sweep that still nulls, because the
+# stage 12 limiter never engages at this level. See "Repeatability" below.
+sox -n -r 48000 -c 2 -b 32 -e float sweep_quiet.wav synth 30 sine 20/20000 gain -18
+
 # 100 Hz square
 sox -n -r 48000 -c 2 -b 32 -e float square100.wav synth 5 square 100 gain -6
 ```
@@ -2441,6 +2447,8 @@ As generated and checked:
                                        at t = 7.5 / 15 / 22.5 s)
   sweep_fs.wav   RMS  -3.011 dBFS     (sample peak 0.000 dBFS, true peak
                                        +0.555 dBTP -- over 0 dBFS on purpose)
+  sweep_quiet.wav RMS -21.011 dBFS    (peak -18.000 dBFS; the only sweep that
+                                       nulls -- limiter never engages)
   square100.wav  RMS  -6.000 dBFS
 ```
 
