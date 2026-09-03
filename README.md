@@ -2303,21 +2303,72 @@ What the residual looks like:
 | **2.5 – 5 kHz** | **−21 dBFS** |
 | 10 kHz | −36 dBFS |
 
-It is confined to stage 10c's band, and per-window RMS of the two captures
-agrees **to 0.01 dB everywhere** — same signal, same level, differing only in
-fine structure. So it is not a gain or dynamics offset; it is the compressed
-presence branch landing on a marginally different gain trajectory each pass.
-A sweep puts all its energy at one frequency at a time, so an error that pink
-noise spreads across the spectrum lands undiluted on the sweep.
+Per-window RMS of the two captures agrees **to 0.01 dB everywhere** — same
+signal, same level, differing only in fine structure.
 
-**The chain's arithmetic is not the problem.** `offline-chain.py` run twice over
-the same input is byte-identical for both pink and sweep, so the graph is
-deterministic; the non-repeatability lives in the real-time path.
+That 2.5–5 kHz band is where the *presence* lift sits, and the first reading
+here blamed stage 10c's compressed branch for it. **That was wrong**, and the
+isolation below is what corrects it. 2.5–5 kHz is simply the chain's
+highest-gain region (`--bands` puts presence at +9.55 dB, the top of the
+curve), so it is where the sweep drives the **limiter** hardest.
 
-**Practically:** null-test with `pink` and `square100`, which still pass with
-10 dB of margin. A sweep FAIL means nothing on its own now. If you want the
-sweep back as a null signal you have to quiet it until the dynamic stages stop
-engaging, which also stops it testing anything interesting.
+#### It is stage 12, and only when it engages
+
+Reproduced offline with no hardware at all: shift the input by **one sample**,
+run the chain, shift back, subtract. A chain that is block-alignment
+independent gives zero.
+
+| chain | 1-sample-shift residual |
+|---|---|
+| as shipped | −21.2 dBFS |
+| stage 10c `cr` 4.0 → 1.0 (a wire) | −14.6 dBFS — *worse* |
+| stage 11 excursion off | −22.2 dBFS — unchanged |
+| **stage 12 brickwall off** | **−70.5 dBFS** |
+
+Only stage 12 matters, and neutering 10c makes things worse rather than better
+because it feeds the limiter a peakier signal. The dependence is on the limiter
+*engaging*, not on any single setting of it — `ovs`, `lk` and `th` were each
+swept and none removes it. Drop the input level instead, and it vanishes the
+moment the limiter lets go:
+
+| sweep in | chain out | limiter | shift residual |
+|---|---|---|---|
+| −6 dBFS | −1.01 dBFS | **at the ceiling** | **−21.2 dBFS** |
+| −18 dBFS | −7.87 dBFS | below | −79.9 dBFS |
+| −30 dBFS | −18.36 dBFS | below | −95.5 dBFS |
+| −42 dBFS | −30.35 dBFS | below | −109.8 dBFS |
+
+59 dB the instant it stops working, then roughly 1 dB per dB — ordinary
+numerical noise. **Confirmed on hardware**, the two run back to back in one
+session:
+
+```
+compare sweep        (-6 dBFS)  residual -20.5 dBFS  FAIL
+compare sweep_quiet (-18 dBFS)  residual -80.5 dBFS  PASS
+```
+
+against an offline prediction of −79.9 dB. So the mechanism is settled: the
+limiter's gain envelope comes from lookahead peak detection over a block, and
+when it works on a signal whose level is *changing*, where the block boundaries
+fall relative to the material changes the envelope slightly. In real time
+`clock.force-quantum` is 0 and playback begins at an arbitrary offset within
+the 1024-sample quantum, so every capture partitions the material differently.
+
+That also explains the two that still pass. `pink` peaks at −1.8 dBFS, below
+the −1.012 ceiling, so the limiter barely engages. `square100` sits *on* the
+ceiling but is stationary, so its gain reduction reaches a steady value and
+stays there — and a constant gain is shift-invariant. It is **non-stationary
+material at the ceiling** that breaks, which is exactly what a sweep is.
+
+**The chain's arithmetic is not at fault.** `offline-chain.py` run twice over
+the same input is byte-identical for both pink and sweep. The graph is
+deterministic; only the real-time partitioning of the input is not.
+
+**Practically:** null-test with `pink` and `square100`, which pass with 10 dB of
+margin. A sweep FAIL means nothing on its own now. A sweep quiet enough to null
+is also too quiet to exercise the stages worth testing, so this is a genuine
+loss of coverage rather than something to work around — the material that
+matters most is the material the method can no longer check.
 
 **`--pre-stage1` compensates a baseline that predates stage 1.** By default
 neither side is touched, which is what you want when the baseline came through
