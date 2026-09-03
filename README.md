@@ -2414,6 +2414,33 @@ Note all three alignments are whole quanta (−3072, 0, −1024 samples at a 102
 quantum). That is the condition under which any of this nulls at all: a
 one-sample shift moves the output −21 dBFS while the limiter is working.
 
+**Re-baselined again the same day**, after the `mk` cut moved from −0.44 to
+−0.18; the 0.44 set is in `tests/captures/gout425-mk044/`. Captures are graph-
+specific, so every voicing change invalidates them, and these archives are the
+only copies — `tests/captures/` is gitignored.
+
+This set was **verified offline rather than by a second `compare` pass**, which
+is cheaper in test tones and answers a different question. New baselines against
+the archived 0.44 set, level-normalised, is a direct check that the intended
+change is the only change:
+
+| signal | ΔLU | <125 Hz | 160–400 | 2–4k | 5–12.5k |
+|---|---|---|---|---|---|
+| pink | +0.20 | +0.00 | −0.00 | **+0.24** | **+0.25** |
+| sweep_quiet | +0.17 | +0.00 | +0.00 | **+0.22** | **+0.25** |
+| square100 | −0.10 | −0.12 | −0.12 | −0.01 | +0.01 |
+
+Nothing below 1 kHz moved and everything above went up by the `mk` change.
+`square100` reads differently because it is limiter-pinned: its HF is harmonics
+of a 100 Hz square, so passing more of them makes stage 12 clamp slightly harder
+and pulls the fundamental down 0.12 dB.
+
+**What that does not establish is that these baselines null**, which only a
+`compare` run against the unchanged graph can show. The set above is usable and
+self-consistent; the first `compare` after any future change is also the first
+proof of it, so read a surprising residual as possibly the baseline rather than
+the change.
+
 That 2.5–5 kHz band is where the *presence* lift sits, and the first reading
 here blamed stage 10c's compressed branch for it. **That was wrong**, and the
 isolation below is what corrects it. 2.5–5 kHz is simply the chain's
