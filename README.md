@@ -42,7 +42,6 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 4 | Subband split | `s4lp_*`, `s4bp1..3_*` | `bq_lowpass` + 3× `bq_bandpass` | **f1 = 350 Hz**; centres 122.5 / 175 / 252 Hz, Q 2.0 | **active** | CN115442709B |
 | 5 | Harmonic generation | `s5pre1..3_*`, `s5h<band>x<order>_*` | `linear` pre-gain + `mult`, order n = x^n | pre-gain ×5, then orders 4/5/6, 3/4/5, 2/3/4 → 490–1008 Hz | **active** | CN115442709B, US5930373A |
 | 6 | Harmonic weighting | `s6w<band>x<order>_*`, `s6sum<band>_*` | `bq_peaking` per order | gain = ln(n)·R(f) scaled to +12 dB max | **active**, +1.9 to +12 dB | CN115442709B |
-| 0agc | Programme leveller | `s0agc` | LSP `autogain_stereo` | `level` −17.1 LUFS (s0trim-compensated), `tgrow_l`/`tfall_l` **10000 ms**, `max_amp` 12 | **active since 3 Sep 2026** — closes the platform loudness gap (Netflix/Hotstar ~−27 LUFS vs YouTube ~−14). +11.6 dB on film, 0 dB on normal programme. **Set the level with `spk-vol`, not the sink slider** — see below | — |
 | 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | −20 dBFS, 20:1 — levels the n-th power law | **active** | CN115442709B, US10382857 |
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.6`, `Gain 3 = 0.06` | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
@@ -2516,86 +2515,58 @@ is clipped in it is clipped the same way in both captures and cancels exactly
 in the null subtraction. Lowering the level would only move where the
 level-dependent stages sit.
 
-### The leveller is a separate sink, and that is not negotiable
+### Why the platform loudness gap is not fixable here
 
-Netflix and Hotstar arrive near −27 LUFS against YouTube's −14, and the chain is
-level-linear below −20 LUFS, so 10.7 dB of that reaches the speaker untouched.
-An LSP `autogain_stereo` in front of the chain closes it. It **cannot be left on
-for music**, and this was learned the expensive way: the leveller was merged
-into the main chain on 3 Sep 2026 and taken back out the same day.
+Netflix and Hotstar play far quieter than YouTube. This was investigated
+exhaustively on 3 Sep 2026 and **nothing in this chain can fix it.** The section
+is kept so it is not attempted a fifth time.
 
-Gain applied *within a single track* — a vocal dropping out and the backing
-swelling to replace it:
+**Measured on a real Netflix stream** at the hardware monitor, not on a proxy:
 
-| track | `qamp = 0` | `qamp = 1` |
+| | real Netflix | YouTube-level programme |
 |---|---|---|
-| music1 | 10.8 dB swing (sd 2.56) | **16.4 dB** (sd 6.70) |
-| music2 | 5.3 dB swing (sd 1.53) | **14.1 dB** (sd 3.32) |
+| LUFS | **−22.8** | −9.2 |
+| LRA | **10.7** | 4.0 |
+| crest | **24.0 dB** | ~15 dB |
+| true peak | −3.78 dBFS | −0.92 dBFS |
 
-**The trade has no middle.** Fast enough to fix a film scene change — a
-loud→quiet cut otherwise starts ~15 dB low and takes twelve seconds to recover —
-is fast enough to ride vocals. Slow enough to leave music alone is slow enough to
-lag film. `max_amp` bounds the pumping and bounds the film correction by exactly
-the same amount, and 12 dB is what the gap costs. So: two sinks, pick one per
-source. `qamp = 1` is right on a film-only output and wrong in a shared chain.
+The gap is **13.6 dB**, and the content carries a 24 dB crest with dips to
+−38 dB. The stage 12 limiter is not engaging at all on it, so about 2.8 dB of
+gain is free — but closing 13.6 dB would drive peaks to +9.8 dBFS and flatten
+that crest into nothing.
 
-Both times this went wrong, **the ear got there before the meter**. LRA called
-the film lag "dynamics" (5.6 against qamp's 4.1) and called the music pumping
-nothing at all.
+**Root cause: it is a decoder gap, not a DSP one.** Netflix ships dialnorm and
+DRC metadata (Dolby Digital Plus / xHE-AAC) stating how loud the dialogue is.
+Decoders that honour it normalise to a target — Line −31 LKFS, RF −20, Portable
+−11 — and MPEG-D DRC boosts low-level signals while compressing high-level ones.
+That is exact because the decoder is *told* the offset. Brave and Chromium on
+Linux decode to stereo and discard it, so the raw mix reaches the speaker. No
+downstream processing can recover a number that was deleted upstream, which is
+why a MacBook has no trouble here and this machine does.
 
-```sh
-gen-levelled-sink            # derive the film sink from the installed chain
-gen-levelled-sink --remove   # and drop it again
-systemctl --user restart pipewire pipewire-pulse wireplumber
-```
+**What was tried, and why each failed:**
 
-### The volume must be set downstream of the leveller
+| Approach | Result |
+|---|---|
+| LSP `autogain` — all 7 ports swept | pumps music 12–17 dB at every setting; `tgrow_l` caps at 10 s, shorter than a musical passage. `max_amp = 0` still leaves 4.4–7.7 dB because the cap limits boosting, not attenuation |
+| GOTT upward (`ru_*`) | delivers loudness only by dumping 17 dB into presence: tilt +3.51 → +12.23 dB |
+| `mb_limiter` / `mb_clipper` | ≤0.4 dB of crest, and `mb_limiter` overshot to +0.014 dBTP |
+| Band-limited dialogue lift | does not pump (1.8–2.6 dB swing) but buys +0.81 LUFS — clarity, not level |
+| Fixed offset on a routed sink | worked, and was rejected: at +13 dB crest falls 15.3 → 10.8 dB |
+| Browser extension | Netflix audio is Widevine-protected; Web Audio gain cannot touch it |
+| 5.1 → stereo | measured 1.2–1.4 dB, and Brave already sends stereo — not the cause |
+| LADSPA (SC1–SC4, Dyson, limiters) | instantaneous detectors, same class as the above |
 
-Stage 0agc changed what the volume control has to be. A sink's own volume is
-applied **before** the graph, so the leveller sees it and undoes it — measured on
-−14 LUFS programme, moving the sink from 100% to 76% changed the output by
-**0.0 dB**. No `max_amp` rescues it: at a cap of 4 the slider is still only 38%
-effective *and* the film boost is nearly gone.
+**The only mechanism that would work is EBU R128 *integrated* loudness** —
+gated, averaged over minutes, so passages cannot move it. EasyEffects implements
+it (libebur128, selectable integrated window plus max-history). No installed LV2
+does. It needs a background service.
 
-`spk-vol` lives at `/usr/local/bin/spk-vol`, installed by `install.sh`. **Do not
-keep a second copy in `~/.local/bin`** — it shadows the installed one on PATH,
-the keybindings end up calling it by absolute path, and it goes stale on the
-next install. That happened while this was being built: the keys were bound to
-a copy that predated `--bind-keys`.
-
-`files/spk-vol` sets the level on the **device**, downstream of everything,
-where it is a plain attenuation the leveller cannot see — verified identical
-LUFS and dBTP at 100% and 76% on a hardware capture. `spk-vol --bind-keys` puts
-it on the volume keys and leaves GNOME's own bindings on the `<Ctrl>` variants
-as a way back. **The Settings slider is still the pre-graph one and will
-misbehave; use the keys.**
-
-Losing the pre-graph level-dependence costs nothing, which is measured rather
-than assumed: with the leveller in front, `--bands` is identical at 100/88/76%
-(bass +4.18 dB, presence +10.12, tilt +5.94). The compensation described under
-*Volume dependence* is already gone once anything levels the input.
-
-**`qamp` is not optional.** With the 10 s constants alone, every loud→quiet
-transition took about twelve seconds to correct and the quiet side started
-~15 dB low — reported from real use as a fade-in on dialogue after an action
-scene, and plainly audible. Gain applied across a loud→quiet cut, at
-t = 0/3/5/8/12 s:
-
-| | 0 s | 3 s | 5 s | 8 s | 12 s |
-|---|---|---|---|---|---|
-| `qamp = 0` | **−4.57** | −1.09 | +1.37 | +4.96 | +9.61 |
-| `qamp = 1` | **+11.48** | +8.06 | +9.06 | +11.97 | +11.19 |
-
-It fixes the cold start with the same port (+11.55 dB at t = 0 against +0.57).
-
-**What it costs.** On −27 LUFS film: −9.8 LUFS out, LRA 4.1, −0.918 dBTP. On
-−14 LUFS programme: −8.7 LUFS, LRA 2.3. Turning `qamp` on reads as a dynamics
-loss (film LRA 5.6 → 4.1) but that number should not be taken at face value: a
-leveller lagging 15 dB behind the programme registers its **own lag** as
-long-term loudness variation, so part of the 5.6 was the defect. 4.1 sits next
-to the 4.0 the same material has coming off YouTube. The ear found this before
-the LRA number did, which is the part worth remembering.
-
+**A caution recorded with it:** the crest figures above were first taken on
+`music2` attenuated to −27 LUFS, which turned out to be **9 dB less dynamic than
+real Netflix**. That is this repo's recurring failure — see *Test material* — and
+it was walked into again here. Measure the real stream before trusting any
+number about film.
 ### Existing material is never overwritten
 
 `make-test-material.sh` keeps any file that already exists and prints `keep`
