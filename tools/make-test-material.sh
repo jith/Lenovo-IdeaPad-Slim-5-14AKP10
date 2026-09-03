@@ -2,7 +2,15 @@
 # Generate the synthetic test material into tests/material/ (gitignored).
 #
 #   tools/make-test-material.sh [dir]
+#   tools/make-test-material.sh [--force] [dir]
 #   tools/make-test-material.sh [--dir tests/material] --music TRACK [TRACK ...]
+#
+# EXISTING FILES ARE KEPT, and --force is the only way past that. pink.wav's
+# noise is random, tests/captures/pink.baseline.wav is a hardware capture OF a
+# specific pink.wav, and tests/material/ is gitignored -- so a plain re-run
+# used to replace the stimulus with different noise and leave every null test
+# against those captures quietly comparing two unrelated signals. Nothing
+# failed; the residual just stopped meaning anything.
 #
 # sox synthesises the signals; ffmpeg measures them, so the RMS printed here
 # is the same measurement the rest of the tooling uses rather than sox's
@@ -32,6 +40,15 @@ DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 OUT=tests/material
 MUSIC=0
+FORCE=0
+
+# The md5 of the pink.wav that tests/captures/pink.baseline.wav and
+# pink.current.wav were recorded from on 5 Aug 2026. It is NOT reproducible
+# from this script -- it predates the -R below -- so once it is gone those
+# captures can never be matched to a stimulus again. Recorded here because
+# tests/material/ is gitignored and this checksum is the only surviving link.
+PINK_BASELINE_MD5=a7dd292daded1b8cbbd71ec7bcaa109c
+
 while [ $# -gt 0 ]; do
     case $1 in
         # Terminal on purpose, and the tracks stay in "$@" rather than being
@@ -42,6 +59,7 @@ while [ $# -gt 0 ]; do
         # There are no arrays in POSIX sh; the positional parameters are the
         # only list that survives a space, so tracks are never copied out.
         --music) MUSIC=1; shift; break ;;
+        --force) FORCE=1; shift ;;
         --dir)   OUT=$2; shift 2 ;;
         *)       OUT=$1; shift ;;
     esac
@@ -59,6 +77,25 @@ need_report
 
 mkdir -p "$OUT"
 
+if [ "$FORCE" = 1 ]; then
+    echo "  --force: overwriting existing files." >&2
+    echo "  pink.wav's noise is random and its replacement will NOT match" >&2
+    echo "  tests/captures/pink.*.wav. Re-take those baselines or stop." >&2
+    echo >&2
+fi
+
+# should_write <name> -- 0 to generate it, 1 if it exists and is being kept.
+# sweep, sweep_fs and square100 are deterministic and would come back
+# byte-identical, but they are guarded the same way: one rule to remember
+# beats three files and a per-file exception.
+should_write() {
+    if [ "$FORCE" = 0 ] && [ -f "$OUT/$1" ]; then
+        printf '  keep   %-14s (exists; --force to regenerate)\n' "$1"
+        return 1
+    fi
+    return 0
+}
+
 # ingest_music -- excerpt each track into music<N>.wav and report its loudness.
 # The LUFS and true peak are printed because they are the numbers that decide
 # whether a track is worth keeping: something mastered at -14 LUFS exercises
@@ -69,6 +106,9 @@ if [ "$MUSIC" = 1 ]; then
     for track in "$@"; do
         [ -f "$track" ] || die "no such track: $track"
         n=$((n + 1))
+        # music2.wav is the stimulus behind tests/captures/music2ab, so the
+        # same keep-by-default rule applies here.
+        should_write "music$n.wav" || continue
         dur=$(ffprobe -v error -show_entries format=duration \
                       -of csv=p=0 "$track" 2>/dev/null | cut -d. -f1)
         start=$(( ${dur:-160} / 4 ))
@@ -103,19 +143,28 @@ rms_dbfs() {
 # is clipped the same way in both captures and cancels exactly in the null
 # subtraction. Do not "fix" it by lowering the level; that only changes where
 # the level-dependent stages sit.
-echo "pink noise ..."
-# shellcheck disable=SC2086
-sox -n $FMT "$OUT/pink.tmp.wav" synth 60 pinknoise pinknoise gain -6
-CORRECTION=$(awk -v r="$(rms_dbfs "$OUT/pink.tmp.wav")" \
-                 'BEGIN{printf "%.4f", -20.0 - r}')
-sox "$OUT/pink.tmp.wav" "$OUT/pink.wav" gain "$CORRECTION"
-rm -f "$OUT/pink.tmp.wav"
+#
+# -R makes sox's noise repeatable, so a regenerated pink.wav is at least the
+# SAME pink.wav every time from here on. It does not rescue the existing one:
+# that file was made before -R was added and cannot be reproduced, which is
+# exactly why should_write refuses to overwrite it.
+if should_write pink.wav; then
+    echo "pink noise ..."
+    # shellcheck disable=SC2086
+    sox -R -n $FMT "$OUT/pink.tmp.wav" synth 60 pinknoise pinknoise gain -6
+    CORRECTION=$(awk -v r="$(rms_dbfs "$OUT/pink.tmp.wav")" \
+                     'BEGIN{printf "%.4f", -20.0 - r}')
+    sox "$OUT/pink.tmp.wav" "$OUT/pink.wav" gain "$CORRECTION"
+    rm -f "$OUT/pink.tmp.wav"
+fi
 
 # Log sweep 20 Hz -> 20 kHz over 30 s. `/` is sox's smooth exponential sweep,
 # a fixed number of semitones per second; `:` would be a linear one.
-echo "log sweep ..."
-# shellcheck disable=SC2086
-sox -n $FMT "$OUT/sweep.wav" synth 30 sine 20/20000 gain -6
+if should_write sweep.wav; then
+    echo "log sweep ..."
+    # shellcheck disable=SC2086
+    sox -n $FMT "$OUT/sweep.wav" synth 30 sine 20/20000 gain -6
+fi
 
 # The same sweep at FULL SCALE, and it is not redundant with the one above.
 # Stage 12's `th` is bound by the full-scale sweep and by nothing else in this
@@ -137,15 +186,19 @@ sox -n $FMT "$OUT/sweep.wav" synth 30 sine 20/20000 gain -6
 #
 # Do NOT use it for acoustic response work -- sweep-response.py takes
 # --reference tests/material/sweep.wav, and that file stays as it is.
-echo "log sweep, full scale ..."
-# shellcheck disable=SC2086
-sox -n $FMT "$OUT/sweep_fs.wav" synth 30 sine 20/20000 gain 0
+if should_write sweep_fs.wav; then
+    echo "log sweep, full scale ..."
+    # shellcheck disable=SC2086
+    sox -n $FMT "$OUT/sweep_fs.wav" synth 30 sine 20/20000 gain 0
+fi
 
 # 100 Hz square, 5 s. Its own harmonic series is the reference the virtual
 # bass branch has to be judged against.
-echo "100 Hz square ..."
-# shellcheck disable=SC2086
-sox -n $FMT "$OUT/square100.wav" synth 5 square 100 gain -6
+if should_write square100.wav; then
+    echo "100 Hz square ..."
+    # shellcheck disable=SC2086
+    sox -n $FMT "$OUT/square100.wav" synth 5 square 100 gain -6
+fi
 
 echo
 for f in pink sweep sweep_fs square100; do
@@ -157,6 +210,28 @@ done
 printf '  %-14s true peak %s dBTP (over 0 dBFS on purpose)\n' "sweep_fs.wav" \
     "$(python3 "$DIR/true-peak.py" "$OUT/sweep_fs.wav" 2>/dev/null \
         | awk 'NR==2{print $3}')"
+
+# Whether this pink.wav is the one the stored captures were recorded from is
+# not something you can tell by looking at it, and getting it wrong costs a
+# null test that reports a large residual for no reason anyone can find. So
+# say it on every run rather than leaving it to be rediscovered.
+if [ -f "$OUT/pink.wav" ]; then
+    have=$(md5sum "$OUT/pink.wav" | cut -d' ' -f1)
+    if [ "$have" = "$PINK_BASELINE_MD5" ]; then
+        echo "  pink.wav matches the stimulus tests/captures/pink.*.wav"
+        echo "  were recorded from -- null tests against them are valid."
+    else
+        echo >&2
+        echo "  WARNING: this pink.wav is NOT the one" >&2
+        echo "  tests/captures/pink.baseline.wav and pink.current.wav were" >&2
+        echo "  recorded from. Those captures cannot be nulled against it:" >&2
+        echo "    have $have" >&2
+        echo "    want $PINK_BASELINE_MD5" >&2
+        echo "  Re-take the baselines with tools/null-test.sh, or restore the" >&2
+        echo "  original file. It cannot be regenerated -- it predates -R." >&2
+    fi
+fi
+
 echo
 echo "written to $OUT (gitignored -- do not commit audio)"
 echo "add three music tracks with known low-frequency content alongside them."

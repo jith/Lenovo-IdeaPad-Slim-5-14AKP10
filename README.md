@@ -2401,6 +2401,36 @@ is clipped in it is clipped the same way in both captures and cancels exactly
 in the null subtraction. Lowering the level would only move where the
 level-dependent stages sit.
 
+### Existing material is never overwritten
+
+`make-test-material.sh` keeps any file that already exists and prints `keep`
+for it. `--force` is the only way past that, and it warns before it does
+anything.
+
+The reason is `pink.wav`. Its noise is random, `tests/captures/pink.baseline.wav`
+and `pink.current.wav` are hardware captures *of one specific* `pink.wav`, and
+`tests/material/` is gitignored — so a plain re-run used to replace the stimulus
+with different noise and leave every null test against those captures quietly
+comparing two unrelated signals. Nothing failed; the residual just stopped
+meaning anything.
+
+The synthesis is now `sox -R`, which makes the noise repeatable, so any
+`pink.wav` generated from here on can be regenerated exactly:
+
+| | regenerates identically? |
+|---|---|
+| `sweep.wav`, `sweep_fs.wav`, `square100.wav` | ✅ always — deterministic synth |
+| `pink.wav` with `-R` | ✅ yes |
+| `pink.wav` without `-R` (how the current one was made) | ❌ different every run |
+
+`-R` does **not** rescue the file already on disk: it predates the flag and
+cannot be reproduced. Its md5 is recorded in the script as
+`PINK_BASELINE_MD5` and checked on every run, which is the only surviving link
+between the stored captures and the stimulus they were made with — the audio
+itself cannot be committed. A plain run confirms the match; a mismatch prints
+what it has, what it wants, and that re-taking the baselines is the only way
+back.
+
 ## Acceptance status
 
 Measured on the installed graph, not asserted.
