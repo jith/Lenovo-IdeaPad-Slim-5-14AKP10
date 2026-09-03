@@ -2273,18 +2273,51 @@ numbers. That also satisfies the loudness criterion with room to spare.
 
 ### Repeatability
 
-**Measured on this machine**, skeleton against skeleton with the graph
-unchanged:
+This changed on 3 Sep 2026 and the sweep is no longer usable as a null signal.
+The old result, still true of the graph as it stood on 5 Aug:
 
 ```
 compare pink    residual -inf dBFS   PASS   (62.0 s, aligned -1024 samples)
 compare sweep   residual -inf dBFS   PASS   (32.0 s, aligned +1024 samples)
 ```
 
-Exactly zero — the two captures are bit-identical. Nothing in the path
-resamples, the graph is deterministic, and the limiter never engages at these
-levels, so the method has no noise floor at all here. A −60 dBFS threshold has
-enormous margin; anything that shows up later is real.
+Exactly zero — bit-identical captures, no noise floor at all. That rested on a
+precondition stated right here at the time: *the limiter never engages at these
+levels*. It now does. The sweep's captured peak has gone from −6.0 dBFS to
+−1.0 dBFS as `g_out` rose and stages 10b/10c/11 went dynamic, so the sweep now
+drives the very stages whose output depends on their own history:
+
+```
+compare pink       residual  -81.8 dBFS   PASS   (62.0 s)
+compare sweep      residual  -18.5 dBFS   FAIL   (32.0 s)
+compare square100  residual  -70.3 dBFS   PASS   ( 7.0 s)
+```
+
+Nothing is bit-exact any more, but only the sweep fails, and it fails by 40 dB.
+Three consecutive runs gave −18.5, −20.5 and −18.8 dBFS, so it is not a fluke.
+What the residual looks like:
+
+| sweep position | residual |
+|---|---|
+| 40 Hz – 1.3 kHz | −72 to −100 dBFS |
+| **2.5 – 5 kHz** | **−21 dBFS** |
+| 10 kHz | −36 dBFS |
+
+It is confined to stage 10c's band, and per-window RMS of the two captures
+agrees **to 0.01 dB everywhere** — same signal, same level, differing only in
+fine structure. So it is not a gain or dynamics offset; it is the compressed
+presence branch landing on a marginally different gain trajectory each pass.
+A sweep puts all its energy at one frequency at a time, so an error that pink
+noise spreads across the spectrum lands undiluted on the sweep.
+
+**The chain's arithmetic is not the problem.** `offline-chain.py` run twice over
+the same input is byte-identical for both pink and sweep, so the graph is
+deterministic; the non-repeatability lives in the real-time path.
+
+**Practically:** null-test with `pink` and `square100`, which still pass with
+10 dB of margin. A sweep FAIL means nothing on its own now. If you want the
+sweep back as a null signal you have to quiet it until the dynamic stages stop
+engaging, which also stops it testing anything interesting.
 
 **`--pre-stage1` compensates a baseline that predates stage 1.** By default
 neither side is touched, which is what you want when the baseline came through
@@ -2421,15 +2454,22 @@ The synthesis is now `sox -R`, which makes the noise repeatable, so any
 |---|---|
 | `sweep.wav`, `sweep_fs.wav`, `square100.wav` | ✅ always — deterministic synth |
 | `pink.wav` with `-R` | ✅ yes |
-| `pink.wav` without `-R` (how the current one was made) | ❌ different every run |
+| `pink.wav` without `-R` (how the 5 Aug one was made) | ❌ different every run |
 
-`-R` does **not** rescue the file already on disk: it predates the flag and
-cannot be reproduced. Its md5 is recorded in the script as
-`PINK_BASELINE_MD5` and checked on every run, which is the only surviving link
-between the stored captures and the stimulus they were made with — the audio
-itself cannot be committed. A plain run confirms the match; a mismatch prints
-what it has, what it wants, and that re-taking the baselines is the only way
-back.
+`-R` could not rescue the 5 Aug file — it predated the flag — so **the
+baselines were re-taken on 3 Sep 2026 against a `-R` `pink.wav`**, and the
+whole directory is now reproducible from the script. `--force` brings back
+byte-identical material and the stored captures stay valid; verified by
+regenerating and confirming the checksum still matches.
+
+That checksum is `PINK_BASELINE_MD5` in the script, checked on every run,
+because the audio is gitignored and it is the only link between the stored
+captures and the stimulus they were made with. A plain run confirms the match;
+a mismatch prints what it has and what it wants.
+
+The keep-by-default rule stays regardless. It costs nothing, and it is the only
+thing standing between a capture set and a stimulus swapped out from under it
+if the synthesis is ever edited again.
 
 ## Acceptance status
 

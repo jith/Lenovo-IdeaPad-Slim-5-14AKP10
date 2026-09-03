@@ -5,12 +5,20 @@
 #   tools/make-test-material.sh [--force] [dir]
 #   tools/make-test-material.sh [--dir tests/material] --music TRACK [TRACK ...]
 #
-# EXISTING FILES ARE KEPT, and --force is the only way past that. pink.wav's
-# noise is random, tests/captures/pink.baseline.wav is a hardware capture OF a
-# specific pink.wav, and tests/material/ is gitignored -- so a plain re-run
-# used to replace the stimulus with different noise and leave every null test
-# against those captures quietly comparing two unrelated signals. Nothing
-# failed; the residual just stopped meaning anything.
+# EXISTING FILES ARE KEPT, and --force is the only way past that.
+#
+# Every file here is now reproducible -- the pink synthesis uses sox -R, so
+# --force brings back byte-identical material and the stored captures in
+# tests/captures/ stay valid. That was not true before 3 Sep 2026: pink.wav's
+# noise was unseeded, tests/material/ is gitignored, and a plain re-run
+# replaced the stimulus with different noise, leaving every null test against
+# those captures quietly comparing two unrelated signals. Nothing failed; the
+# residual just stopped meaning anything. The baselines were re-taken against
+# a -R pink.wav on 3 Sep 2026 to close that off.
+#
+# The keep-by-default rule stays anyway. It is cheap, and it is the only thing
+# standing between a capture set and a stimulus swapped out from under it if
+# the synthesis is ever changed again.
 #
 # sox synthesises the signals; ffmpeg measures them, so the RMS printed here
 # is the same measurement the rest of the tooling uses rather than sox's
@@ -42,12 +50,13 @@ OUT=tests/material
 MUSIC=0
 FORCE=0
 
-# The md5 of the pink.wav that tests/captures/pink.baseline.wav and
-# pink.current.wav were recorded from on 5 Aug 2026. It is NOT reproducible
-# from this script -- it predates the -R below -- so once it is gone those
-# captures can never be matched to a stimulus again. Recorded here because
-# tests/material/ is gitignored and this checksum is the only surviving link.
-PINK_BASELINE_MD5=a7dd292daded1b8cbbd71ec7bcaa109c
+# The md5 of the pink.wav that tests/captures/pink.*.wav were recorded from,
+# re-taken 3 Sep 2026. Unlike the 5 Aug file it predates nothing: it comes
+# straight from the -R synthesis below, so --force reproduces it exactly and
+# this check goes on passing. Recorded here because tests/material/ is
+# gitignored, so the checksum is the only link between the stored captures and
+# the stimulus they were made with.
+PINK_BASELINE_MD5=afb157660e1fb003e79d6431cbb022a9
 
 while [ $# -gt 0 ]; do
     case $1 in
@@ -78,9 +87,9 @@ need_report
 mkdir -p "$OUT"
 
 if [ "$FORCE" = 1 ]; then
-    echo "  --force: overwriting existing files." >&2
-    echo "  pink.wav's noise is random and its replacement will NOT match" >&2
-    echo "  tests/captures/pink.*.wav. Re-take those baselines or stop." >&2
+    echo "  --force: overwriting existing files. Synthesis is seeded, so" >&2
+    echo "  these come back byte-identical; the checksum check at the end" >&2
+    echo "  says whether the captures in tests/captures/ still match." >&2
     echo >&2
 fi
 
@@ -144,10 +153,11 @@ rms_dbfs() {
 # subtraction. Do not "fix" it by lowering the level; that only changes where
 # the level-dependent stages sit.
 #
-# -R makes sox's noise repeatable, so a regenerated pink.wav is at least the
-# SAME pink.wav every time from here on. It does not rescue the existing one:
-# that file was made before -R was added and cannot be reproduced, which is
-# exactly why should_write refuses to overwrite it.
+# -R seeds sox's noise, which is what makes this file reproducible at all.
+# Without it every run produced different noise and silently orphaned the
+# captures taken against the previous one. Do not remove it, and if the
+# synth line above it ever changes, re-take the baselines and update
+# PINK_BASELINE_MD5 in the same commit -- the two are one setting.
 if should_write pink.wav; then
     echo "pink noise ..."
     # shellcheck disable=SC2086
@@ -227,8 +237,10 @@ if [ -f "$OUT/pink.wav" ]; then
         echo "  recorded from. Those captures cannot be nulled against it:" >&2
         echo "    have $have" >&2
         echo "    want $PINK_BASELINE_MD5" >&2
-        echo "  Re-take the baselines with tools/null-test.sh, or restore the" >&2
-        echo "  original file. It cannot be regenerated -- it predates -R." >&2
+        echo "  Either the synth line changed, or this is an older pink.wav." >&2
+        echo "  Regenerating with --force should restore the expected file;" >&2
+        echo "  if it does not, re-take the baselines with tools/null-test.sh" >&2
+        echo "  and update PINK_BASELINE_MD5." >&2
     fi
 fi
 
