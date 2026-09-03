@@ -2388,6 +2388,32 @@ What the residual looks like:
 Per-window RMS of the two captures agrees **to 0.01 dB everywhere** — same
 signal, same level, differing only in fine structure.
 
+**Re-baselined at `g_out` 4.25, 4 Sep 2026.** The stored baselines in
+`tests/captures/` are captures of a specific graph, so taking `g_out` to 4.25
+invalidated them; the 3.80 set was moved to `tests/captures/gout380/` rather
+than overwritten, because that directory is gitignored and nothing else keeps
+them. Fresh baselines, then an immediate `compare` against the same unchanged
+graph — which is the only thing that proves a baseline is usable:
+
+```
+compare pink        residual  -79.8 dBFS   PASS   (62.0 s, aligned -3072)
+compare sweep_quiet residual  -79.6 dBFS   PASS   (32.0 s, aligned +0)
+compare square100   residual -684.8 dBFS   PASS   ( 7.0 s, aligned -1024)
+```
+
+pink and `sweep_quiet` come back about 1.5 dB noisier than the 3.80 set
+(−81.8 and −81.0), which is the chain running 0.44 dB hotter into stages whose
+output depends on their own history. **`square100` went the other way and is
+now bit-exact**, where it was −70.3. The captures are genuinely separate files,
+109 s apart, with different lengths and checksums — what is identical is the
+*aligned overlap*. Driven harder, the 100 Hz square puts stage 12 into steady
+periodic gain reduction instead of intermittent engagement, and a limiter that
+never lets go is deterministic again.
+
+Note all three alignments are whole quanta (−3072, 0, −1024 samples at a 1024
+quantum). That is the condition under which any of this nulls at all: a
+one-sample shift moves the output −21 dBFS while the limiter is working.
+
 That 2.5–5 kHz band is where the *presence* lift sits, and the first reading
 here blamed stage 10c's compressed branch for it. **That was wrong**, and the
 isolation below is what corrects it. 2.5–5 kHz is simply the chain's
@@ -2700,7 +2726,7 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | No warnings or errors in the PipeWire journal on load | current | pass — zero filter-chain lines since the restart |
 | `tools/lt-coeffs.py` standalone, self-test passes | current | pass — 15/15 |
 | `tools/offline-chain.py --self-test` | current | pass — 23/23, and it re-reads the config each run |
-| Null test residual below −60 dBFS above 30 Hz | **skeleton** | pass — **−inf dBFS**, captures bit-identical. **No longer reproducible on the current graph** — the brickwall now engages and the loud sweep cannot be nulled; see *Repeatability*. Defaults moved to `pink`, `sweep_quiet`, `square100`, which pass at −81.8 / −81.0 / −70.3 dBFS. Says nothing about the tuned chain |
+| Null test residual below −60 dBFS above 30 Hz | **current, `g_out` 4.25** | pass — **−80.1 / −80.1 / −691.6 dBFS** above 30 Hz on `pink`, `sweep_quiet`, `square100`, re-baselined 4 Sep 2026. The loud sweep is still not a null signal; see *Repeatability*. Says nothing about the tuned chain, only that it reproduces |
 | Loudness match within 0.1 LU before any trim | **skeleton + stages 0–2, 9, 10, 13** | pass — **+0.00 LU** as a skeleton, **+0.07 LU** with those stages |
 | Skeleton is bypass-equivalent apart from stage 1 | **skeleton** | pass — tracked a stage-1-only prediction to **±0.01 dB** |
 | Every capture under the −0.20 dBTP ceiling | `g_out` 2.40 | pass — worst −0.39 dBTP, by `tools/true-peak.py` |
