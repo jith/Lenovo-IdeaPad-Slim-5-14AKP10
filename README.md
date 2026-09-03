@@ -2515,11 +2515,12 @@ is clipped in it is clipped the same way in both captures and cancels exactly
 in the null subtraction. Lowering the level would only move where the
 level-dependent stages sit.
 
-### Why the platform loudness gap is not fixable here
+### Why the platform loudness gap stays open
 
-Netflix and Hotstar play far quieter than YouTube. This was investigated
-exhaustively on 3 Sep 2026 and **nothing in this chain can fix it.** The section
-is kept so it is not attempted a fifth time.
+Netflix and Hotstar play far quieter than YouTube. Nine approaches were
+measured against this on 3 Sep 2026. **Several of them reach the level; none is
+worth what it costs**, and two that were installed came back out within the
+hour. The section exists so the tenth attempt starts from here.
 
 **Measured on a real Netflix stream** at the hardware monitor, not on a proxy:
 
@@ -2558,23 +2559,22 @@ why a MacBook has no trouble here and this machine does.
 | LADSPA (SC1–SC4, Dyson, limiters) | instantaneous detectors, same class as the above |
 | **Custom LV2: BS.1770 gated integrated autogain** | **built and it works** — converged to +10.01 dB against +10.00 expected, steady-state swing 0.03 dB, music untouched (0.0–0.7 dB swing vs LSP's 12.6–14.1); +8.5 dB on hardware. A/B'd against the plain chain and judged **no audible benefit**, so it was removed |
 
-**EBU R128 *integrated* loudness is the one mechanism that is not structurally
-broken** — gated, averaged over minutes, so passages cannot move it, and
-boost-only, so normal-loudness music asks for no gain and has nothing to pump.
-EasyEffects implements it (libebur128) as a background service. It was also
-implemented here directly as a ~220-line LV2 plugin, no service and no sudo:
-K-weighting designed for the running rate, 400 ms blocks at 75% overlap, −70
-LUFS absolute and −10 LU relative gating over a rolling 180 s window.
+**Why the last row is the interesting one.** EBU R128 *integrated* loudness is
+the only detector in that list that is not structurally wrong for the job:
+gated and averaged over minutes, so a passage cannot move it, and boost-only, so
+normal-loudness music asks for no gain and has nothing to pump. EasyEffects
+implements it as a background service; here it was written as an LV2 instead —
+~220 lines, no service and no sudo, vendored LV2 headers, K-weighting designed
+for the running rate, 400 ms blocks at 75% overlap, −70 LUFS absolute and −10 LU
+relative gating over a rolling 180 s window, built to `~/.lv2`. That paragraph is
+enough to rebuild it; do not re-derive it from scratch.
 
-**It worked, and it still was not worth keeping.** Every number came out right:
-+10.01 dB applied against +10.00 expected, 0.03 dB steady-state swing, music
-through the full chain at +0.3 dB with LRA slightly *up*, +8.5 dB confirmed on a
-hardware capture. A/B'd against the plain chain it was judged to give no audible
-benefit, and it was removed. The lesson is not that the approach is wrong — it
-is that closing a 13.6 dB gap against a fixed limiter ceiling costs crest
-(15.3 → 12.8 dB here) no matter which mechanism spends it, and on this speaker
-that trade is not one worth making. Rebuild it from this paragraph if the
-question returns; do not re-derive it from scratch.
+**And it still lost the A/B.** Which is the actual finding: closing 13.6 dB
+against a fixed limiter ceiling costs crest whichever mechanism spends it —
+15.3 → 12.8 dB at the +8 dB this plugin applied, 15.3 → 10.8 at the +13 dB a
+fixed gain needs for parity. On a 2 W driver that trade has now lost twice by
+ear. **Getting the level is not the hard part; keeping it worth listening to
+is.**
 
 **A caution recorded with it:** the crest figures above were first taken on
 `music2` attenuated to −27 LUFS, which turned out to be **9 dB less dynamic than
