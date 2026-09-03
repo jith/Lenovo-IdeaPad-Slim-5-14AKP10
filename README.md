@@ -2336,6 +2336,11 @@ sox pink.tmp.wav pink.wav gain <correction>
 # semitones per second. `:` would give a linear one.
 sox -n -r 48000 -c 2 -b 32 -e float sweep.wav synth 30 sine 20/20000 gain -6
 
+# the same sweep at FULL SCALE. Not redundant: stage 12's `th` is bound by
+# this signal and by nothing else here, and sweep.wav is 6 dB too quiet to
+# show it. See "The full-scale sweep is the only signal that binds th" below.
+sox -n -r 48000 -c 2 -b 32 -e float sweep_fs.wav synth 30 sine 20/20000 gain 0
+
 # 100 Hz square
 sox -n -r 48000 -c 2 -b 32 -e float square100.wav synth 5 square 100 gain -6
 ```
@@ -2350,8 +2355,43 @@ As generated and checked:
   pink.wav       RMS -20.000 dBFS     (L−R RMS 0.142, so stage 9 has a side signal)
   sweep.wav      RMS  -9.011 dBFS     (log sweep verified: 117 / 645 / 3627 Hz
                                        at t = 7.5 / 15 / 22.5 s)
+  sweep_fs.wav   RMS  -3.011 dBFS     (sample peak 0.000 dBFS, true peak
+                                       +0.555 dBTP -- over 0 dBFS on purpose)
   square100.wav  RMS  -6.000 dBFS
 ```
+
+### The full-scale sweep is the only signal that binds `th`
+
+`sweep_fs.wav` exists because `sweep.wav` peaks at **−6.0 dBFS** and stage 12's
+`th` is decided by inter-sample overshoot, which scales with level. Measured
+3 Sep 2026, the same `th` sweep run against each file:
+
+| `th` | sample | true peak, `sweep.wav` (−6 dBFS) | true peak, `sweep_fs.wav` (0 dBFS) |
+|---|---|---|---|
+| **0.8900** (shipped) | −1.012 | −0.791 | **−0.666** |
+| 0.9400 | −0.537 | −0.480 | **−0.210** |
+| 0.9450 | −0.491 | −0.434 | ❌ −0.165 |
+| 0.96605 | −0.300 | −0.248 | ❌ **+0.017** |
+
+The quiet file clears **every** row, including the one already known to clip on
+hardware — it reports 0.96605 as sitting at −0.248 dBTP, comfortably inside the
+ceiling, when the real answer is over it. Read against `sweep.wav` the chain
+appears to have 0.59 dB of spare true-peak headroom and `th` could go to
+0.9650. Against the full-scale file the real headroom is **0.470 dB**, the
+ceiling is **`th` = 0.9400** with 0.010 dB to spare, and 0.9650 clips — which is
+the *same* result already recorded in the stage 12 comment of
+`files/50-speaker-tuning.conf` ("th = 0.96605 ... measured +0.137 dBTP on
+hardware"). The quiet sweep hid that failure twice, three weeks apart.
+
+**Use `sweep_fs.wav` for any `th` or `g_out` work, and `sweep.wav` for acoustic
+response work** — `sweep-response.py` takes the latter as its `--reference`, and
+that file must not change.
+
+Raising `th` was also measured and is not worth it on its own: 0.8900 → 0.9400
+buys **+0.00 to +0.50 LU** (about +0.2 on programme, against a ~1 LU JND) while
+spending the entire safety margin. That is the same conclusion the stage 12
+comment reaches from the other direction — `th` is set low to buy the sweep,
+and the loudness that costs is collected at stage 10's `g_out`.
 
 sox synthesises at 0 dBFS and its pink noise overshoots on three to five
 samples in 5.76 million, so `synth` warns about clipping however the gain is

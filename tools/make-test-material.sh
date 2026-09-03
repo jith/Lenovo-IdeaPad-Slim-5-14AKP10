@@ -117,6 +117,30 @@ echo "log sweep ..."
 # shellcheck disable=SC2086
 sox -n $FMT "$OUT/sweep.wav" synth 30 sine 20/20000 gain -6
 
+# The same sweep at FULL SCALE, and it is not redundant with the one above.
+# Stage 12's `th` is bound by the full-scale sweep and by nothing else in this
+# directory, and sweep.wav is 6 dB too quiet to show it. Measured 3 Sep 2026:
+# against the quiet file the chain looks like it has 0.59 dB of spare
+# true-peak headroom and `th` could be raised to 0.9650. Against this file the
+# real headroom is 0.470 dB, the ceiling is th = 0.9400 (-0.210 dBTP, 0.010 dB
+# to spare), and 0.9650 lands at +0.012 dBTP -- clipping. That is the same
+# failure already recorded in the stage 12 comment of 50-speaker-tuning.conf,
+# found there on hardware at +0.137 dBTP and re-derived here from scratch
+# because the quiet sweep hid it a second time.
+#
+# Its true peak is ABOVE 0 dBFS by design, about +0.55 dBTP. A full-scale sine
+# sweep is the worst inter-sample case there is; that is the whole point of
+# keeping it. sox WILL warn here -- "output clipped 224 samples; decrease
+# volume?" -- and the answer is no. The sample peak lands at exactly 0.000
+# dBFS, which is what a full-scale master looks like. Do not normalise it down
+# to make the warning go away; that turns it back into sweep.wav.
+#
+# Do NOT use it for acoustic response work -- sweep-response.py takes
+# --reference tests/material/sweep.wav, and that file stays as it is.
+echo "log sweep, full scale ..."
+# shellcheck disable=SC2086
+sox -n $FMT "$OUT/sweep_fs.wav" synth 30 sine 20/20000 gain 0
+
 # 100 Hz square, 5 s. Its own harmonic series is the reference the virtual
 # bass branch has to be judged against.
 echo "100 Hz square ..."
@@ -124,9 +148,15 @@ echo "100 Hz square ..."
 sox -n $FMT "$OUT/square100.wav" synth 5 square 100 gain -6
 
 echo
-for f in pink sweep square100; do
+for f in pink sweep sweep_fs square100; do
     printf '  %-14s RMS %8s dBFS\n' "$f.wav" "$(rms_dbfs "$OUT/$f.wav")"
 done
+
+# Printed because it is the number the file exists for, and because seeing it
+# go over 0 dBFS here is what stops the next person "fixing" the level.
+printf '  %-14s true peak %s dBTP (over 0 dBFS on purpose)\n' "sweep_fs.wav" \
+    "$(python3 "$DIR/true-peak.py" "$OUT/sweep_fs.wav" 2>/dev/null \
+        | awk 'NR==2{print $3}')"
 echo
 echo "written to $OUT (gitignored -- do not commit audio)"
 echo "add three music tracks with known low-frequency content alongside them."
