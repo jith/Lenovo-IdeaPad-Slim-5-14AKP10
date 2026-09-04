@@ -2630,8 +2630,9 @@ these archives are the only copies that exist:
 
 | directory | chain |
 |---|---|
-| `tests/captures/` | **current** — `Gain 2` 0.45, `g_out` 6.50, stage 9b **+6 dB** |
-| `gout650-lift3/` | the same at stage 9b +3 dB |
+| `tests/captures/` | **current** — `Gain 2` 0.45, `g_out` 6.50, stage 9b **+3 dB** |
+| `gout650-lift6/` | the same at stage 9b +6 dB |
+| `gout650-lift3/` | an earlier +3 set, before the +6 excursion correction |
 | `gout650-nolift/` | the same with stage 9b inert |
 | `gout550/` | `Gain 2` 0.45, `g_out` 5.50 |
 | `gout425-mk018/` | `Gain 2` 0.6, `g_out` 4.25, `mk` cut 0.18 |
