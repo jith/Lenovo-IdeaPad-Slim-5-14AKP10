@@ -4120,6 +4120,44 @@ other, not with the rest of this file.
 > The error is inherited rather than invented — it comes from the *Method note*
 > below, which states the 1/f² rule without noting it applies above resonance —
 > but it was then built into a tool and used for a day of decisions.
+>
+> ### And "2.6 dB of margin" is the wrong frame entirely
+>
+> Challenged on the corrected figure, it turned out to be wrong too, and in the
+> same way: **inferred rather than measured.** Stage 11's output was computed
+> from its 6:1 ratio, which ignores the soft knee and the 5 ms attack. Measured
+> instead — the `Hx` filter applied to what actually leaves stage 11, against
+> the −0.38 dBFS `Hx` level that the driver's 1 dB compression point produces:
+>
+> | config | music1 | music3 |
+> |---|---|---|
+> | `g_out` 2.40 | −2.96 inside | +0.15 |
+> | `g_out` 3.80 | −0.46 inside | **+2.13 past** |
+> | shipped, `g_out` 6.50 | **+1.67 past** | **+3.67 past** |
+>
+> Actual gain reduction is 5.5–7.4 dB where the ratio implies 11.4, so the
+> inferred number was about **4 dB optimistic**.
+>
+> **What this means for the "margin" language throughout this file.** The 2.6 dB
+> is the gap between stage 11's *threshold* and the 1 dB point. The chain drives
+> the estimate 13 dB past that threshold, and a 6:1 compressor with a 5 ms attack
+> does not hold it there. So the margin was never a budget being spent down — it
+> stopped being a ceiling several `g_out` steps ago, and this chain has been past
+> the driver's 1 dB compression point on bass-heavy material since before 4 Sep.
+>
+> **The caveat that cuts the other way, and it is not small.** That 1 dB point
+> was measured with **500 ms sine bursts**. A p99 peak in music lasts
+> milliseconds, and a driver tolerates brief excursion far better than sustained
+> tone. These figures are therefore pessimistic for transient material by an
+> unknown amount, and the honest position is that **the absolute margin is not
+> established** — only the relative movement between configurations is, and that
+> is what the table above is good for.
+>
+> Nothing was reverted on this. Every setting shipped on a listening test at
+> matched level, the drivers are not making distress noises, and `g_out` 2.40 —
+> the last config comfortably inside the line — is 4 dB quieter than anyone here
+> wants. What changed is that this file should stop quoting a margin figure as
+> though it were a budget.
 
 **That second aggregation is gone, 4 Sep 2026.** The metric is now
 `displacement_db()` in `tools/offline-chain.py`, sharing `CENTRES` and
