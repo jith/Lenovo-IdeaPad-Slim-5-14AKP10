@@ -3019,6 +3019,51 @@ cross-run does.
 - **A third music track** — `music3.wav`, chosen by measurement: 84.6 % of its
   seconds within 6 dB of its own peak 30–100 Hz level.
 
+### The iPhone's deep-bass advantage, chased to a null result
+
+The last question of the day, asked three times: can the chain match what an
+iPhone does on a 25–150 Hz sweep? It was answered properly and the answer is
+**no, and closing the gap is inaudible.**
+
+**What the phone is actually doing.** Time-resolved on both devices, same mic,
+same position, at each sweep position:
+
+| sweep at | this chain, 150–400 Hz | iPhone | phone ahead |
+|---|---|---|---|
+| 44 Hz | 18.6 | **39.2** | **+20.6** |
+| 49 Hz | 17.4 | **41.7** | **+24.3** |
+| 63 Hz | 19.7 | **40.9** | **+21.3** |
+| 97 Hz | 28.1 | 26.9 | −1.3 |
+
+Both radiate nothing at 20–70 Hz. A pure sweep has no content at 150–400 Hz, so
+**the phone is synthesising it** — virtual bass, the same trick as stages 4–8,
+working an octave and a half lower. This chain does not, because stage 4's
+subbands sit at 122.5/175/252 Hz and a 50 Hz tone never reaches the generator.
+
+**It can be fixed, measurably.** Subband 1 from 122.5 → 60 Hz gives **+7.3 dB**
+at 25–45 Hz; retuning stage 6's band-1 weights to the new harmonics
+(240/300/360 Hz) adds another 2.9, for **+10.2 dB** total. On real material the
+whole change is invisible — ±0.01 LU, every band within 0.07 dB, excursion and
+true peak unmoved — because the branch sits 18–20 dB below programme.
+
+`R(f)` was reverse-engineered to do the retune, and is worth recording: it is the
+**inverse of the driver's response**, correlating +0.942 with −(2nd-order
+highpass at fc 761, Q 2.63), fitting `R = 0.5967·(−driver_dB) + 6.6613` with a
+0.18 dB residual over seven of the nine shipped gains.
+
+**And it was A/B'd and judged indistinguishable.** Not taken, for three reasons
+beyond the null result:
+
+- All three band-1 weights hit the **+12 dB cap** at the new frequencies (`R`
+  predicts 25.1/25.0/23.7), so the `ln(n)` shaping the weighting exists for no
+  longer applies. Design intent lost for an inaudible gain.
+- 76–97 Hz gives up 1.5–3 dB, a regression where the chain currently works.
+- +10 dB against a 20 dB deficit does not reach the reference anyway.
+
+Same verdict as the BS.1770 autogain plugin, for the same reason: **ship nothing
+on a metric alone.** The parameters are here if a future measurement ever makes
+the case differently.
+
 ### Still open
 
 - Stage 9b's reach above 100 Hz is set by ear at the point where losing the deep
