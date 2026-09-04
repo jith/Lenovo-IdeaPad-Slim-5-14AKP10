@@ -4081,6 +4081,45 @@ figures in this section come from that same script's own band aggregation and
 read baseline as 6.89 where `--bands` says 6.08; they are consistent with each
 other, not with the rest of this file.
 
+> ### The 1/f⁴ weighting is wrong for this driver, 4 Sep 2026
+>
+> Everything below about `displacement_db` describes a metric that is
+> **physically wrong in this band**, and every conclusion drawn from it in this
+> file needs reading with that in mind.
+>
+> A sealed driver's displacement transfer function is a 2nd-order lowpass at its
+> resonance. The 1/f² fall in displacement per volt is the **above-resonance**
+> behaviour; below resonance the system is stiffness-controlled and displacement
+> is roughly **flat**. This driver resonates at **761 Hz**, so 20–500 Hz is
+> entirely below it, and a 1/f⁴ power weighting over-weights 25–63 Hz by orders
+> of magnitude.
+>
+> The correct model was already in this repo, as stage 11's `Hx` estimate —
+> a lowpass at fc with Qtc, the thing that *predicted 800 Hz* as the one
+> compressing frequency without being told. `excursion_db()` in
+> `tools/offline-chain.py` is now that model, and is what to use.
+>
+> **The two disagree in direction, not just in size.** The 4 Sep changes,
+> measured on `music3`:
+>
+> | config | 1/f⁴ metric | `Hx` model |
+> |---|---|---|
+> | day start, `g_out` 3.80 | 0 | 0 |
+> | crossfade 0.45 | −0.56 | −0.16 |
+> | stage 9b +6 alone | **−1.17** | **+1.95** |
+> | shipped | **−1.51** | **+6.40** |
+>
+> So the claims that the crossfade "freed cone margin" and that stage 9b "gave
+> excursion back" are **backwards**. By the validated model the day *spent*
+> about **1.06 dB** of the 2.6 dB margin: on `music3` at p99 the chain sits
+> **0.16 dB inside** the driver's 1 dB compression point, where the day-start
+> chain sat 1.22 dB inside. Nothing is over the limit at p99; absolute peaks on
+> `music3` do go past it.
+>
+> The error is inherited rather than invented — it comes from the *Method note*
+> below, which states the 1/f² rule without noting it applies above resonance —
+> but it was then built into a tool and used for a day of decisions.
+
 **That second aggregation is gone, 4 Sep 2026.** The metric is now
 `displacement_db()` in `tools/offline-chain.py`, sharing `CENTRES` and
 `band_power` with `--bands` so that one chain cannot have two band tables, and

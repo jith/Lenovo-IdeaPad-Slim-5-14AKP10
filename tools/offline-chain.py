@@ -258,8 +258,39 @@ DISP_REF = 1000.0
 DISP_LO, DISP_HI = 20.0, 500.0
 
 
+def excursion_db(y, fc=761.0, q=2.63):
+    """Cone excursion estimate: the Hx model stage 11 actually uses.
+
+    PREFER THIS OVER displacement_db, which is wrong for this driver.
+
+    A sealed driver's displacement transfer function is a 2nd-order lowpass at
+    its resonance. BELOW fc the system is stiffness-controlled and displacement
+    per volt is roughly FLAT; the 1/f^2 fall is the ABOVE-fc behaviour. This
+    driver resonates at 761 Hz, so 20-500 Hz is entirely below resonance and a
+    1/f^4 power weighting over-weights 25-63 Hz enormously.
+
+    This is also the model with evidence behind it: built from fc and Qtc, it
+    predicted that 800 Hz is the one frequency where these drivers compress,
+    without being told -- see README, "What the drivers actually take".
+
+    Returned as the 99th-percentile level of the estimate, in dBFS, which is
+    what compares against stage 11's al_0 threshold (0.708 = -3.00 dBFS).
+    """
+    b, a = _rbj("bq_lowpass", fc, q)
+    h = np.column_stack([_biquad_fast(y[:, c], b, a) for c in range(y.shape[1])])
+    m = np.abs(h).max(axis=1)
+    return 20 * np.log10(np.percentile(m, 99) + 1e-30)
+
+
 def displacement_db(y):
     """1/f^4-weighted OUTPUT power over 20-500 Hz. Differences only.
+
+    SUPERSEDED 4 Sep 2026 by excursion_db, and WRONG for this driver. The
+    1/f^2-displacement rule it rests on holds above resonance; this driver
+    resonates at 761 Hz and this band is entirely below that, where displacement
+    per volt is roughly flat. The two models disagree in DIRECTION: on music3,
+    the changes of 4 Sep read -1.51 dB by this metric and +6.40 dB by Hx.
+    Kept because README figures quote it, not because it is right.
 
     WHY THIS EXISTS. Tilt cannot judge a bass change on a driver that cannot
     radiate bass. `envb` measured flatter on every music track and was shipped
@@ -370,6 +401,13 @@ def self_test():
     tt = np.arange(4 * RATE) / RATE
     tone50[:, 0] = tone50[:, 1] = np.sin(2 * np.pi * 50 * tt)
     tone200[:, 0] = tone200[:, 1] = np.sin(2 * np.pi * 200 * tt)
+    # excursion_db: the Hx lowpass is flat below fc, so two tones an octave
+    # apart well below 761 Hz must weigh the SAME -- the property 1/f^4 gets
+    # wrong. Checked against the closed form, not a stored number.
+    check("excursion: 50 and 100 Hz weigh the same below fc",
+          excursion_db(tone50) - excursion_db(
+              np.column_stack([np.sin(2*np.pi*100*tt)]*2)), 0.0, 0.30)
+
     check("displacement: 50 Hz weighs (200/50)^4 over 200 Hz",
           displacement_db(tone50) - displacement_db(tone200),
           40 * np.log10(200 / 50), 0.15)
