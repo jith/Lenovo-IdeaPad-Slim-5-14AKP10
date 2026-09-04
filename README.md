@@ -2592,10 +2592,23 @@ Note all three alignments are whole quanta (−3072, 0, −1024 samples at a 102
 quantum). That is the condition under which any of this nulls at all: a
 one-sample shift moves the output −21 dBFS while the limiter is working.
 
-**Re-baselined again the same day**, after the `mk` cut moved from −0.44 to
-−0.18; the 0.44 set is in `tests/captures/gout425-mk044/`. Captures are graph-
-specific, so every voicing change invalidates them, and these archives are the
-only copies — `tests/captures/` is gitignored.
+**Re-baselined after every change since**, because captures are graph-specific
+and every voicing change invalidates them. `tests/captures/` is gitignored, so
+these archives are the only copies that exist:
+
+| directory | chain |
+|---|---|
+| `tests/captures/` | **current** — `Gain 2` 0.45, `g_out` 6.50 |
+| `gout550/` | `Gain 2` 0.45, `g_out` 5.50 |
+| `gout425-mk018/` | `Gain 2` 0.6, `g_out` 4.25, `mk` cut 0.18 |
+| `gout425-mk044/` | the same at `mk` cut 0.44 |
+| `gout380/` | `g_out` 3.80, where the day started |
+
+Each set is verified offline against the chain rather than by a second
+`compare` pass — true peak has matched the offline render to **0.000 dB** on all
+three signals every time. Note that pink and `sweep_quiet` show 0.3–0.5 dB of
+band movement across changes where `music1` stays inside 0.15; that is the
+stationary-versus-transient effect above, not a defect.
 
 This set was **verified offline rather than by a second `compare` pass**, which
 is cheaper in test tones and answers a different question. New baselines against
