@@ -3076,6 +3076,24 @@ Outstanding work, as distinct from unresolvable questions:
 - ~~**`g_out` and stage 12a are not confirmed on hardware**~~ — **done.**
   `g_out = 3.00`, `th = 0.8900` and the 22 kHz band limit are all confirmed by
   live-switched A/B, on a set that now includes two real masters.
+- ~~**A third music track.**~~ — **resolved 4 Sep 2026.** `music3.wav` is a
+  40 s excerpt of a **−5.77 LUFS** master arriving at **+3.617 dBTP**, from a
+  mastering chain unrelated to the two trailer tracks. It was picked by
+  measurement rather than by ear: of five candidates it has **84.6 %** of its
+  seconds within 6 dB of its own peak 30–100 Hz level, against 46.2 % for
+  `music1` and 41.0 % for `music2`. That is the sustained-deep-bass gap this
+  entry named, closed.
+
+  **And it immediately exposes something about every margin figure in this
+  file.** Through the shipped chain `music3` sits **5.79 dB above `music1`** in
+  1/f⁴ displacement. Stage 11 is working on it — removing 2.97 dB, the same as
+  on `music1`'s 2.98 — but it is a 6:1 compressor rather than a cap, so harder
+  bass still lands higher. **All the cone-margin arithmetic on this page was
+  computed on `music1` and `music2`, and does not extend to material like this.**
+  Re-derive it here before spending margin again.
+
+  The original entry, kept for its reasoning:
+
 - **A third music track.** Two are in `tests/material/` now — `music1`, trailer
   music at −14.76 LUFS, and `music2`, dialogue over music at −11.25 LUFS
   arriving at +0.634 dBTP, which is the hardest thing here. Three is still the
