@@ -1742,6 +1742,36 @@ longer a measurement: 2.80 is roughly 1.75× the average power of 2.40 into a
 up as compression and strain over minutes that no capture here is long enough
 to see.
 
+**That last sentence stopped being true on 4 Sep 2026, and the objection did
+not survive being measured.** `tools/thermal.sh` holds the speaker at programme
+level for minutes and watches it, which nothing here could do before. Four
+minutes at **−10.30 dBFS RMS** — music2, the densest real master, rendered
+through the shipped chain, reproduced as a stationary signal matched in level,
+crest *and* spectrum:
+
+| minute | level | vs cold |
+|---|---|---|
+| 0 | 65.58 dB | −0.02 |
+| 1 | 65.52 | −0.09 |
+| 2 | 65.49 | −0.12 |
+| 3 | 65.45 | **−0.16** |
+
+**0.17 dB of compression over four minutes**, against 0.02 dB of
+window-to-window scatter — so it is real and it is negligible. 45 % of it came
+back after 90 s of silence, which is consistent with thermal whose cooling
+constant is longer than the cooldown (the magnet and basket hold heat after the
+coil sheds it) but does not separate that from amplifier heating or slow drift.
+It does not matter which: 0.17 dB is far below the 1 dB criterion used
+everywhere else here, and below audibility.
+
+**What that does to the argument.** Thermal was the *only* remaining objection
+to `g_out` above 4.25 that was not about excursion, and it was carried on this
+paragraph's say-so rather than on a measurement. Going to 4.50 costs about 6 %
+more average power, and even 5.00 costs about 15 % — on a driver that loses
+0.17 dB in four minutes at the level it already runs. **Thermal is not the
+blocker.** What remains is displacement, `x_max` is still unknown, and that is
+now the whole of the case.
+
 ### The ceiling was one signal, and it was avoidable
 
 `g_out` sat at 2.40 because a single test signal said so. Music, pink and the
@@ -3057,6 +3087,7 @@ the config rather than a transcription of it, so none of it can quietly drift.
 | `tools/measure-speaker.sh` | Plays the sweep and captures it on Mic2. |
 | `tools/imd.py` | SMPTE intermodulation, 60 + 2650 Hz at 4:1, sidebands to the 5th order. The instrument stage 10c is sized on — single-tone THD cannot see the limiter's bass-rate pumping at all. Compare only against numbers from this script. |
 | `tools/max-level.sh`, `tools/max-level.py` | Drives the raw sink with sine bursts at rising levels and reads the mic, to find where the *drivers* distort. `--ref` brackets every test level with a reference one, which is what it takes to resolve 1 dB. |
+| `tools/thermal.sh`, `tools/thermal.py` | The same rig held at **one** level for minutes, to find whether the driver stays there. Varies time where `max-level` varies level, so it sees voice-coil heating that every other tool here is too short to notice. The stimulus is tiled so every window has identical input, and shaped to the chain's own output spectrum, level and crest; the recovery block after a cooldown is the control, because thermal compression is reversible and drift is not. **The one measurement here that could damage a driver** — it does not stop for ten minutes. |
 | `tools/make-test-material.sh` | Synthesises pink, sweep and square; `--music` ingests your own tracks. |
 | `tools/null-test.sh`, `tools/null_residual.py` | Capture both paths and measure what the chain changed. |
 | `tools/loudness-match.sh` | The stage 13 trim, per ITU-R BS.1770. |
