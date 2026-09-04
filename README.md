@@ -2108,11 +2108,31 @@ the `g_out` 4.25 / `Gain 2` 0.6 set, level-normalised:
 | sweep_quiet | +0.09 | +1.28 | +1.52 | −0.42 | −0.44 |
 | square100 | −0.50 | +0.81 | +1.25 | +0.02 | +0.04 |
 
-On `music1` the same bands moved +0.29 and +0.86. Stationary signals drive the
-dynamics differently and push **roughly twice as much** into 160–1000 Hz — the
-band 761 Hz sits in. The change was judged by ear on real programme, which is
-the right material to judge it on, but the A/B was one track: **sustained
-content is where to listen for this**, not transient music.
+On `music1` the same bands moved +0.29 and +0.86.
+
+**Tested on sustained material, and the concern above does not survive it.** The
+paragraph as first written generalised from pink to "sustained content", and
+those are not the same thing. Shipped minus previous, level-normalised:
+
+| material | ΔLU | 50–125 | 160–400 | 500–1000 | 2–4k | Δdisplacement |
+|---|---|---|---|---|---|---|
+| music1, transient | +0.56 | −0.65 | +0.39 | **+0.61** | −0.70 | −0.12 |
+| sustained EDM, −5.14 LUFS master | +0.04 | −0.12 | +0.27 | **+0.51** | −0.12 | −0.09 |
+| sustained organ chord, −11 LUFS | +0.18 | −0.65 | +0.36 | **+0.73** | −0.34 | −0.83 |
+| pink | +0.42 | +0.07 | +1.76 | **+1.80** | −0.42 | −0.15 |
+
+Real sustained music lands at **+0.51 to +0.73 dB** in the 761 Hz band, the same
+range as transient music. **Pink is the outlier and pink is not sustained
+music** — it is *stationary*, flat-spectrum and transient-free, so it parks the
+dynamics in a steady state nothing real reaches. Sustained and stationary are
+different things and conflating them produced a caveat that measurement does not
+support.
+
+Two things do fall out of that table. Dense modern masters get **almost nothing**
+from the change (+0.04 LU on the EDM master) because the chain has no headroom
+to give material already that limited. And the organ chord saves **0.83 dB of
+displacement**, the largest cone saving in the set — sustained low content is
+exactly what the crossfade is for.
 
 **And `sf1` stays rejected once displacement is the bound, 4 Sep 2026.** That
 sweep was run against *true peak*, at `g_out` 2.40, when true peak was what
