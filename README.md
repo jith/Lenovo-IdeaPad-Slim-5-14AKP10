@@ -4153,11 +4153,27 @@ other, not with the rest of this file.
 > established** — only the relative movement between configurations is, and that
 > is what the table above is good for.
 >
-> Nothing was reverted on this. Every setting shipped on a listening test at
-> matched level, the drivers are not making distress noises, and `g_out` 2.40 —
-> the last config comfortably inside the line — is 4 dB quieter than anyone here
-> wants. What changed is that this file should stop quoting a margin figure as
-> though it were a budget.
+> Nothing was reverted on this, and **stepping `g_out` back does not help** —
+> checked, because it is the obvious response to the table above. On `music3`:
+>
+> | `g_out` | ΔLU | vs the 1 dB point |
+> |---|---|---|
+> | 6.50 shipped | — | +3.67 |
+> | 5.50 | −0.13 | +3.33 |
+> | 4.25 | −0.15 | +2.78 |
+> | 3.80 | −0.29 | +2.45 |
+> | 2.40 | **−1.29** | **+0.61, still past** |
+>
+> **No `g_out` setting gets this material inside the line.** Dropping to 5.50
+> buys 0.34 dB of a 3.67 dB excess; even 2.40 does not clear it. As `g_out`
+> falls GOTT compresses less and returns most of the reduction, so the lever
+> barely moves the thing it would be aimed at. The excess is not a gain problem
+> — it is what a 2 W micro-speaker does with a −5.77 LUFS bass-heavy master.
+>
+> Every setting shipped on a listening test at matched level and the drivers are
+> not making distress noises. What changed is that this file should stop quoting
+> a margin figure as though it were a budget, and stop treating `g_out` as the
+> control that would restore one.
 
 **That second aggregation is gone, 4 Sep 2026.** The metric is now
 `displacement_db()` in `tools/offline-chain.py`, sharing `CENTRES` and
