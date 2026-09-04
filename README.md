@@ -2963,6 +2963,41 @@ The keep-by-default rule stays regardless. It costs nothing, and it is the only
 thing standing between a capture set and a stimulus swapped out from under it
 if the synthesis is ever edited again.
 
+## The tuning is locked here
+
+**Settled 4 September 2026.** Every value below was taken on a level-matched
+listening test, and the four attempts to go further that day were each measured
+and rejected. Treat this as the reference point: change one thing at a time
+against it, and if a change cannot be heard at matched level, it does not ship.
+
+| node | control | value |
+|---|---|---|
+| `s0trim_*` | `Mult` | 0.6983 |
+| `s4bp1_*` | `Freq` | 122.5 |
+| `s6w1x5_*` | `Gain` | 8.14 |
+| `s6w1x6_*` | `Gain` | 3.65 |
+| `s8sum_*` | `Gain 2` / `Gain 3` | **0.45** / 0.06 |
+| `s9blift_*` | `Freq` / `Q` / `Gain` | **200 / 1.2 / +3** |
+| `s10mbc` | `g_out` | **6.50** |
+| `s10mbc` | `mk_3` / `mk_4` | **0.694218 / 0.492308** |
+| `s11xcur` | `al_0` | 0.708 |
+| `s12brick` | `th` | 0.8900 |
+| `s13trim_*` | `Mult` | 1.0 (unity, deliberately hot) |
+
+Tagged `tuning-2026-09-04`. `git show tuning-2026-09-04:files/50-speaker-tuning.conf`
+returns this exact graph.
+
+**What was measured and rejected against it**, so none of it is re-proposed:
+`g_out` 7.00 (+0.08 LU on music2, inaudible), stage 9b at +6 and at Q 0.7
+(rejected by ear, thinned 50–80 Hz), `Gain 2` 0.30 (halves the return per dB of
+`mk` cut), and the 60 Hz harmonic subband (+10 dB on a sweep, nothing on any
+real material).
+
+**The constraint that binds is excursion, and it is already past its line** —
++1.67 dB beyond the driver's 1 dB compression point on music1, +3.67 on music3,
+and no `g_out` setting recovers it. Anything that adds level here should be
+weighed against that rather than against a headroom figure.
+
 ## 4 September 2026, in one place
 
 A long session that moved the chain and then spent its last hours finding that
@@ -3063,6 +3098,28 @@ beyond the null result:
 Same verdict as the BS.1770 autogain plugin, for the same reason: **ship nothing
 on a metric alone.** The parameters are here if a future measurement ever makes
 the case differently.
+
+**Re-tested against every material type before being closed**, because "it was
+inaudible on a sweep" is a weaker result than "there is nothing to gain":
+
+| material | ΔLU | worst third-octave change | branch below total |
+|---|---|---|---|
+| trailer music | +0.01 | 0.25 dB | −19.4 dB |
+| **dialogue over music** | +0.02 | 0.27 dB | **−21.4 dB** |
+| sustained deep bass | +0.00 | 0.11 dB | −20.1 dB |
+| dense EDM master | +0.00 | 0.11 dB | −24.5 dB |
+| **25–150 Hz sweep** | −0.03 | **7.08 dB** | **−0.6 dB** |
+
+Every real programme type moves by 0.1–0.3 dB in its worst band — below
+audibility, and below the run-to-run scatter of the hardware captures in this
+file. **Film is the worst case**: dialogue, effects and music fill 200–630 Hz
+continuously so the branch sits 21 dB down, and film arrives 12+ dB quieter than
+music, which puts the chain in the flat region where the dynamics barely engage.
+Both effects push the same way.
+
+So the gain from the change is, in full: better reproduction of test sweeps and
+near-pure sub-bass tones. The cost is that band 1's three weights all clip at the
++12 dB cap, permanently disabling the `ln(n)` shaping stage 6 exists to apply.
 
 ### Still open
 
