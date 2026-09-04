@@ -2963,6 +2963,77 @@ The keep-by-default rule stays regardless. It costs nothing, and it is the only
 thing standing between a capture set and a stimulus swapped out from under it
 if the synthesis is ever edited again.
 
+## 4 September 2026, in one place
+
+A long session that moved the chain and then spent its last hours finding that
+three layers of its own reasoning were wrong. Both halves are recorded in the
+sections that own them; this is the index.
+
+### What shipped
+
+| stage | from | to | why |
+|---|---|---|---|
+| 8 `Gain 2` | 0.60 | **0.45** | *The crossfade does not pay for itself* — a lever the README had rejected against **true peak**, re-swept against excursion |
+| 10 `g_out` | 3.80 | **6.50** | in two steps, each A/B'd at matched level |
+| 10 `mk_3`/`mk_4` | −1.65 dB | **−3.00 dB** | holding tilt through both steps, sized at 80 % not unity |
+| **9b** (new) | — | **200 Hz Q 1.2 +3 dB** | a 14 dB gap against an iPhone 13 at 160–250 Hz, measured |
+| 13 trim | 0.5811 | **0.4722** | follows, as its comment requires |
+
+Net about **+1.7 LU** on music over the chain the day started with.
+
+### What was corrected, and this is the more useful half
+
+**The `mk` tilt cut was sized at unity and wrong where it is used.** −0.44 dB held
+the tilt at 100 % and read *dull* at 80 %. It is level-dependent because
+`mk_3`/`mk_4` are makeup gains sitting **after** per-band compression. Shipped at
+−0.18. Caught by ear before any measurement suggested it. See *The tilt
+correction is level-dependent*.
+
+**The 1/f⁴ displacement weighting is physically wrong for this driver.** The
+1/f² rule holds *above* resonance; this driver resonates at 761 Hz and the
+weighted band is entirely below it. It inverted the sign on every "this frees
+cone margin" claim. Replaced by `excursion_db()`, the `Hx` model stage 11 already
+used, with a self-test on the property the old one got wrong. See the boxed note
+under *Test material*.
+
+**Excursion was then inferred rather than measured, and was 4 dB optimistic.**
+Stage 11's output was computed from its 6:1 ratio, ignoring the soft knee and
+5 ms attack. Measured, the chain sits **+3.67 dB past** the driver's 1 dB
+compression point on `music3` — and was already +2.13 past at `g_out` 3.80 and
++0.15 at 2.40. The "2.6 dB of margin" language is gone: it was never a budget.
+
+**The thermal rig does not repeat.** Four runs of a bit-identical stimulus spanned
+**6.8 dB**, about seven times the effect it exists to detect. The 1.05 dB
+"session loss" it produced is withdrawn. Within-run drops survive; nothing
+cross-run does.
+
+### What was closed with an answer
+
+- **`sf1` band split** — the port clamps at 200 Hz, and is worth +0.01 LU anyway.
+- **Stepping `g_out` back** does not recover the excursion excess. Even 2.40, a
+  full 1.3 LU quieter, is still past the line.
+- **Nothing below 100 Hz is reachable by EQ.** 63 Hz moves ≤0.12 dB under any
+  bell tried, including +9 dB.
+- **The iPhone's bass advantage is at 160–250 Hz**, where its drivers work and
+  these do not. Below 63 Hz this chain is 6–10 dB *ahead* of it.
+- **A third music track** — `music3.wav`, chosen by measurement: 84.6 % of its
+  seconds within 6 dB of its own peak 30–100 Hz level.
+
+### Still open
+
+- Stage 9b's reach above 100 Hz is set by ear at the point where losing the deep
+  octave stopped being worth it. That boundary was found once, on one track.
+- The absolute excursion limit is **not established** — the driver's 1 dB point
+  comes from 500 ms sine bursts and musical peaks last milliseconds.
+- `Gain 2` 0.30 is priced and unheard.
+
+### The pattern worth remembering
+
+Every wrong turn was a measurement trusted past what it had established: a
+metric never checked against physics, a compressor's output inferred from its
+ratio, a rig never checked for repeatability, a voicing cut sized at a level
+nobody listens at. **The ear caught three of them before the meter did.**
+
 ## Acceptance status
 
 Measured on the installed graph, not asserted.
