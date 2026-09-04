@@ -5009,6 +5009,44 @@ filter-chain controls cannot be set from WirePlumber Lua (only `pw-cli
 set-param` works), so nothing can track the GNOME slider without a daemon.
 Viable only if the listening level moves onto `external-dsp level`.
 
+### `speaker-dsp off` reported success while doing nothing, 4 Sep 2026
+
+The fix in the section below broke the helper in the section above it, and
+neither said so for two weeks. `hide-speaker-tuning.lua` hides the raw speaker;
+`speaker-dsp off` works by making that raw speaker the default sink. WirePlumber
+will not default to a hidden sink, so the switch silently failed — and the
+helper printed **RAW SPEAKER - the hardware speaker is the default output**
+every time, because `pactl set-default-sink` **exits 0 whether or not it
+worked**.
+
+Two further traps found while fixing it:
+
+**`pactl` is the wrong thing to ask.** `pipewire-pulse` reports a default the
+client is allowed to see, so a hidden sink reads back as the visible one. Only
+`pw-metadata -n default` is authoritative.
+
+**The failure mode is a *transient success*.** The first fix polled until the
+default matched, and still reported success. Measured at 100 ms intervals:
+
+| after | default |
+|---|---|
+| 100 ms | `alsa_output...HiFi__Speaker__sink` |
+| **200 ms onward** | `effect_input.speaker-tuning` |
+
+pactl's write lands, reads back correctly, and WirePlumber reverts it within
+200 ms. **Poll-until-match is the wrong shape when the failure mode is a brief
+success**; the check now settles for 600 ms and requires the value to hold
+across two reads.
+
+A failed `off` also used to leave the *hardware* sink carrying the listening
+level — `carry_volume` runs before the switch — on a sink still sitting behind
+the live chain, which is tuned for 100 %. It is now restored on failure.
+
+**There is no in-place bypass to fall back on**, which is what `external-dsp`
+does. Stage 2 is `bq_raw`, and setting those coefficients live diverges to NaN
+and silences the chain until the sink suspends. So `off` now fails loudly and
+points at `tools/offline-chain.py` for raw comparisons, rather than pretending.
+
 ### A hidden sink must never be the default
 
 The GNOME volume slider did nothing on the built-in speaker, while working

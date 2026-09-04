@@ -123,6 +123,37 @@ carry_volume() {
 # slider goes inert until you switch back -- this warns rather than leaving
 # you wondering. Carrying the level across the switch at least keeps the
 # loudness continuous, which is what an A/B needs anyway.
+# pactl set-default-sink EXITS 0 WHETHER OR NOT IT WORKED. WirePlumber owns the
+# default and will refuse a sink its policy rejects -- notably a hidden one, and
+# hide-speaker-tuning.lua hides the raw speaker. 'speaker-dsp off' printed
+# "RAW SPEAKER" for weeks while the default stayed on Speaker (Tuning), because
+# the && after pactl only ever saw a successful exit code.
+#
+# pactl is also the wrong thing to ASK: pipewire-pulse reports a default the
+# client is allowed to see, so a hidden sink reads back as the visible one. Only
+# pw-metadata is authoritative. See README, "A hidden sink must never be the
+# default".
+default_sink_is() {
+    pw-metadata -n default 2>/dev/null \
+        | awk -F'"' '/key:.default.audio.sink./ { print $(NF-1); exit }' \
+        | grep -qx "$1"
+}
+
+# Set it, then check that it STAYS. Polling until it matches is the wrong shape
+# here, because the failure mode is a TRANSIENT success: measured 4 Sep 2026,
+# pactl's write lands and reads back correctly at 100 ms, and WirePlumber has
+# reverted it by 200 ms. A poll-until-match saw the 100 ms reading and reported
+# the switch as done. So: let it settle first, then require the value to hold
+# across two reads.
+set_default_checked() {
+    pactl set-default-sink "$1" >/dev/null 2>&1
+    sleep 0.6
+    default_sink_is "$1" || return 1
+    sleep 0.3
+    default_sink_is "$1" || return 1
+    return 0
+}
+
 select_tuned() {
     carry_volume "$RAW" "$DSP" "$(awk -v t="$RAW_TRIM_DB" 'BEGIN{print -t}')"
     # 'off' moved the listening level onto the raw sink, and PipeWire maps that
@@ -136,12 +167,35 @@ select_tuned() {
     # percentage; in tuned mode it is the DSP sink's, with RAW at 100% behind
     # it, and carry_volume has just copied one onto the other.
     pactl set-sink-volume "$RAW" 100% >/dev/null 2>&1
-    pactl set-default-sink "$DSP"
+    set_default_checked "$DSP" || {
+        echo "error: could not make $DSP the default sink." >&2
+        echo "       WirePlumber rejected it; check its policy and" >&2
+        echo "       ~/.local/state/wireplumber/default-nodes." >&2
+        return 1
+    }
 }
 
 select_raw() {
+    # carry_volume moves the listening level onto the raw sink, which is the
+    # hardware sink -- the one control nothing here measures. If the switch then
+    # fails, that level is left applied to a sink still sitting behind the live
+    # chain, which is tuned for 100%. Remember it and put it back.
+    _raw_was=$(volume_pct "$RAW")
     carry_volume "$DSP" "$RAW" "$RAW_TRIM_DB"
-    pactl set-default-sink "$RAW"
+    set_default_checked "$RAW" || {
+        [ -n "$_raw_was" ] && pactl set-sink-volume "$RAW" "${_raw_was}%" >/dev/null 2>&1
+        echo "error: the DSP was NOT bypassed. $RAW" >&2
+        echo "       cannot be made the default sink: hide-speaker-tuning.lua" >&2
+        echo "       hides it from GNOME, and WirePlumber will not default to a" >&2
+        echo "       hidden sink -- which is the rule README's 'A hidden sink" >&2
+        echo "       must never be the default' exists to enforce." >&2
+        echo >&2
+        echo "       Audio is still going through Speaker (Tuning). There is no" >&2
+        echo "       in-place bypass for the internal chain either: stage 2 is" >&2
+        echo "       bq_raw, and setting those coefficients live diverges to NaN." >&2
+        echo "       To compare against raw, use tools/offline-chain.py." >&2
+        return 1
+    }
 }
 
 warn_slider() {
