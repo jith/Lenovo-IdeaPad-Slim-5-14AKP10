@@ -41,7 +41,15 @@ and invisible to every one of them. If runs are being compared, compare the cold
 references too, and leave the system idle long enough between them that the
 comparison means something.
 
-WHAT IT CANNOT TELL YOU, TWO: Where the driver is damaged. This measures sensitivity
+WHAT IT CANNOT TELL YOU, TWO: WHETHER A LOSS IS RECOVERING, if you keep asking.
+Each run costs a soak, so every reading taken to check recovery re-heats what it
+is measuring. A series of short runs after a long one produces a flat line that
+looks like permanent drift and may be nothing of the kind. Measured 4 Sep 2026:
+three readings at 0, 6 and 11 minutes of "idle" gave 64.56, 64.61, 64.62 dB --
+and each of the last two contained a 60 s burst of its own. If the question is
+whether something came back, leave the system ALONE and take ONE reading.
+
+WHAT IT CANNOT TELL YOU, THREE: Where the driver is damaged. This measures sensitivity
 loss from heating, which is reversible and benign in itself; x_max and the
 thermal limit of these OEM drivers are unknown and are not what is being found
 here. A driver can be perfectly linear right up until it is not.

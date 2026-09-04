@@ -1811,6 +1811,43 @@ to 65.61 it is thermal and reversible; if it does not, something drifted and
 none of these numbers are driver properties. **Do not read `g_out` headroom off
 this section until that run exists.**
 
+#### Recovery: four readings, and the trap in taking them
+
+The idle run was attempted and cut short twice, so what exists is a recovery
+*curve* rather than the single long-idle endpoint the paragraph above asks for.
+All four use a **bit-identical stimulus**, with the mic and raw-sink volumes
+verified unchanged at 100 %:
+
+| reading | cold reference | vs the pilot |
+|---|---|---|
+| pilot, session start | **65.61 dB** | — |
+| control, straight after the 5.00 soak | 64.56 | −1.05 |
+| after ~6 min of silence | 64.61 | −1.00 |
+| after ~11 min of silence | **64.62** | **−0.99** |
+
+**No recovery at all in eleven minutes**, where a voice coil's cooling constant
+is tens of seconds.
+
+**And the method has a trap that this walked into.** Every recovery reading
+costs a 60 s burst, so each one re-heats what it is measuring; the 11-minute
+point is eleven minutes *containing one of these measurements*, not eleven
+minutes of undisturbed cooling. More readings cannot fix that — they are the
+problem. The only clean version is a long silence with **one** measurement at
+the end, which is the run that keeps not happening.
+
+**There is a reading of all of it that is not drift.** The within-run drops, in
+order: 0.17, 0.41, 0.23, 0.30, **0.08**. They have collapsed. That is what
+arriving at a warm equilibrium looks like — the early drops were the transient
+toward it, and once there, little is left to fall. On that reading the ~1 dB is
+thermal with a time constant well over eleven minutes and has simply never been
+left alone long enough to return. Nothing here separates that from genuine
+drift, and the reason is that the idle was cut short, not that the question is
+hard.
+
+**What is true either way:** the loss is **stable, not progressive** — 64.56,
+64.61, 64.62 across three readings. It fell about 1 dB early in the session and
+has not moved since. Nothing is running away, and `g_out` stays at 4.25.
+
 ### The ceiling was one signal, and it was avoidable
 
 `g_out` sat at 2.40 because a single test signal said so. Music, pink and the
