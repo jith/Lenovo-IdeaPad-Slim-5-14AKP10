@@ -32,7 +32,16 @@ tools/max-level.py; read its notes before changing anything here.
    does not come back. A run whose recovery does not return is a run that
    measured something else, and analyze says so rather than reporting a number.
 
-WHAT IT CANNOT TELL YOU. Where the driver is damaged. This measures sensitivity
+WHAT IT CANNOT TELL YOU, ONE: ANYTHING ACROSS RUNS. The cold reference comes
+from the first windows of THIS soak, so this measures the drop within a soak and
+is blind to accumulation between them. Measured 4 Sep 2026: three runs in about
+25 minutes, and the third's cold reference sat 1.05 dB below the first's on a
+bit-identical stimulus -- larger than any within-run drop any of them reported,
+and invisible to every one of them. If runs are being compared, compare the cold
+references too, and leave the system idle long enough between them that the
+comparison means something.
+
+WHAT IT CANNOT TELL YOU, TWO: Where the driver is damaged. This measures sensitivity
 loss from heating, which is reversible and benign in itself; x_max and the
 thermal limit of these OEM drivers are unknown and are not what is being found
 here. A driver can be perfectly linear right up until it is not.

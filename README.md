@@ -1764,13 +1764,52 @@ coil sheds it) but does not separate that from amplifier heating or slow drift.
 It does not matter which: 0.17 dB is far below the 1 dB criterion used
 everywhere else here, and below audibility.
 
-**What that does to the argument.** Thermal was the *only* remaining objection
-to `g_out` above 4.25 that was not about excursion, and it was carried on this
-paragraph's say-so rather than on a measurement. Going to 4.50 costs about 6 %
-more average power, and even 5.00 costs about 15 % — on a driver that loses
-0.17 dB in four minutes at the level it already runs. **Thermal is not the
-blocker.** What remains is displacement, `x_max` is still unknown, and that is
-now the whole of the case.
+**Two more runs the same night, and they overturn the first conclusion.** What
+was written here after the pilot was *thermal is not the blocker*. That was
+premature, and it is left visible rather than deleted because the way it failed
+is the point.
+
+The second run repeated the soak at the level `g_out` 5.00 delivers — measured,
+not extrapolated: **−9.93 dBFS RMS**, which is 0.38 dB and **9 %** more average
+power than the shipped level, not the 15 % first guessed. It lost **0.41 dB**,
+against the pilot's 0.17. The third run was a control: the same soak at the
+shipped level again, immediately afterwards, on a **bit-identical stimulus**.
+
+| run | start | drop over 4 min | cold reference |
+|---|---|---|---|
+| pilot, shipped level | cold | 0.17 dB | 65.61 dB |
+| `g_out` 5.00 level | warm | **0.41 dB** | 65.12 |
+| control, shipped level | warm | 0.23 dB | **64.56** |
+
+Two separate effects, and the control separates them.
+
+**Level scaling is real but smaller than it looked.** Warm against warm, 0.23 →
+0.41 dB for 9 % more power. Residual heat explains only 0.06 dB of the gap. That
+is still superlinear, which plain coil heating should not be — a voltage-driven
+coil is self-limiting, since heating raises Re and *reduces* current. Something
+scaling that way points at the amplifier rather than the cone.
+
+**But the bigger number is in the last column, and nothing was looking at it.**
+The control's cold reference is **1.05 dB below the pilot's** on a bit-identical
+stimulus, with the mic and sink volumes verified unchanged at 100 %. Roughly
+1 dB was lost across about 25 minutes of intermittent testing and did not come
+back in the gaps between runs — gaps of several minutes, far longer than a voice
+coil's cooling constant.
+
+**`thermal.py` is structurally blind to that**, and this is a design limitation
+worth stating rather than a bug: it takes its own cold reference from the first
+windows of each run, so it measures the drop *within* a soak and cannot see
+accumulation *across* soaks. Every within-run number above is correct and every
+one of them understates what the session did.
+
+**So the honest state is: unresolved, and 1.05 dB is over the 1 dB criterion
+used everywhere else here.** It is not yet known whether that is the driver, the
+amplifier, the codec, or the mic — which sits inside the same warming chassis.
+The test that separates them is idle recovery: leave everything silent for
+20–30 minutes and replay the identical stimulus. If the cold reference returns
+to 65.61 it is thermal and reversible; if it does not, something drifted and
+none of these numbers are driver properties. **Do not read `g_out` headroom off
+this section until that run exists.**
 
 ### The ceiling was one signal, and it was avoidable
 
