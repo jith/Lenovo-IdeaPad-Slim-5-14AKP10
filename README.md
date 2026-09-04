@@ -2098,6 +2098,22 @@ other material, look here first. And **tilt reads +0.03 across this change and
 is the wrong instrument for it**: presence and deep bass fell together, so a
 two-point tilt sees nothing while the middle of the band moved.
 
+**And the lift is bigger on stationary material than the A/B showed.**
+Found while re-baselining the null test after the change. New baselines against
+the `g_out` 4.25 / `Gain 2` 0.6 set, level-normalised:
+
+| signal | 50–125 | 160–400 | 500–1000 | 2–4k | 5–12.5k |
+|---|---|---|---|---|---|
+| pink | +0.09 | **+1.78** | **+1.81** | −0.41 | −0.43 |
+| sweep_quiet | +0.09 | +1.28 | +1.52 | −0.42 | −0.44 |
+| square100 | −0.50 | +0.81 | +1.25 | +0.02 | +0.04 |
+
+On `music1` the same bands moved +0.29 and +0.86. Stationary signals drive the
+dynamics differently and push **roughly twice as much** into 160–1000 Hz — the
+band 761 Hz sits in. The change was judged by ear on real programme, which is
+the right material to judge it on, but the A/B was one track: **sustained
+content is where to listen for this**, not transient music.
+
 **And `sf1` stays rejected once displacement is the bound, 4 Sep 2026.** That
 sweep was run against *true peak*, at `g_out` 2.40, when true peak was what
 bound the chain. It no longer is — see *The loudness that bought* — so the
