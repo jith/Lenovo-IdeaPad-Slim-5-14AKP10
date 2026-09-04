@@ -4313,11 +4313,25 @@ music2**, leaving 1.64 dB. Unlike the crossfade step it is close to a *pure*
 loudness change: level-matched at 80 %, every band moves less than 0.15 dB, so
 what an A/B tests here is **density, not tonality**. Reported as sounding the
 same, which is what licensed it. 7.00 and 7.50 measure louder still (+0.66 and
-+0.82 LU) and were **not** taken, because they were never heard — the returns
++0.82 LU against 5.50) and were **not** taken, because they were never heard — the returns
 flatten while the `mk` cut keeps growing, and by 7.50 the chain would apply
 +17.5 dB of broadband makeup while pulling 1 kHz+ down 3.6 dB, which nothing
 here has probed for good behaviour.
 
+**7.00 was then tried properly, and rejected on its own numbers.** Priced
+against the shipped 6.50 rather than against 5.50 — which is the comparison that
+matters once 6.50 is taken — the marginal step is **+0.19 LU on music1 and
++0.08 on music2**, for 0.22 dB of displacement out of the 1.64 dB left. The
+`mk` cut is 3.30 dB and the voicing barely moves: level-matched at 80 %, every
+band is inside 0.13 dB.
+
+**That is the whole reason to record it.** An A/B here cannot say anything
+useful in the direction it is usually run. The two steps before this were +0.56
+and +0.48 LU, where "sounds the same" meant *loudness was gained for free*. At
++0.08 LU, "sounds the same" would mean *nothing was gained and cone margin was
+spent* — the same verdict licensing the opposite conclusion. **A null result is
+only evidence when the effect would have been audible had it been real.** The
+step was reverted before it was ever written to the config.
 It costs nothing to move: the change is entirely above 1 kHz, so the 1/f⁴
 displacement metric does not see it (0.00 to −0.12 dB across the battery, i.e.
 unchanged or slightly less), and worst true peak goes −0.651 → −0.647 dBTP.
