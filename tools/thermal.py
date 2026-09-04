@@ -49,7 +49,16 @@ three readings at 0, 6 and 11 minutes of "idle" gave 64.56, 64.61, 64.62 dB --
 and each of the last two contained a 60 s burst of its own. If the question is
 whether something came back, leave the system ALONE and take ONE reading.
 
-WHAT IT CANNOT TELL YOU, THREE: Where the driver is damaged. This measures sensitivity
+WHAT IT CANNOT TELL YOU, THREE: ANY CROSS-RUN NUMBER, until this rig has been
+shown to repeat. Measured 4 Sep 2026: four runs of a BIT-IDENTICAL stimulus, same
+sink and mic volumes, floor 20 dB down throughout, spanned 6.8 dB of acoustic
+level -- about seven times the effect being looked for. Not noise, not level, not
+CPU heat (loading sixteen cores made it louder). Something in the acoustic path
+moves between runs. Run the same stimulus twice a few minutes apart and check it
+repeats BEFORE comparing anything across runs; the within-run drop is sound
+because it has its own cold reference, and nothing else here is.
+
+WHAT IT CANNOT TELL YOU, FOUR: Where the driver is damaged. This measures sensitivity
 loss from heating, which is reversible and benign in itself; x_max and the
 thermal limit of these OEM drivers are unknown and are not what is being found
 here. A driver can be perfectly linear right up until it is not.

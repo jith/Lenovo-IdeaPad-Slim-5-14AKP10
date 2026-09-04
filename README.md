@@ -1845,9 +1845,40 @@ left alone long enough to return. Nothing here separates that from genuine
 drift, and the reason is that the idle was cut short, not that the question is
 hard.
 
-**What is true either way:** the loss is **stable, not progressive** — 64.56,
-64.61, 64.62 across three readings. It fell about 1 dB early in the session and
-has not moved since. Nothing is running away, and `g_out` stays at 4.25.
+**All of that is withdrawn, 4 Sep 2026.** The idle run was finally given 5
+minutes of genuinely quiet machine — no captures, no CPU work — and came back at
+**67.52 dB**, nearly 3 dB *above* the session-start reference it was supposed to
+return toward. A CPU-load test then pushed it to **71.21**. Measured
+consistently, in the band, against each run's own noise floor:
+
+| run | soak signal | noise floor | SNR |
+|---|---|---|---|
+| idle06 | −39.2 | −59.5 | 20.3 dB |
+| idle11 | −39.1 | −58.8 | 19.7 |
+| idle20 | −36.3 | −59.3 | 23.0 |
+| hotcpu | **−32.4** | −56.9 | 24.5 |
+
+**6.8 dB of spread across four runs of a bit-identical stimulus**, at identical
+sink and mic volumes, with the floor 20 dB down throughout. That is about seven
+times the effect this rig was built to detect. It is not noise, not level, not
+the stimulus, and not CPU heat — loading sixteen cores made it *louder*.
+
+**So cross-run comparison in this rig is invalid at this precision, and the
+1.05 dB "session loss" above is not a result.** Something in the acoustic path
+moves between runs — laptop position, lid angle, surface coupling — by far more
+than any thermal effect. Nothing here is a driver or amplifier property.
+
+**What survives:** the within-run drops, 0.17 / 0.23 / 0.41 dB, because each is
+measured against its own cold reference a minute earlier rather than against
+another run. Those still say thermal compression at programme level is small.
+**What does not:** every comparison between runs on this page, including the one
+that prompted the whole investigation.
+
+The lesson is the same one `max-level.py` records twice and this walked into a
+third time: **a measurement is only as good as what it holds still.** This one
+never established its own between-run repeatability, and a repeatability check
+is cheap — the same stimulus twice, minutes apart, nothing else changed. Do that
+before trusting any figure here again.
 
 ### The ceiling was one signal, and it was avoidable
 
