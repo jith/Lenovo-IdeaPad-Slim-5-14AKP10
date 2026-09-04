@@ -43,15 +43,15 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 5 | Harmonic generation | `s5pre1..3_*`, `s5h<band>x<order>_*` | `linear` pre-gain + `mult`, order n = x^n | pre-gain ×5, then orders 4/5/6, 3/4/5, 2/3/4 → 490–1008 Hz | **active** | CN115442709B, US5930373A |
 | 6 | Harmonic weighting | `s6w<band>x<order>_*`, `s6sum<band>_*` | `bq_peaking` per order | gain = ln(n)·R(f) scaled to +12 dB max | **active**, +1.9 to +12 dB | CN115442709B |
 | 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | −20 dBFS, 20:1 — levels the n-th power law | **active** | CN115442709B, US10382857 |
-| 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.6`, `Gain 3 = 0.06` | CN115442709B |
+| 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.45`, `Gain 3 = 0.06` — deepened 4 Sep 2026; the chain's biggest **displacement** lever | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
-| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` +12.57 dB, `mk_2` **0.00 dB**, `mk_3` −0.35 dB, `mk_4` −3.33 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −1.83 dB, −1.65 of it taken 1 Sep 2026 to hold the tilt when stage 11 went multiband and the last −0.18 on 4 Sep 2026 to hold it through `g_out` 3.80 → 4.25 — **sized at the listening level, not at unity**, see *The tilt correction is level-dependent*; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
+| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` +14.81 dB, `mk_2` **0.00 dB**, `mk_3` −2.61 dB, `mk_4` −5.59 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −4.09 dB, taken in three steps on 1 and 4 Sep 2026 to hold the tilt through stage 11 going multiband and through `g_out` 3.80 → 4.25 → 5.50 — **sized at the listening level, not at unity**, see *The tilt correction is level-dependent*; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
 | 10b | Resonance notch | `s10rbp_*`, `s10rdyn_*`, `s10rneg_*`, `s10rsum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + `invert` + `mixer` | branch 760 Hz Q 1.4262 → **Qbp 2.4245**, anchor **−5.5 dB** (`Gain 2` = 0.4691156), `cr` **1.0** | **active** — since 14 Aug 2026 the *second and last* instrument aimed at the 761 Hz resonance, after stage 2. **Rebuilt as a parallel bandpass 2 Sep 2026 and deepened −3.7 → −5.5**, which is where the frozen Qbp runs out and close to the 4.7 dB residual the A/B measured. The branch compressor is a **wire, by measurement** — both directions were swept and neither has a job, because stages 11–12's give-back is keyed on broadband level, not on 760 Hz | — |
 | 10c | Presence lift | `s10pbp_*`, `s10pdyn_*`, `s10psum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + builtin `mixer` | 2650 Hz, Q 1.4262 branch, `cr` 4.0, `al` −20 dBFS, `rt` 300 ms, branch gain 0.5849 | **active, and dynamic since 1 Sep 2026** — a parallel bandpass with a compressed branch, which is exactly a `bq_peaking` Q 1.2 whose Gain moves between about +2.3 and +4.0 dB. Anchored at the *fitted* +4.0 rather than frozen at the +3.0 the static version had to accept. Delivers **+0.73 dB** more at 2500 Hz than the static bell **and 22% less two-tone IMD**, confirmed on hardware | — |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → **LSP sidechain MULTIBAND comp** | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate, **band 0 only, split 1 kHz** | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress. **Multiband since 1 Sep 2026**: a cone has one displacement and it is a low-frequency quantity, so ducking 3 kHz was collateral, not protection | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −1.01 dBFS sample → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** — `th` pays for the sweep so `g_out` can spend | — |
-| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left hot, by **5.23 LU** as re-measured at `g_out` 4.25 | ITU-R BS.1770 |
+| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left hot, by **5.79 LU** as re-measured at `g_out` 5.50 / `Gain 2` 0.45 | ITU-R BS.1770 |
 
 ## Signal flow
 
@@ -2020,7 +2020,7 @@ so they are not tried again.
 | 1 | Raise the subsonic corner — the driver makes nothing down there anyway | **Net loss.** 80 Hz costs 0.45 LU and frees 0.43 dB of peak. Spending that on makeup gives +1.15 LU where leaving stage 1 alone and using the same makeup gives +1.57. |
 | 2 | Ease the Linkwitz target | Tonal, not loudness. It costs 0.13 LU by design, at the frequency K-weighting is most sensitive to. |
 | 5–7 | Push the harmonic branch harder | Stage 7's 20:1 leveller absorbs it. That is what it is for. |
-| 8 | Deepen the crossfade for headroom | **Net loss** — see below. |
+| 8 | Deepen the crossfade for headroom | **Reversed 4 Sep 2026.** Net loss against *true peak*, which no longer binds. Against **displacement** it is the best lever in the chain: `Gain 2` 0.45 frees 1.21 dB of cone for 0.16 LU. See below. |
 | 8 | More harmonic injection | `Gain 3` 0.10 buys +0.02 LU for +65 % THD. It is a bass-perception control, not a loudness one. |
 | 9 | Widen above 300 Hz | `Gain 2` 1.6 = +2.32 LU, but only on fully decorrelated pink noise, and it raises peaks and moves the image. Not loudness. |
 | 10 | Lower the downward thresholds | −0.09 LU. Compression without makeup is just quieter. |
@@ -2061,6 +2061,42 @@ there is nothing to relieve and removing the energy simply removes it:
 The same is true of every other way of freeing low-frequency headroom: raising
 stage 1, raising GOTT's `sf1` to 200 Hz, turning its band 1 down. All swept, all
 negative.
+
+**And that whole paragraph measured the wrong thing, 4 Sep 2026.** It sweeps
+loudness at fixed `g_out` in a regime where **true peak** was binding. It is not
+any more — displacement is — and stage 8's `Gain 2` is the single biggest lever
+on displacement in the chain, because 1/f⁴ weighting puts nearly all of it in
+exactly the sub-350 Hz content `Gain 2` turns down. There was no displacement
+metric until `offline-chain.py` grew one the same day, which is why this sat
+unseen for a month.
+
+| `Gain 2` | ΔLU | displacement | real bass 50–125 | harmonics 500–1000 |
+|---|---|---|---|---|
+| 0.60 | +0.00 | +0.00 dB | +0.00 | +0.00 |
+| **0.45** | −0.16 | **−1.21** | −0.97 | **+0.30** |
+| 0.30 | −0.29 | −3.02 | −2.31 | +0.56 |
+
+0.45 gives back **1.21 dB of cone for 0.16 LU**, where the whole remaining
+margin was about 1.0 dB. Spending that on `g_out` and holding tilt at the
+listening level:
+
+| config | ΔLU | displacement |
+|---|---|---|
+| `Gain 2` 0.6, `g_out` 4.25 | +0.00 | +0.00 dB |
+| **`Gain 2` 0.45, `g_out` 5.50** | **+0.56** | **−0.12** |
+
+**More level for less cone**, which `g_out` alone can never do — 4.25 bought
++0.42 LU and spent 0.52 dB. At 80 % the gain is +1.07 dB rather than +0.56, the
+same level dependence the `mk` cut has. A/B'd on hardware at 80 %, level-matched
+to 0.00 dB, and reported as sounding **the same** — which is what licenses it:
+the voicing was judged equal, so the measurement decides.
+
+**Two cautions.** Level-matched, this moves energy *into* 160–1000 Hz — deep
+bass −1.08 dB, harmonics +0.86, presence and top −1.05. **761 Hz is in that
+band** and stages 2 and 10b both exist to suppress it; if boxiness appears on
+other material, look here first. And **tilt reads +0.03 across this change and
+is the wrong instrument for it**: presence and deep bass fell together, so a
+two-point tilt sees nothing while the middle of the band moved.
 
 **And `sf1` stays rejected once displacement is the bound, 4 Sep 2026.** That
 sweep was run against *true peak*, at `g_out` 2.40, when true peak was what
