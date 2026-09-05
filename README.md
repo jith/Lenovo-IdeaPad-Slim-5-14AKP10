@@ -49,10 +49,10 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` +16.26 dB, `mk_2` **0.00 dB**, `mk_3` −3.17 dB, `mk_4` −6.15 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −4.65 dB, taken in four steps on 1 and 4 Sep 2026 to hold the tilt through stage 11 going multiband and through `g_out` 3.80 → 4.25 → 5.50 → 6.50 — **sized at the listening level, not at unity**, see *The tilt correction is level-dependent*; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
 | 10b | Resonance notch | `s10rbp_*`, `s10rdyn_*`, `s10rneg_*`, `s10rsum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + `invert` + `mixer` | branch 760 Hz Q 1.4262 → **Qbp 2.4245**, anchor **−5.5 dB** (`Gain 2` = 0.4691156), `cr` **1.0** | **active** — since 14 Aug 2026 the *second and last* instrument aimed at the 761 Hz resonance, after stage 2. **Rebuilt as a parallel bandpass 2 Sep 2026 and deepened −3.7 → −5.5**, which is where the frozen Qbp runs out and close to the 4.7 dB residual the A/B measured. The branch compressor is a **wire, by measurement** — both directions were swept and neither has a job, because stages 11–12's give-back is keyed on broadband level, not on 760 Hz | — |
 | 10c | Presence lift | `s10pbp_*`, `s10pdyn_*`, `s10psum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + builtin `mixer` | 2650 Hz, Q 1.4262 branch, `cr` 4.0, `al` −20 dBFS, `rt` 300 ms, branch gain 0.5849 | **active, and dynamic since 1 Sep 2026** — a parallel bandpass with a compressed branch, which is exactly a `bq_peaking` Q 1.2 whose Gain moves between about +2.3 and +4.0 dB. Anchored at the *fitted* +4.0 rather than frozen at the +3.0 the static version had to accept. Delivers **+0.73 dB** more at 2500 Hz than the static bell **and 22% less two-tone IMD**, confirmed on hardware | — |
-| 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → **LSP sidechain MULTIBAND comp** | Hx = lowpass 761 Hz Q 2.63; threshold −3 dBFS on the estimate, **band 0 only, split 1 kHz** | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress. **Multiband since 1 Sep 2026**: a cone has one displacement and it is a low-frequency quantity, so ducking 3 kHz was collateral, not protection | US12445775B2, CN115442709B |
+| 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → **LSP sidechain MULTIBAND comp** | Hx = lowpass 761 Hz Q 2.63; threshold **−5.04 dBFS** on the estimate (`al_0` 0.560), **band 0 only, split 1 kHz** | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress. **Multiband since 1 Sep 2026**: a cone has one displacement and it is a low-frequency quantity, so ducking 3 kHz was collateral, not protection | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −1.01 dBFS sample → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** — `th` pays for the sweep so `g_out` can spend | — |
-| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left hot, by **6.52 LU** as re-measured at `g_out` 6.50 / `Gain 2` 0.45 / stage 9b +3 | ITU-R BS.1770 |
+| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left hot, by **5.63 LU** as re-measured at `g_out` 6.50 / `Gain 2` 0.45 / stage 9b +3 / `al_0` 0.560 | ITU-R BS.1770 |
 
 ## Signal flow
 
@@ -2963,6 +2963,43 @@ The keep-by-default rule stays regardless. It costs nothing, and it is the only
 thing standing between a capture set and a stimulus swapped out from under it
 if the synthesis is ever edited again.
 
+### The excursion limiter was too loose at full volume
+
+Reported 5 September 2026: **small clipping and clarity loss at 90–100 % volume**,
+nothing wrong at 80. That is the excursion measurement of the day before arriving
+by ear. The chain sits **1.67 dB past the driver's 1 dB compression point on
+music1 at unity input** and 3.67 on music3; at 80 % the graph sees 5.8 dB less
+and stays inside, at 100 % it does not.
+
+**Stage 11's threshold had only ever been swept upward** — this file records that
+raising `al` to 1.0 recovers 0.5 LU, and nothing about lowering it. Swept
+downward, measured at stage 11's *output* against the −0.38 dBFS `Hx` level the
+driver's 1 dB point produces:
+
+| `al_0` | `cr_0` | music1 ΔLU | music1 vs limit | music3 vs limit |
+|---|---|---|---|---|
+| 0.708 | 6 | — | +1.67 past | +3.67 past |
+| **0.560** | 6 | **−0.89** | **+0.15** | +2.14 |
+| 0.447 | 20 | −2.46 | −2.40 inside | −0.40 inside |
+
+**0.560 taken, by ear, at 100 % against the shipped setting.** 0.447/20 puts
+every material inside the line but costs **3.79 dB on hardware** — and that is
+not the 2.46 offline predicted. A 1.3 dB offline-to-hardware disagreement is
+larger than anything else in this file, where agreement has run to 0.05 LU all
+along, and it is **not yet chased**.
+
+**What it does to the voicing**, level-matched on hardware: 50–80 Hz −0.4 dB,
+200–500 Hz −0.2 to −0.4, and **1.25–8 kHz up about 1.0 dB**. Stage 11 is
+multiband on band 0 only, so ducking the bass harder and matching the level back
+up lifts everything above 1 kHz. The clarity recovered is therefore partly
+intermodulation removed and partly that lift — the two are not separated here.
+
+**The lesson.** The excursion figures were measured, written up and locked the
+day before, and the conclusion drawn from them was that nothing was audibly
+wrong. A listener at full volume disagreed within a day. The measurement was
+right; what was wrong was reading "past the 1 dB compression point" as an
+accounting curiosity rather than as a prediction that it would be heard.
+
 ## The tuning is locked here
 
 **Settled 4 September 2026.** Every value below was taken on a level-matched
@@ -2980,9 +3017,11 @@ against it, and if a change cannot be heard at matched level, it does not ship.
 | `s9blift_*` | `Freq` / `Q` / `Gain` | **200 / 1.2 / +3** |
 | `s10mbc` | `g_out` | **6.50** |
 | `s10mbc` | `mk_3` / `mk_4` | **0.694218 / 0.492308** |
-| `s11xcur` | `al_0` | 0.708 |
+| `s11xcur` | `al_0` | **0.560** |
 | `s12brick` | `th` | 0.8900 |
 | `s13trim_*` | `Mult` | 1.0 (unity, deliberately hot) |
+
+**Amended 5 September 2026:** `s11xcur:al_0` 0.708 → **0.560**, after small clipping and clarity loss were reported at 90–100 % volume. See *The excursion limiter was too loose at full volume*. Tag `tuning-2026-09-05`.
 
 Tagged `tuning-2026-09-04`. `git show tuning-2026-09-04:files/50-speaker-tuning.conf`
 returns this exact graph.
