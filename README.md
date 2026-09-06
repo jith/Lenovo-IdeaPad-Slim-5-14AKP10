@@ -1693,6 +1693,132 @@ it, and it does so perfectly linearly.
 `Gain 3 = 0.06` puts the worst frequency at 12%, which is where commercial
 virtual bass runs. 0.10 gives more bass at about 20%.
 
+### The distortion above 80% is stage 12, and it is a knee
+
+**Reported 6 September 2026: audible distortion above 80% volume, worst on
+vocals.** It reproduces, it is not the drivers, and it is not stages 5–7. It is
+the brickwall limiter, and everything above says it should not have been found
+by listening first.
+
+**Why nothing here caught it.** The table above was taken with *pure tones at
+−6 dBFS*. Single-tone THD cannot see this mechanism at all — `tools/imd.py` says
+so in its own docstring and was written for exactly this failure — and −6 dBFS
+is not the level the chain runs at when the volume is up. The two blind spots
+compound: the wrong signal, at the wrong level.
+
+**The measurement.** Two-tone IMD (60 Hz + 2650 Hz), the material scaled to sit
+at `music2`'s level so the chain is driven where it is actually driven, then the
+sink volume applied as a gain ahead of the graph — which is where it lands, so
+this is what the chain really sees:
+
+| sink volume | chain input | IMD |
+|---|---|---|
+| 70% | −20.6 LUFS | 0.043% |
+| 80% | −17.1 | 0.119% |
+| 85% | −15.5 | 0.147% |
+| 90% | −14.0 | **0.170%** |
+| 95% | −12.6 | **1.407%** |
+| 100% | −11.3 | **3.421%** |
+
+**Between 90% and 95% it goes up eight times, and by 100% it is twenty times the
+90% figure.** That is a knee, not a slope, and it sits exactly where the
+complaint sits. 2650 Hz is the presence band; sidebands 60 Hz either side of it
+are the bass amplitude-modulating the vocal range, which is what
+"distortion on vocals" sounds like.
+
+**Which stage, by removal**, all at 100% volume:
+
+| configuration | IMD |
+|---|---|
+| shipped | 3.421% |
+| stage 12 brickwall out | **0.211%** |
+| stage 11 excursion limiter out | 10.957% |
+| both out | 0.017% |
+| `g_out` 6.50 → 4.65, everything on | **0.141%** |
+
+**Stage 12 makes 94% of it.** Stage 11 is not the culprit and taking it out makes
+things four times worse, because it is what keeps the brickwall from being asked
+for even more — the two must be read together, and the excursion limiter is
+doing its job.
+
+**The cause is drive, not the limiter's settings.** `g_out` is +16.26 dB and the
+volume control sits *ahead* of the graph, so at 100% the limiter is asked for
+about 6 dB of fast gain reduction on dense material. Measured as the loudness
+that never arrives — input rises 9.3 dB from 70% to 100%, output rises 3.2:
+
+| sink volume | in ΔLU | out ΔLU | eaten by the limiters | sample peak |
+|---|---|---|---|---|
+| 70% | 0.00 | 0.00 | 0.00 | −1.012 |
+| 80% | 3.48 | 1.58 | 1.90 | −1.012 |
+| 90% | 6.55 | 2.57 | 3.98 | −1.012 |
+| 100% | 9.30 | 3.24 | **6.06** | −1.012 |
+
+The sample peak is pinned at `th` at *every* volume, including 70%. The chain is
+against the digital ceiling across the whole listening range, and turning up
+buys density only.
+
+**And the voicing goes with it.** The chain's own third-octave transfer,
+`music2`, 80% against 100%: 25–500 Hz falls **4.7 to 6.2 dB**, while 1.25–8 kHz
+falls **1.0 to 1.7**. Turning up past 80% is a 3.5–4.5 dB tilt *away* from bass
+and *towards* presence, on top of the distortion. Bass weight, clarity and
+openness all degrade together, which is the exact combination the iPhone A/B
+listener reported and which *What the chain is not doing* looked for and did not
+find — because it looked at group delay and at single-tone THD, not at a
+two-tone test at programme level with the volume up.
+
+**The fix is `g_out`, and it is nearly free at the top of the range.** All at
+100% volume:
+
+| `g_out` | music2 LUFS | vs shipped | IMD | bass − presence |
+|---|---|---|---|---|
+| **6.50 — shipped** | −7.55 | 0.00 | **3.421%** | −8.51 dB |
+| 5.50 | −7.92 | −0.37 | **0.354%** | −7.72 |
+| 4.65 | −8.34 | −0.79 | 0.141% | −6.92 |
+| 4.00 | −8.77 | −1.22 | 0.109% | −6.19 |
+| 3.34 | −9.37 | −1.82 | 0.072% | −5.33 |
+
+**6.50 → 5.50 is ten times less IMD for 0.37 LU**, and it returns 0.79 dB of the
+bass-to-presence tilt at the same time. The knee is that sharp: the last dB of
+`g_out` buys 0.37 LU and *ten times* the intermodulation.
+
+**Half of that 0.37 LU comes straight back from `th`.** Stage 12's own comment
+already says raising `th` is "not worth it alone, only as the other half of a
+`g_out` move" — this is that move. `th` 0.8900 → **0.9287**, validated on
+`sweep_fs.wav` as that comment insists and not on `sweep.wav`, which overstates
+the margin by 0.59 dB:
+
+| configuration | sample pk | true pk | margin to −0.20 dBTP |
+|---|---|---|---|
+| shipped, `g_out` 6.50 / `th` 0.8900 | −1.012 | −0.754 | 0.554 dB |
+| `g_out` 5.50 / `th` 0.8900 | −1.012 | −0.730 | 0.530 |
+| **`g_out` 5.50 / `th` 0.9287** | −0.643 | **−0.361** | **0.161** |
+| `g_out` 5.50 / `th` 0.9400 | −0.537 | −0.255 | 0.055 — the documented ceiling |
+
+**The pair together, against the shipped chain, on `music2`:**
+
+| sink volume | ΔLU | IMD, shipped → proposed | improvement | Δ tilt |
+|---|---|---|---|---|
+| 70% | −0.82 | 0.043% → 0.012% | 3.6× | +0.71 dB |
+| 80% | −0.58 | 0.119% → 0.087% | 1.4× | +0.85 |
+| 90% | −0.38 | 0.170% → 0.137% | 1.2× | +0.82 |
+| **100%** | **−0.24** | **3.421% → 0.176%** | **19.4×** | **+0.76** |
+
+Read the first column downward: the change costs the most loudness at 70%, where
+nobody needs it, and the least at 100%, where the complaint is — because the
+loudness it gives up at the top *was* the distortion. 0.24 LU is a quarter of
+the 1 dB criterion used everywhere else here. Displacement goes **down** 0.17 dB,
+so it spends no cone margin, and it cannot: it is less drive.
+
+**What it does not fix.** The voicing still moves with the volume — bass minus
+presence runs −1.81 dB at 70% and −7.75 at 100% after the change, against −2.52
+and −8.51 before. Better by about 0.8 dB everywhere and still a 6 dB swing across
+the knob. That is the level dependence, and no single gain closes it: the volume
+is applied ahead of the graph, so the chain is tuned at one level and heard at
+another. It is the half of US12342139B2 this file decided against implementing —
+see *Volume dependence* — and it is the reason a phone holds together across its
+range while this does not. Closing it needs the volume moved behind the graph, or
+`g_out` driven from the volume, not a better constant.
+
 ## How loud can it go
 
 Short answer: this is it, plus 1.61 dB that was sitting unclaimed in the one
