@@ -52,6 +52,7 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → **LSP sidechain MULTIBAND comp** | Hx = lowpass 761 Hz Q 2.63; threshold **−5.04 dBFS** on the estimate (`al_0` 0.560), **band 0 only, split 1 kHz** | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress. **Multiband since 1 Sep 2026**: a cone has one displacement and it is a low-frequency quantity, so ducking 3 kHz was collateral, not protection | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
 | 12 | Brickwall | `s12brick` | LSP Limiter | −1.01 dBFS sample → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** — `th` pays for the sweep so `g_out` can spend | — |
+| — | Bypass switch | `s0in_*`, `s14byp_*` | builtin `copy` + `mixer` | `In 1` = chain, `In 2` = raw input | **not a stage and not tuning** — `Gain 1 = 1.0`, `Gain 2 = 0.0`, which is the chain. `speaker-dsp off` swaps them and the graph passes the input through bit for bit. Added 6 Sep 2026, because the old `off` switched the default sink to the raw speaker and that sink is hidden from GNOME, so it could not work at all | — |
 | 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left hot, by **5.63 LU** as re-measured at `g_out` 6.50 / `Gain 2` 0.45 / stage 9b +3 / `al_0` 0.560 | ITU-R BS.1770 |
 
 ## Signal flow
@@ -110,8 +111,18 @@ All fourteen stages and what each one is for. Node-level detail follows below.
          [13] A/B trim          unity; tuned ran 3.44 LU hot at g_out 2.40
                                       │
                                       ▼
+              s14byp  In 1 = the chain above, In 2 = the raw input
+                      tapped at s0in ahead of stage 0.
+                      'speaker-dsp off' swaps the two gains; that is
+                      the whole bypass, and nothing else moves.
+                                      │
+                                      ▼
                      alsa_output...HiFi__Speaker__sink
 ```
+
+The head of the graph is `s0in`, a `copy` node ahead of stage 0, and its output
+goes two places: into stage 0, and straight down to `s14byp:In 2`. That second
+link is the entire bypass path — no processing on it at all.
 
 Reading it in one line: **flatten the 761 Hz resonance, stand in for the bass
 the driver cannot make with harmonics it can, collapse the stereo image where
@@ -356,19 +367,71 @@ load and the journal has the reason. Remove with `sudo sh install.sh uninstall`.
 ## Use
 
 ```sh
-speaker-dsp on       # Speaker (Tuning), the 13-stage chain
-speaker-dsp off      # raw hardware speaker
-speaker-dsp ab       # toggle, carrying the level across
+speaker-dsp on       # Speaker (Tuning), the 14-stage chain
+speaker-dsp off      # bypass it in place -- same output, same level
+speaker-dsp ab       # toggle
 speaker-dsp status
 ```
 
-`ab` is the one to use for listening comparisons: it copies the current level
-onto the sink it switches to and applies the raw-path trim, so switching does
-not change loudness. Set the trim in dB with `SPEAKER_DSP_RAW_TRIM_DB` from
-what `tools/loudness-match.sh` reports, or edit the default in
-`files/speaker-dsp`. It is 0.0 here, because the two paths already match.
+`off` does **not** move the output. It sets one gain pair at the end of the
+graph, `s14byp`, which chooses between the chain and the untouched input tapped
+at `s0in` ahead of stage 0. The output device, the default sink and GNOME's
+slider are all exactly where they were; the only thing that changes is whether
+the fourteen stages are in the path. `external-dsp off` has worked this way
+since 20 Aug 2026 and this is the same idea, one graph along.
 
-### GNOME's slider is inert in raw mode
+Two consequences worth stating, because they are what the old sink-switching
+`off` could never give:
+
+**The level does not need carrying.** GNOME's slider drives the virtual sink,
+that sink's volume is applied *before* the graph, and the bypass is *inside*
+the graph — so tuned and raw are heard at the same setting by construction. The
+old `carry_volume`, its cubic-percentage conversion and `SPEAKER_DSP_RAW_TRIM_DB`
+are gone, along with the "the slider is inert now" warning: the slider is live
+in both states.
+
+**The bypass is the input, not an approximation of it.** Measured on the edited
+graph before it was installed, playing 6 s of pink into a `-TEST` copy of the
+chain and capturing the hardware monitor: **287 744 of 288 000 samples are bit
+identical to the source file**, residual exactly `0.0`. The 256 that are not are
+the final 5.3 ms, where `pw-cat` stopped and the stream drained — a capture-tail
+artefact, not the path. Peak matched the source to the last digit shown,
+−7.781735 dBFS both.
+
+`ab` is the one to use for listening comparisons. Note that it will not be
+level-matched: stage 13 leaves the tuned path deliberately hot, 5.63 LU above
+raw at the shipped settings, and nothing in `speaker-dsp` compensates that.
+That gap belongs to the tuning, and putting an unmeasured gain into the bypass
+to hide it would make the comparison the bypass exists to enable dishonest.
+`off` says so every time it runs.
+
+### Why `off` is a crossfade and not fourteen neutralised stages
+
+`external-dsp off` neutralises its chain control by control — thresholds and
+makeup to full scale, biquad corners out of band. The same approach does not
+reach this chain: **stage 2 is `bq_raw`**, its coefficients cannot be set live
+without risking a half-applied unstable biquad (see *Tuning live, without
+reinstalling*), and it is one of the most audible stages in the chain. Leaving
+it in would make `off` a partial bypass at best.
+
+A crossfade needs no stage to be neutral. It also does not rot: a stage added
+later is bypassed for free, without anyone remembering to add its controls to a
+list. That is the failure the external chain actually hit — a bypass that was
+complete only while GOTT's upward ratio was 1.0, and measured 5.5 LU loud and
+clipping the moment a preset moved `ru_*` and `mk_*`.
+
+The two gains are only ever 1/0 or 0/1, never both open. `s12brick` runs 1 ms
+of lookahead, so the chain path is late against the raw one and summing them
+would comb. At either endpoint that latency is simply the chain's own and
+nothing is being summed. `speaker-dsp` closes the outgoing path before opening
+the incoming one, so the switch is a sub-buffer dropout rather than a
+sub-buffer comb.
+
+Adding the two nodes does not change the tuning. The edited graph was nulled
+against the installed one on the same source, both playing tuned: residual
+**−78.3 dBFS** above 30 Hz, against a −60 dBFS bar.
+
+### GNOME shows one output, and the slider drives it in both states
 
 By design, GNOME shows one output entry — `hide-speaker-tuning.lua` hides the
 raw sink from `org.gnome.VolumeControl` so there is no duplicate speaker in
@@ -379,12 +442,10 @@ plain pactl                          -> effect_input.speaker-tuning, alsa_output
 identifying as org.gnome.VolumeControl -> effect_input.speaker-tuning only
 ```
 
-The consequence is that `speaker-dsp off` switches the default to a sink GNOME
-cannot see. Audio really does move — a playing stream follows — but GNOME
-keeps showing "Speaker (Tuning)" as selected and its slider now drives a sink
-that is no longer in the path, so the slider does nothing until you switch
-back. `speaker-dsp` prints a note whenever raw is selected. Set the level in
-raw mode with `pactl set-sink-volume <raw-sink> <n>%`, or just switch back.
+That hiding is what broke the old `off`, which tried to make the hidden sink
+the default — see *`speaker-dsp off` reported success while doing nothing*. With
+the bypass inside the graph the hidden sink is never selected, so the rule in
+*A hidden sink must never be the default* is respected rather than fought.
 
 Note also that `speaker-dsp` does **not** pin the virtual sink to unity. With
 one entry in GNOME that sink is your volume control, and forcing it to 100%
@@ -1329,11 +1390,34 @@ effect.
 
 Three caveats, the last one important.
 
-The values do **not** read back — `pw-dump` shows no graph controls in Props,
-so this is write-only and the config file remains the only record of what a
-stage is set to. Nothing is persisted either: a PipeWire restart reverts
-everything to the file. Find the value live, then write it into
-`files/50-speaker-tuning.conf` and reinstall.
+The values **do** read back, but only while the sink is `RUNNING`. `pw-dump` on
+`effect_input.speaker-tuning` returns a second `Props` block holding all **1345**
+graph controls by name — and while the sink is `SUSPENDED` every one of them
+reads `0.0`, which looks exactly like a graph that loaded and lost its settings.
+Play something first:
+
+| sink state | `s0trim_l:Mult` | `s8sum_l:Gain 2` |
+|---|---|---|
+| SUSPENDED | `0.0` | `0.0` |
+| RUNNING | `0.6983` | `0.45` |
+
+The **names** are listed in both states, which is the only honest way to ask
+whether a running graph really has a given control — `speaker-dsp` uses it to
+check for `s14byp` before claiming a bypass, because **`pw-cli set-param` exits
+0 for a control that does not exist and for a node id that does not exist.**
+It reports nothing, ever. Measured 6 Sep 2026:
+
+| call | exit |
+|---|---|
+| valid node, valid control | 0 |
+| valid node, `sNOSUCH_l:Gain 1` | **0** |
+| node id `999999` | **0** |
+
+That is the same shape of lie as `pactl set-default-sink`, and worth
+remembering before writing `cmd && echo "done"` around either of them.
+
+Nothing is persisted: a PipeWire restart reverts everything to the file. Find
+the value live, then write it into `files/50-speaker-tuning.conf` and reinstall.
 
 **Never set `bq_raw` coefficients this way.** Controls are applied one at a
 time, so a partially-applied set is a filter nobody designed — and it can
@@ -1629,10 +1713,12 @@ monitor tap every capture is taken from, so a null test, a loudness match and
 a true-peak check all read identically at 94% and at 100%. The tooling is
 blind to the one level you actually hear.
 
-It gets there on its own — `speaker-dsp off` copies the virtual sink's level
-onto it, a volume key moves it, and PipeWire has been seen returning to 94%
-after a restart. `speaker-dsp status` now says so, and `warn_hardware_volume`
-in `tools/common.sh` is there for scripts.
+It gets there on its own — a volume key moves it, and PipeWire has been seen
+returning to 94% after a restart. `speaker-dsp off` used to copy the virtual
+sink's level onto it as well, which is one of the reasons that switch is gone;
+`speaker-dsp on` now sets it back to 100% for anyone whose machine ran a
+version that did. `speaker-dsp status` says so, and `warn_hardware_volume` in
+`tools/common.sh` is there for scripts.
 
 So the first 1.61 dB of "how loud can it go" was free, and taking it is safe
 by a wide margin — see **What the drivers actually take** below. Confirmed
@@ -3214,6 +3300,8 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | The HF tilt correction is a shelf, not a reshaping | **current** | pass — matched −1.5 dB on `mk_3` and `mk_4` delivers **−1.43 dB at 2.5 kHz and −1.45 at 16 kHz**, flat to 0.05 dB across 1.25–16 kHz. The presence and top summaries are **unchanged** (+1.61 and −1.64 re the 1.6–10 kHz mean in every variant) — only the tilt moves |
 | The tilt correction leaves bass alone | **current** | pass — **50 Hz moves +0.02 dB**, and the whole 50–400 Hz region moves +0.03 to +0.11. Confirmed on hardware through a `-TEST` sink at matched volume: **−0.03 dB over 50–400 Hz** against **−1.47 dB over 1.6–12.5 kHz**, versus −1.41 predicted offline |
 | The tilt correction adds no distortion | **current** | pass, and it **reduces** it — THD identical to two decimals at 90, 400 and 2650 Hz at both −12 and −3 dBFS; SMPTE 60 + 2650 Hz IMD at −3 dBFS falls **8.18% → 4.38%** and at −6 dBFS **0.317% → 0.145%**, its value before 10c. True peak improves on all four signals. It is a cut, so this is the expected direction — measured because the constraint is explicit |
+| `speaker-dsp off` bypasses the chain | **current** | pass, and **bit-exact** — 6 s of pink through a `-TEST` copy of the edited graph, captured at the hardware monitor: **287 744 of 288 000 samples identical to the source file**, residual exactly `0.0`, peak matching to −7.781735 dBFS on both. The 256 samples that differ are the final 5.3 ms, where `pw-cat` stopped and the stream drained |
+| The bypass switch does not change the tuning | **current** | pass — the edited graph nulled against the installed one, both playing tuned on the same source: residual **−78.3 dBFS** above 30 Hz and **−88.5** below, against a −60 dBFS bar. The two added nodes are a `copy` and a `mixer` with one gain at 0 |
 | The shipped config is what was listened to | **current** | pass — for **both** changes. The edited `files/50-speaker-tuning.conf` renders **bit-identical** (max sample difference 0.000e+00) to the variant built for the `-TEST` sink and approved by ear, checked again after every comment edit. Self-test 26/26 |
 | Removing `mk_2` does not weaken the 761 Hz correction | **current** | pass — `s10res` (the pre-2-Sep bell, now the `s10r*` branch at −5.5 dB) at −3.7 dB holds 800 Hz to **+0.06 dB (music1)** and **+0.01 (music2)** offline, and **+0.25 dB** on hardware, against a re-setup repeatability of 1.4 dB. The depth was fitted to two tracks, not one; −3.6 left +0.12/+0.08 and −3.8 overshot to 0.00/−0.06 |
 | Removing `mk_2` returns the low-mid it was taxing | **current** | pass — **+0.79 dB mean over 160–630 Hz** measured at the hardware monitor through a `-TEST` sink at matched volume, against +0.61 predicted offline. The uniform ~0.18 dB offset is the 20 s excerpt compressing differently from the full file |
@@ -5142,6 +5230,63 @@ the live chain, which is tuned for 100 %. It is now restored on failure.
 does. Stage 2 is `bq_raw`, and setting those coefficients live diverges to NaN
 and silences the chain until the sink suspends. So `off` now fails loudly and
 points at `tools/offline-chain.py` for raw comparisons, rather than pretending.
+
+That last paragraph was the wrong conclusion, and it stood for two days. The
+premise is right — stage 2's coefficients really cannot be set live — but
+"neutralise every stage" is not the only way to bypass in place. See the section
+below: one crossfade at the end of the graph needs no stage to be neutral, and
+`off` now works rather than failing loudly.
+
+### `speaker-dsp off` bypasses in place, 6 Sep 2026
+
+Failing honestly is better than lying, but it is not a bypass. `off` and `ab`
+had been unusable on the internal speaker since 20 Aug, and `external-dsp off`
+with the built-in speaker selected inherited it exactly, because it delegates.
+One root cause, two broken commands.
+
+The fix is the one the external chain already used, adapted to a graph that
+cannot be neutralised stage by stage. Two nodes were added:
+
+| node | what it is |
+|---|---|
+| `s0in_l` / `s0in_r` | `copy` — a wire at the head of the graph. It exists only so the **unprocessed** input has a name something else can link to, because a graph input port may appear in `inputs` just once |
+| `s14byp_l` / `s14byp_r` | `mixer` — `In 1` is the chain, `In 2` is `s0in`. One gain pair is the whole bypass |
+
+```
+inputs -> s0in ─┬─> s0trim -> ... 14 stages ... -> s13trim ─> s14byp:In 1 ─┬─> outputs
+                └──────────────────────────────────────────> s14byp:In 2 ──┘
+```
+
+`on` is `Gain 1 = 1, Gain 2 = 0`; `off` is the reverse. Nothing else moves — not
+the default sink, not the device, not a volume.
+
+**What was verified, before installing anything.** The edited config was first
+load-tested in a throwaway daemon (118 nodes, no errors), then run as a `-TEST`
+copy of the whole chain alongside the live one, so a mistake could not reach the
+real sink. Both numbers are from that copy:
+
+| claim | result |
+|---|---|
+| bypass delivers the input untouched | **287 744 / 288 000 samples bit identical**, residual exactly `0.0`; the 256 that differ are the last 5.3 ms of capture tail |
+| the two added nodes do not change the tuning | edited vs installed graph, both tuned, same source: residual **−78.3 dBFS** above 30 Hz |
+
+**What this deletes.** `carry_volume`, `RAW_TRIM_DB` / `SPEAKER_DSP_RAW_TRIM_DB`,
+`select_raw`, and `warn_slider` all existed to manage a switch that no longer
+happens. The virtual sink's volume is applied before the graph and the bypass is
+inside it, so the two states are at the same level by construction and GNOME's
+slider stays live in both. `set_default_checked` and `default_sink_is` stay:
+`on` still selects the built-in speaker when an external device is playing, and
+that is a real sink switch that still has to be checked.
+
+**Why not a second, visible "raw" sink.** It would work — a pass-through
+filter-chain sink that GNOME can see could be made the default, which is exactly
+what the hidden raw sink cannot. It was rejected for what it costs: a second
+speaker entry in GNOME's output list, which is the duplicate that
+`hide-speaker-tuning.lua` exists to remove; a real stream migration on every
+toggle, which apps with an explicit target do not follow; and a separate volume
+per sink, which brings back the level-carrying arithmetic the crossfade removes
+by construction. It also would not have helped `external-dsp`, which already
+bypasses in place.
 
 ### A hidden sink must never be the default
 

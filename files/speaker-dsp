@@ -1,6 +1,20 @@
 #!/bin/sh
-# Switch the default output between the tuned virtual speaker sink and the raw
-# hardware speaker. No sudo is required when run as the desktop user.
+# Engage or bypass the 14-stage chain on the built-in speaker. No sudo is
+# required when run as the desktop user.
+#
+#   speaker-dsp on      the chain processes, and the built-in speaker is
+#                       selected if something else was
+#   speaker-dsp off     bypass it IN PLACE -- same output, same slider, same
+#                       level. Nothing about the routing changes
+#   speaker-dsp ab      toggle between the two
+#   speaker-dsp status  which one is live, and every volume that can rot
+#   speaker-dsp unity   put every gain below the DSP back to 100%
+#
+# 'off' used to make the raw hardware sink the default. That could never work:
+# hide-speaker-tuning.lua hides that sink from GNOME and WirePlumber will not
+# default to a hidden sink, so the switch failed silently for weeks and then
+# loudly for two days. The bypass now lives INSIDE the graph, at s14byp. See
+# README, "speaker-dsp off bypasses in place".
 
 if [ "$(id -u)" = "0" ] && [ -n "${SUDO_UID:-}" ]; then
     export XDG_RUNTIME_DIR="/run/user/$SUDO_UID"
@@ -9,22 +23,18 @@ fi
 DSP=effect_input.speaker-tuning
 RAW=alsa_output.pci-0000_04_00.6.HiFi__Speaker__sink
 
-# Loudness trim for the raw path, in dB, from tools/loudness-match.sh.
-# Attenuation only: the louder path is trimmed at its own output, never the
-# quieter one boosted. When the tuned path is the louder one its trim belongs
-# at stage 13 of the filter graph instead.
-#
-# 0.0 with stage 10 live. Its makeup returns stage 0's headroom and then some,
-# which put the tuned path 0.07 dB AHEAD of raw -- so the trim moved to stage
-# 13 of the filter graph, where the louder path is supposed to take it, and
-# the raw path is left alone.
-#
-# Set this only when raw is the louder path. Re-run tools/loudness-match.sh
-# after enabling any stage that changes level, and prefer measuring against
-# your own music: on the shipped pink noise, whose channels are fully
-# decorrelated, bass mono costs 0.62 LU, where material cut with mono bass
-# gives 0.52.
-RAW_TRIM_DB=${SPEAKER_DSP_RAW_TRIM_DB:-0.0}
+# Bypass is a live control change, so it leaves no trace in any config file and
+# does not survive a restart -- the graph comes back tuned, which is the state
+# the config file describes. Recorded here so status can report it.
+STATE_DIR=${XDG_RUNTIME_DIR:-/tmp}
+BYPASS_FLAG=$STATE_DIR/speaker-dsp.bypassed
+
+# The chain is deliberately left hot: stage 13's comment records the tuned path
+# as 5.63 LU above raw at the shipped settings. So bypassing is a real drop in
+# level, and that is the tuning's own decision, not this script's. Said out loud
+# on 'off' rather than silently corrected, because correcting it here would put
+# a gain nobody measured into the comparison the bypass exists to make honest.
+HOT_LU=5.63
 
 # 'off' and 'ab' mean "bypass the DSP on what I am listening to". When the
 # active output is an external device -- a Bluetooth speaker, earbuds,
@@ -66,8 +76,8 @@ speaker_present() {
 usage() {
     echo "usage: speaker-dsp {on|off|ab|status|unity}" >&2
     echo "  on      Speaker (Tuning), the 14-stage filter chain" >&2
-    echo "  off     raw hardware speaker" >&2
-    echo "  ab      toggle between them, carrying the level across" >&2
+    echo "  off     bypass it in place -- same output, same level" >&2
+    echo "  ab      toggle between them" >&2
     echo "  status  which one is currently the default output" >&2
     echo "  unity   put every gain below the DSP back to 100%" >&2
     exit 2
@@ -98,25 +108,112 @@ warn_alsa_volume() {
 }
 
 # Volume as a percentage, read from the first channel; both are kept equal.
-# Percentages, not dB: pactl reads a leading '-' as a RELATIVE adjustment, so
-# passing a negative dB figure subtracts it instead of setting it, and the
-# level halves on every toggle.
 volume_pct() {
     pactl get-sink-volume "$1" 2>/dev/null \
         | awk -F'/' '/Volume:/ { gsub(/[^0-9]/, "", $2); print $2; exit }'
 }
 
-# Carry a level from one sink to another, applying the trim in dB.
-# pactl's percentage is a cubic scale, so a linear gain of g scales the
-# percentage by g^(1/3) -- hence 10^(dB/60) rather than 10^(dB/20).
-carry_volume() {
-    _pct=$(volume_pct "$1")
-    [ -n "$_pct" ] || return 0
-    pactl set-sink-volume "$2" \
-        "$(awk -v p="$_pct" -v t="$3" 'BEGIN{
-            v = p * (10 ^ (t / 60)); if (v > 100) v = 100
-            printf "%.0f", v }')%" >/dev/null 2>&1
+# The filter-chain's own node id, which is what pw-cli set-param addresses. It
+# is not stable across a PipeWire restart, so look it up every time rather than
+# caching it anywhere.
+chain_id() {
+    pactl list sinks short 2>/dev/null | awk -v n="$DSP" '$2 == n { print $1; exit }'
 }
+
+# Every graph control's NAME is in the sink node's Props and always readable.
+# Its VALUE is only there while the sink is RUNNING: a SUSPENDED filter-chain
+# reports all 1345 of its controls as 0.0, which looks exactly like a graph that
+# lost its settings and is not one. So names are for checking what the graph
+# HAS, values only for checking what it is SET TO, and only while it plays.
+graph_props() {
+    pw-dump "$1" 2>/dev/null | python3 -c "
+import json, sys
+for o in json.load(sys.stdin):
+    for blk in ((o.get('info') or {}).get('params') or {}).get('Props') or []:
+        p = blk.get('params')
+        if isinstance(p, list) and len(p) > 100:
+            for i in range(0, len(p), 2):
+                print('%s\t%s' % (p[i], p[i + 1]))
+"
+}
+
+graph_control() {
+    graph_props "$1" | awk -F'\t' -v k="$2" '$1 == k { print $2; exit }'
+}
+
+# Does the RUNNING graph actually have the bypass? Worth asking, because
+# pw-cli set-param EXITS 0 for a control that does not exist and for a node id
+# that does not exist -- it reports nothing at all, ever. That is the same shape
+# of lie as pactl set-default-sink, which is what cost this script two weeks of
+# printing "RAW SPEAKER" while the chain went on processing. Checking the file
+# on disk would not do: the failure that matters is a config installed without a
+# PipeWire restart, where the file has s14byp and the live graph does not.
+has_bypass() {
+    graph_props "$1" | grep -q '^s14byp_l:Gain 1	'
+}
+
+sink_running() {
+    pactl list sinks short 2>/dev/null \
+        | awk -v n="$DSP" '$2 == n { print $NF; exit }' | grep -qx RUNNING
+}
+
+# THE BYPASS. s14byp is a two-input mixer at the very end of the graph: In 1 is
+# the chain, In 2 is the untouched input tapped at s0in, ahead of stage 0. One
+# gain pair decides which one is heard, and at either endpoint the other path
+# contributes exactly nothing -- so 'off' is the raw signal, not an
+# approximation of it.
+#
+# This replaced switching the default sink to the raw hardware, which could not
+# work: hide-speaker-tuning.lua hides that sink from GNOME and WirePlumber will
+# not default to a hidden sink, so 'off' reported success for weeks while the
+# chain went on processing. See README, "A hidden sink must never be the
+# default", and external-dsp, which was fixed the same way first.
+#
+# Not neutralised stage by stage, the way external-dsp does it: stage 2 is
+# bq_raw and its coefficients cannot be set live without risking a half-applied
+# unstable biquad. A crossfade needs no stage to be neutral, so it also bypasses
+# any stage added later without this function being touched.
+#
+# The outgoing path is closed BEFORE the incoming one is opened. The two orders
+# fail differently and both are sub-buffer: closing first is a moment of
+# silence, opening first is a moment of both paths summed -- and s12brick runs
+# 1 ms of lookahead, so summing them combs. Take the dropout.
+set_bypass() {
+    _id=$(chain_id)
+    [ -n "$_id" ] || {
+        echo "error: $DSP is not loaded, so there is" >&2
+        echo "       no chain to bypass. Check 'pactl list sinks short'." >&2
+        return 1
+    }
+    has_bypass "$_id" || {
+        echo "error: the running graph has no s14byp, so it predates the" >&2
+        echo "       in-place bypass and 'off' would do nothing whatever." >&2
+        echo "       pw-cli would have reported success anyway, which is why" >&2
+        echo "       this is checked rather than assumed." >&2
+        echo >&2
+        echo "       Install the current config and restart the session's audio:" >&2
+        echo "         sudo sh install.sh install" >&2
+        echo "         systemctl --user restart pipewire pipewire-pulse wireplumber" >&2
+        return 1
+    }
+    if [ "$1" = "on" ]; then
+        pw-cli set-param "$_id" Props '{ params = [
+            "s14byp_l:Gain 1" 0.0 "s14byp_r:Gain 1" 0.0
+            "s14byp_l:Gain 2" 1.0 "s14byp_r:Gain 2" 1.0 ] }' >/dev/null 2>&1
+    else
+        pw-cli set-param "$_id" Props '{ params = [
+            "s14byp_l:Gain 2" 0.0 "s14byp_r:Gain 2" 0.0
+            "s14byp_l:Gain 1" 1.0 "s14byp_r:Gain 1" 1.0 ] }' >/dev/null 2>&1
+    fi
+}
+
+# Graph controls are write-only -- pw-dump reports no filter controls at all --
+# so the live setting cannot be read back and this flag is the only record of
+# it. It lives in the runtime dir, which is cleared on logout, and a PipeWire
+# restart reloads the config and its tuned defaults; both leave the flag and
+# the graph agreeing that the chain is processing. See README, "Setting controls
+# on a live graph".
+bypassed() { [ -f "$BYPASS_FLAG" ]; }
 
 # GNOME shows one output entry, Speaker (Tuning), and its slider drives the
 # virtual sink. In raw mode that sink is no longer in the audio path, so the
@@ -154,19 +251,15 @@ set_default_checked() {
     return 0
 }
 
+# 'on' still has a sink to select, because it is also how you come back to the
+# built-in speaker from an external device. 'off' has none: it changes nothing
+# about where the audio goes.
 select_tuned() {
-    carry_volume "$RAW" "$DSP" "$(awk -v t="$RAW_TRIM_DB" 'BEGIN{print -t}')"
-    # 'off' moved the listening level onto the raw sink, and PipeWire maps that
-    # onto the card's ALSA 'Speaker' control -- so an off/on round trip used to
-    # leave the hardware sitting at whatever percentage had been carried across
-    # (66-86% in practice) with nothing saying so. The level now lives on the
-    # DSP sink again, so the hardware belongs back at unity, which is what the
-    # chain is tuned for.
-    #
-    # Loudness is preserved, not changed: in raw mode the level was RAW's
-    # percentage; in tuned mode it is the DSP sink's, with RAW at 100% behind
-    # it, and carry_volume has just copied one onto the other.
+    # The chain is tuned for the hardware at unity, and earlier versions of this
+    # script carried the listening level onto the hardware sink on every 'off'.
+    # Put it back, so a machine that ran one of those does not stay quiet.
     pactl set-sink-volume "$RAW" 100% >/dev/null 2>&1
+    default_sink_is "$DSP" && return 0
     set_default_checked "$DSP" || {
         echo "error: could not make $DSP the default sink." >&2
         echo "       WirePlumber rejected it; check its policy and" >&2
@@ -175,41 +268,36 @@ select_tuned() {
     }
 }
 
-select_raw() {
-    # carry_volume moves the listening level onto the raw sink, which is the
-    # hardware sink -- the one control nothing here measures. If the switch then
-    # fails, that level is left applied to a sink still sitting behind the live
-    # chain, which is tuned for 100%. Remember it and put it back.
-    _raw_was=$(volume_pct "$RAW")
-    carry_volume "$DSP" "$RAW" "$RAW_TRIM_DB"
-    set_default_checked "$RAW" || {
-        [ -n "$_raw_was" ] && pactl set-sink-volume "$RAW" "${_raw_was}%" >/dev/null 2>&1
-        echo "error: the DSP was NOT bypassed. $RAW" >&2
-        echo "       cannot be made the default sink: hide-speaker-tuning.lua" >&2
-        echo "       hides it from GNOME, and WirePlumber will not default to a" >&2
-        echo "       hidden sink -- which is the rule README's 'A hidden sink" >&2
-        echo "       must never be the default' exists to enforce." >&2
-        echo >&2
-        echo "       Audio is still going through Speaker (Tuning). There is no" >&2
-        echo "       in-place bypass for the internal chain either: stage 2 is" >&2
-        echo "       bq_raw, and setting those coefficients live diverges to NaN." >&2
-        echo "       To compare against raw, use tools/offline-chain.py." >&2
-        return 1
-    }
+engage() {
+    set_bypass off || return 1
+    rm -f "$BYPASS_FLAG"
 }
 
-warn_slider() {
-    echo "note: GNOME's volume slider drives $DSP, which is not in the"
-    echo "      path while raw is selected. Use 'speaker-dsp on', or set the"
-    echo "      level with: pactl set-sink-volume $RAW <n>%"
+bypass() {
+    set_bypass on || return 1
+    : > "$BYPASS_FLAG"
+}
+
+# The level does not need carrying anywhere. GNOME's slider drives the DSP
+# sink, that sink's volume is applied BEFORE the graph, and the bypass is inside
+# the graph -- so tuned and raw are heard at the same setting by construction,
+# and the slider stays live in both. That is the whole reason the old
+# level-carrying arithmetic, its cubic-percentage conversion and its
+# "the slider is inert now" warning are gone.
+note_hot() {
+    echo "note: the chain is deliberately hot -- stage 13 measures the tuned"
+    echo "      path ${HOT_LU} LU above raw -- so bypassing IS quieter. That gap is"
+    echo "      the tuning's, not the switch's; nothing here compensates it,"
+    echo "      because a gain nobody measured would make the A/B dishonest."
 }
 
 # The hardware sink's volume is the only level in the system that nothing
 # measures: it sits after the monitor tap every tool in tools/ captures from,
 # so a chain tuned to the last tenth of a dB plays back quietly and every
-# capture still reads correct. It drifts down on its own -- carry_volume above
-# copies the virtual sink's level onto it, volume keys move it, and pipewire
-# has been seen coming back at 94% after a restart. Found there once, with
+# capture still reads correct. It drifts down on its own -- earlier versions of
+# this script copied the virtual sink's level onto it on every 'off', volume
+# keys move it, and pipewire has been seen coming back at 94% after a restart.
+# Found there once, with
 # 1.61 dB missing. Say so rather than let it rot silently.
 warn_hardware_volume() {
     _hv=$(volume_pct "$RAW")
@@ -236,7 +324,9 @@ case "${1:-status}" in
             echo "  external-dsp status" >&2
             exit 1
         fi
-        select_tuned && echo "SPEAKER DSP - Speaker (Tuning) is the default output"
+        select_tuned || exit 1
+        engage || exit 1
+        echo "SPEAKER DSP - Speaker (Tuning), the 14-stage chain, is processing"
         ;;
     off|raw)
         if external_is_active; then
@@ -244,21 +334,23 @@ case "${1:-status}" in
             echo "      Use 'speaker-dsp on' to move to the built-in speaker instead."
             exec external-dsp off
         fi
-        select_raw && {
-            echo "RAW SPEAKER - the hardware speaker is the default output"
-            warn_slider
-        }
+        bypass || exit 1
+        echo "BYPASS - the chain is passing the input straight through, same"
+        echo "         output, same slider, same level"
+        note_hot
         ;;
     ab)
         if external_is_active; then
             echo "note: an external device is the active output, so toggling THAT."
             exec external-dsp ab
         fi
-        current=$(pactl get-default-sink) || exit $?
-        if [ "$current" = "$DSP" ]; then
-            select_raw && { echo "A/B -> RAW SPEAKER"; warn_slider; }
+        if bypassed; then
+            engage || exit 1
+            echo "A/B -> SPEAKER DSP (14-stage chain)"
         else
-            select_tuned && echo "A/B -> SPEAKER DSP (Speaker (Tuning))"
+            bypass || exit 1
+            echo "A/B -> BYPASS (raw input)"
+            note_hot
         fi
         ;;
     unity)
@@ -283,8 +375,40 @@ case "${1:-status}" in
             exit 0
         fi
         case "$current" in
-            "$DSP") echo "state: Speaker (Tuning), 14-stage chain" ;;
-            "$RAW") echo "state: raw hardware speaker"; warn_slider ;;
+            "$DSP"|"$RAW")
+                # The flag is the record; the graph is the truth, but only
+                # while it plays. When both are available and they disagree,
+                # say so -- that means something set the gains behind this
+                # script's back, or a PipeWire restart reverted them to the
+                # config's tuned defaults while the flag survived in the
+                # runtime dir.
+                _live=
+                if sink_running; then
+                    _g2=$(graph_control "$(chain_id)" "s14byp_l:Gain 2")
+                    case "$_g2" in
+                        1|1.0|1.00*) _live=bypassed ;;
+                        0|0.0|0.00*) _live=tuned ;;
+                    esac
+                fi
+                if [ "$_live" = bypassed ] || { [ -z "$_live" ] && bypassed; }; then
+                    echo "state: Speaker (Tuning) -- BYPASSED (raw input, ${HOT_LU} LU"
+                    echo "       below the tuned path, which is the tuning's own offset)"
+                else
+                    echo "state: Speaker (Tuning), 14-stage chain"
+                fi
+                if [ -n "$_live" ]; then
+                    if [ "$_live" = bypassed ] && ! bypassed; then
+                        echo "note: read from the live graph, which does not agree with"
+                        echo "      $BYPASS_FLAG. Run 'speaker-dsp on' or 'off' to settle it."
+                    elif [ "$_live" = tuned ] && bypassed; then
+                        echo "note: the graph is processing but this script recorded a"
+                        echo "      bypass -- PipeWire has restarted since. The graph wins;"
+                        echo "      run 'speaker-dsp off' again if you wanted raw."
+                    fi
+                else
+                    echo "       (nothing is playing, so this is the recorded state, not a"
+                    echo "        reading -- a suspended graph reports every control as 0.0)"
+                fi ;;
             alsa_output*|bluez_output*)
                     echo "state: external device -- run 'external-dsp status'" ;;
             *) echo "state: other output ($current)" ;;
