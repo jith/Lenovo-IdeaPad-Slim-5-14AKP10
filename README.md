@@ -46,14 +46,14 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.45`, `Gain 3 = 0.06` — deepened 4 Sep 2026; the chain's biggest **displacement** lever | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
 | 9b | Upper-bass lift | `s9blift_*` | builtin `bq_peaking` | 200 Hz, Q 1.2, **Gain +3 dB** | **active** — added 4 Sep 2026 at 0 dB, taken to +3, then +6, then back to **+3** when the corrected excursion model showed +6 was spending margin rather than returning it. Aimed at a measured 14 dB gap against an iPhone 13 at 160–250 Hz, the band a phone's bass actually lives in. Sits **before** GOTT, unlike 10b/10c: the compression it provokes pulls down the 25–63 Hz content that moves the cone, so displacement *falls* as this rises | — |
-| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` +16.26 dB, `mk_2` **0.00 dB**, `mk_3` −3.17 dB, `mk_4` −6.15 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −4.65 dB, taken in four steps on 1 and 4 Sep 2026 to hold the tilt through stage 11 going multiband and through `g_out` 3.80 → 4.25 → 5.50 → 6.50 — **sized at the listening level, not at unity**, see *The tilt correction is level-dependent*; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
+| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` **+14.81 dB**, `mk_2` **0.00 dB**, `mk_3` −3.17 dB, `mk_4` −6.15 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −4.65 dB, taken in four steps on 1 and 4 Sep 2026 to hold the tilt through stage 11 going multiband and through `g_out` 3.80 → 4.25 → 5.50 → 6.50 — **sized at the listening level, not at unity**; `g_out` came back to **5.50** on 6 Sep 2026 when the makeup was found to be feeding stage 12 a 3.4% IMD knee above 90% volume, see *The distortion above 80% is stage 12*, see *The tilt correction is level-dependent*; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
 | 10b | Resonance notch | `s10rbp_*`, `s10rdyn_*`, `s10rneg_*`, `s10rsum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + `invert` + `mixer` | branch 760 Hz Q 1.4262 → **Qbp 2.4245**, anchor **−5.5 dB** (`Gain 2` = 0.4691156), `cr` **1.0** | **active** — since 14 Aug 2026 the *second and last* instrument aimed at the 761 Hz resonance, after stage 2. **Rebuilt as a parallel bandpass 2 Sep 2026 and deepened −3.7 → −5.5**, which is where the frozen Qbp runs out and close to the 4.7 dB residual the A/B measured. The branch compressor is a **wire, by measurement** — both directions were swept and neither has a job, because stages 11–12's give-back is keyed on broadband level, not on 760 Hz | — |
 | 10c | Presence lift | `s10pbp_*`, `s10pdyn_*`, `s10psum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + builtin `mixer` | 2650 Hz, Q 1.4262 branch, `cr` 4.0, `al` −20 dBFS, `rt` 300 ms, branch gain 0.5849 | **active, and dynamic since 1 Sep 2026** — a parallel bandpass with a compressed branch, which is exactly a `bq_peaking` Q 1.2 whose Gain moves between about +2.3 and +4.0 dB. Anchored at the *fitted* +4.0 rather than frozen at the +3.0 the static version had to accept. Delivers **+0.73 dB** more at 2500 Hz than the static bell **and 22% less two-tone IMD**, confirmed on hardware | — |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → **LSP sidechain MULTIBAND comp** | Hx = lowpass 761 Hz Q 2.63; threshold **−5.04 dBFS** on the estimate (`al_0` 0.560), **band 0 only, split 1 kHz** | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress. **Multiband since 1 Sep 2026**: a cone has one displacement and it is a low-frequency quantity, so ducking 3 kHz was collateral, not protection | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
-| 12 | Brickwall | `s12brick` | LSP Limiter | −1.01 dBFS sample → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** — `th` pays for the sweep so `g_out` can spend | — |
+| 12 | Brickwall | `s12brick` | LSP Limiter | **−0.64 dBFS sample** (`th` 0.9287) → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** — `th` pays for the sweep so `g_out` can spend. Raised from 0.8900 on 6 Sep 2026 as the other half of `g_out` 6.50 → 5.50, giving back about half what that gave up; 0.161 dB of margin left on `sweep_fs.wav` against the 0.9400 ceiling | — |
 | — | Bypass switch | `s0in_*`, `s14byp_*` | builtin `copy` + `mixer` | `In 1` = chain, `In 2` = raw input | **not a stage and not tuning** — `Gain 1 = 1.0`, `Gain 2 = 0.0`, which is the chain. `speaker-dsp off` swaps them and the graph passes the input through bit for bit. Added 6 Sep 2026, because the old `off` switched the default sink to the raw speaker and that sink is hidden from GNOME, so it could not work at all | — |
-| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left hot, by **5.63 LU** as re-measured at `g_out` 6.50 / `Gain 2` 0.45 / stage 9b +3 / `al_0` 0.560 | ITU-R BS.1770 |
+| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left hot, by **5.22 LU** as re-measured at `g_out` 5.50 / `th` 0.9287 / `Gain 2` 0.45 / stage 9b +3 / `al_0` 0.560 | ITU-R BS.1770 |
 
 ## Signal flow
 
@@ -1771,8 +1771,8 @@ two-tone test at programme level with the volume up.
 
 | `g_out` | music2 LUFS | vs shipped | IMD | bass − presence |
 |---|---|---|---|---|
-| **6.50 — shipped** | −7.55 | 0.00 | **3.421%** | −8.51 dB |
-| 5.50 | −7.92 | −0.37 | **0.354%** | −7.72 |
+| 6.50 — was shipped | −7.55 | 0.00 | **3.421%** | −8.51 dB |
+| **5.50 — shipped 6 Sep** | −7.92 | −0.37 | **0.354%** | −7.72 |
 | 4.65 | −8.34 | −0.79 | 0.141% | −6.92 |
 | 4.00 | −8.77 | −1.22 | 0.109% | −6.19 |
 | 3.34 | −9.37 | −1.82 | 0.072% | −5.33 |
@@ -1794,7 +1794,7 @@ the margin by 0.59 dB:
 | **`g_out` 5.50 / `th` 0.9287** | −0.643 | **−0.361** | **0.161** |
 | `g_out` 5.50 / `th` 0.9400 | −0.537 | −0.255 | 0.055 — the documented ceiling |
 
-**The pair together, against the shipped chain, on `music2`:**
+**The pair together, against the chain as it stood, on `music2`:**
 
 | sink volume | ΔLU | IMD, shipped → proposed | improvement | Δ tilt |
 |---|---|---|---|---|
@@ -1808,6 +1808,15 @@ nobody needs it, and the least at 100%, where the complaint is — because the
 loudness it gives up at the top *was* the distortion. 0.24 LU is a quarter of
 the 1 dB criterion used everywhere else here. Displacement goes **down** 0.17 dB,
 so it spends no cone margin, and it cannot: it is less drive.
+
+**Shipped 6 September 2026.** A/B'd on hardware by ear at 100% volume,
+live-switched with `pw-cli` so nothing else moved, and reported better. That is
+what shipped it; the measurement only said where to look. Stage 13's trim was
+re-measured as the config requires after any change to stages 7, 10, 11 or 12 —
+the offset is now **5.22 LU**, `Mult` 0.5483. The old entry read "tuned −9.53
+LUFS" where the figure was −9.13; the offset and the `Mult` it implies both
+reproduce exactly off the installed file, so that was a transcription slip
+rather than the third rot, and it is corrected in place.
 
 **What it does not fix.** The voicing still moves with the volume — bass minus
 presence runs −1.81 dB at 70% and −7.75 at 100% after the change, against −2.52
@@ -2860,7 +2869,7 @@ these archives are the only copies that exist:
 
 | directory | chain |
 |---|---|
-| `tests/captures/` | **current** — `Gain 2` 0.45, `g_out` 6.50, stage 9b **+3 dB** |
+| `tests/captures/` | `Gain 2` 0.45, `g_out` 6.50, stage 9b **+3 dB** — **predates the 6 Sep `g_out` 5.50 / `th` 0.9287 change**, so it is a baseline set, not the current chain |
 | `gout650-lift6/` | the same at stage 9b +6 dB |
 | `gout650-lift3/` | an earlier +3 set, before the +6 excursion correction |
 | `gout650-nolift/` | the same with stage 9b inert |
@@ -3245,10 +3254,10 @@ against it, and if a change cannot be heard at matched level, it does not ship.
 | `s6w1x6_*` | `Gain` | 3.65 |
 | `s8sum_*` | `Gain 2` / `Gain 3` | **0.45** / 0.06 |
 | `s9blift_*` | `Freq` / `Q` / `Gain` | **200 / 1.2 / +3** |
-| `s10mbc` | `g_out` | **6.50** |
+| `s10mbc` | `g_out` | **5.50** |
 | `s10mbc` | `mk_3` / `mk_4` | **0.694218 / 0.492308** |
 | `s11xcur` | `al_0` | **0.560** |
-| `s12brick` | `th` | 0.8900 |
+| `s12brick` | `th` | **0.9287** |
 | `s13trim_*` | `Mult` | 1.0 (unity, deliberately hot) |
 
 **Amended 5 September 2026:** `s11xcur:al_0` 0.708 → **0.560**, after small clipping and clarity loss were reported at 90–100 % volume. See *The excursion limiter was too loose at full volume*. Tag `tuning-2026-09-05`.
