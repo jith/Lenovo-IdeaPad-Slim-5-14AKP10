@@ -1819,6 +1819,16 @@ see *Volume dependence* — and it is the reason a phone holds together across i
 range while this does not. Closing it needs the volume moved behind the graph, or
 `g_out` driven from the volume, not a better constant.
 
+**Neither of those is a licence to retarget the volume keys.** That was
+investigated and rejected on 13 August 2026 and *Volume dependence* settled it:
+the level dependence below about 90% runs in the direction hearing wants, the
+sound was approved at 76–88% rather than at unity, and pinning the graph at 100%
+would take 1–3 dB of bass out of the levels actually used. What is new here is
+only that the *upper* end of the range behaves differently in kind — below 90% it
+is a voicing shift, above 95% it is a distortion knee — so the case for driving
+`g_out` from the volume is now about the top of the knob, not the bottom, and it
+still has to beat a plain constant by ear before it is worth the machinery.
+
 ## How loud can it go
 
 Short answer: this is it, plus 1.61 dB that was sitting unclaimed in the one
