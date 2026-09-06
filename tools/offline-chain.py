@@ -92,6 +92,8 @@ def run_node(node, name, inputs):
         per_channel = lambda s: s * ctrl.get("Mult", 1.0) + ctrl.get("Add", 0.0)
     elif label == "invert":
         per_channel = lambda s: -s
+    elif label == "copy":
+        per_channel = lambda s: s
     elif label == "dcblock":
         per_channel = lambda s: dcblock(s, ctrl.get("R", 0.995))
     elif label == "delay":
@@ -431,8 +433,8 @@ def self_test():
     # hardcoded on purpose: they are the guard that catches a node added to the
     # config and not to the stage table.
     nodes, links = parse_config(CONFIG)
-    check("node count", len(nodes), 114, 0)
-    check("link count", len(links), 206, 0)
+    check("node count", len(nodes), 118, 0)
+    check("link count", len(links), 212, 0)
     check("bq_raw coefficients parsed", nodes["s2lt_l"]["control"]["b0"], 0.9618034723, 1e-9)
     for name in ("s0trim_l", "s2lt_l", "s10mbc", "s10rbp_l", "s10rdyn_l", "s10rsum_l", "s10pbp_l",
                  "s10pdyn_l", "s10psum_l", "s11xcur", "s12lp_l", "s12brick"):
