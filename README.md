@@ -390,13 +390,14 @@ old `carry_volume`, its cubic-percentage conversion and `SPEAKER_DSP_RAW_TRIM_DB
 are gone, along with the "the slider is inert now" warning: the slider is live
 in both states.
 
-**The bypass is the input, not an approximation of it.** Measured on the edited
-graph before it was installed, playing 6 s of pink into a `-TEST` copy of the
-chain and capturing the hardware monitor: **287 744 of 288 000 samples are bit
-identical to the source file**, residual exactly `0.0`. The 256 that are not are
-the final 5.3 ms, where `pw-cat` stopped and the stream drained — a capture-tail
-artefact, not the path. Peak matched the source to the last digit shown,
-−7.781735 dBFS both.
+**The bypass is the input, not an approximation of it.** Playing 6 s of pink
+into the sink at unity and capturing the hardware monitor: **287 744 of 288 000
+samples are bit identical to the source file**, residual exactly `0.0`. The 256
+that are not are the final 5.3 ms, where `pw-cat` stopped and the stream drained
+— a capture-tail artefact, not the path. Peak matched the source to the last
+digit shown, −7.781735 dBFS both. Measured twice, on a `-TEST` copy of the
+edited graph before installing and again on the installed chain afterwards:
+**the same numbers to the sample**.
 
 `ab` is the one to use for listening comparisons. Note that it will not be
 level-matched: stage 13 leaves the tuned path deliberately hot, 5.63 LU above
@@ -1369,6 +1370,13 @@ session, the hardware and the room all held fixed — a better control than
 comparing against a capture from a previous day. This is how stage 10b's
 0.13 dB out-of-band figure was taken. Delete the file and restart to clean up,
 and check `pactl list sinks short` shows one sink again.
+
+**How good a control it is, measured.** The 6 Sep bypass was verified on a
+`-TEST` copy before installing and again on the installed chain afterwards, on
+the same source: **287 744 of 288 000 samples bit identical to the source file
+both times, the same 256 samples differing, the same peak to six decimals.**
+The copy is not an approximation of the real graph — it is the real graph under
+a different name, and a structural change can be signed off on it.
 
 Note this leaves a user-level config that will keep shadowing your work if you
 forget it — it is loaded *in addition to* `/etc`, so a stale copy silently adds
@@ -3300,8 +3308,9 @@ stands with all fourteen stages live. That is the largest gap in this file.
 | The HF tilt correction is a shelf, not a reshaping | **current** | pass — matched −1.5 dB on `mk_3` and `mk_4` delivers **−1.43 dB at 2.5 kHz and −1.45 at 16 kHz**, flat to 0.05 dB across 1.25–16 kHz. The presence and top summaries are **unchanged** (+1.61 and −1.64 re the 1.6–10 kHz mean in every variant) — only the tilt moves |
 | The tilt correction leaves bass alone | **current** | pass — **50 Hz moves +0.02 dB**, and the whole 50–400 Hz region moves +0.03 to +0.11. Confirmed on hardware through a `-TEST` sink at matched volume: **−0.03 dB over 50–400 Hz** against **−1.47 dB over 1.6–12.5 kHz**, versus −1.41 predicted offline |
 | The tilt correction adds no distortion | **current** | pass, and it **reduces** it — THD identical to two decimals at 90, 400 and 2650 Hz at both −12 and −3 dBFS; SMPTE 60 + 2650 Hz IMD at −3 dBFS falls **8.18% → 4.38%** and at −6 dBFS **0.317% → 0.145%**, its value before 10c. True peak improves on all four signals. It is a cut, so this is the expected direction — measured because the constraint is explicit |
-| `speaker-dsp off` bypasses the chain | **current** | pass, and **bit-exact** — 6 s of pink through a `-TEST` copy of the edited graph, captured at the hardware monitor: **287 744 of 288 000 samples identical to the source file**, residual exactly `0.0`, peak matching to −7.781735 dBFS on both. The 256 samples that differ are the final 5.3 ms, where `pw-cat` stopped and the stream drained |
-| The bypass switch does not change the tuning | **current** | pass — the edited graph nulled against the installed one, both playing tuned on the same source: residual **−78.3 dBFS** above 30 Hz and **−88.5** below, against a −60 dBFS bar. The two added nodes are a `copy` and a `mixer` with one gain at 0 |
+| `speaker-dsp off` bypasses the chain | **current, on hardware** | pass, and **bit-exact** — 6 s of pink at unity captured at the hardware monitor: **287 744 of 288 000 samples identical to the source file**, residual across the body exactly `0.0`, peak matching to −7.781735 dBFS on both. The 256 samples that differ are the final 5.3 ms, where `pw-cat` stopped and the stream drained. Measured on a `-TEST` copy before installing and on the installed chain after, **identical to the sample** |
+| The bypass switch does not change the tuning | **current** | pass — the edited graph nulled against the installed one, both playing tuned on the same source: residual **−78.3 dBFS** above 30 Hz and **−88.5** below, against a −60 dBFS bar. The two added nodes are a `copy` and a `mixer` with one gain at 0, and they cost **16 controls** and no measurable change |
+| `off`, `on` and `ab` set the gains they claim to | **current, on hardware** | pass — read back off the live graph with audio playing, not inferred from the flag: on `1.0/0.0`, `ab` → `0.0/1.0`, `ab` back → `1.0/0.0`. Worth reading rather than trusting, because **`pw-cli set-param` exits 0 for a control that does not exist and for a node id that does not exist** |
 | The shipped config is what was listened to | **current** | pass — for **both** changes. The edited `files/50-speaker-tuning.conf` renders **bit-identical** (max sample difference 0.000e+00) to the variant built for the `-TEST` sink and approved by ear, checked again after every comment edit. Self-test 26/26 |
 | Removing `mk_2` does not weaken the 761 Hz correction | **current** | pass — `s10res` (the pre-2-Sep bell, now the `s10r*` branch at −5.5 dB) at −3.7 dB holds 800 Hz to **+0.06 dB (music1)** and **+0.01 (music2)** offline, and **+0.25 dB** on hardware, against a re-setup repeatability of 1.4 dB. The depth was fitted to two tracks, not one; −3.6 left +0.12/+0.08 and −3.8 overshot to 0.00/−0.06 |
 | Removing `mk_2` returns the low-mid it was taxing | **current** | pass — **+0.79 dB mean over 160–630 Hz** measured at the hardware monitor through a `-TEST` sink at matched volume, against +0.61 predicted offline. The uniform ~0.18 dB offset is the 20 s excerpt compressing differently from the full file |
@@ -5269,6 +5278,36 @@ real sink. Both numbers are from that copy:
 |---|---|
 | bypass delivers the input untouched | **287 744 / 288 000 samples bit identical**, residual exactly `0.0`; the 256 that differ are the last 5.3 ms of capture tail |
 | the two added nodes do not change the tuning | edited vs installed graph, both tuned, same source: residual **−78.3 dBFS** above 30 Hz |
+
+**And again after installing**, on the real chain, same 6 s of pink at unity:
+
+| | installed chain |
+|---|---|
+| samples identical to the source | **287 744 / 288 000 (99.9111%)** |
+| residual across the body | **exactly 0.0** |
+| first difference | sample 287 744, i.e. 5.9947 s of 6.0000 — the capture tail again |
+| peak, capture vs source | **−7.781735 dBFS** both |
+| the same source with the chain engaged | **−1.012210 dBFS**, `s12brick`'s ceiling |
+
+The `-TEST` copy predicted the installed chain **to the sample**, which is worth
+recording on its own: the rig in *Testing a structural change without sudo* is
+not an approximation of the real graph, it is the real graph under a different
+name.
+
+Every transition was then read back off the live graph while audio played,
+rather than inferred from the flag file:
+
+| command | `s14byp_l:Gain 1` | `s14byp_l:Gain 2` |
+|---|---|---|
+| chain on | 1.0 | 0.0 |
+| `ab` → bypass | 0.0 | 1.0 |
+| `ab` → back | 1.0 | 0.0 |
+
+The installed graph carries **1361** controls against 1345 before — exactly 16
+more, being two `mixer` nodes at eight gains each. The `copy` splitter adds
+none, which is what a wire should cost. And `external-dsp off` with the built-in
+speaker selected now delegates into a bypass that actually happens, which is the
+second of the two commands this fixed.
 
 **What this deletes.** `carry_volume`, `RAW_TRIM_DB` / `SPEAKER_DSP_RAW_TRIM_DB`,
 `select_raw`, and `warn_slider` all existed to manage a switch that no longer
