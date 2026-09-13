@@ -567,6 +567,37 @@ it answers, which is what broke the deadlock once:
 sdptool search --bdaddr 88:C6:26:FD:EE:68 A2SNK && bluetoothctl connect 88:C6:26:FD:EE:68
 ```
 
+### The built-in microphone is the default source
+
+Out of the box the default source was Mic1, the "Digital Microphone", which
+records a stuck full-scale signal (see *The microphone caveat*). Every app got
+it. Speech recognition turned it into "E aí" and "Thank you." — Whisper's
+answers to no speech at all — and that is how it was found, 14 Sep 2026.
+
+Choosing Mic2 does not stick. The SN6140 switches its ADC between the built-in
+analog mic and the headset jack by itself, but UCM's generic HDA profile models
+that input as a jack mic only, bound to `Mic Jack`. With nothing plugged in the
+route reads **not available**, and WirePlumber's rescan drops such nodes before
+any selection hook runs. `wpctl set-default` is stored and then ignored. With
+Mic1 disabled and nothing else done, the default fell to a sink monitor: −91 dB.
+
+`files/56-internal-mic.conf` disables Mic1 and loads `files/56-internal-mic.lua`,
+a hook that runs between WirePlumber's choice and its application. It selects
+Mic2 only when that choice is not a microphone — nothing, or a sink monitor —
+and was not configured deliberately. A USB or Bluetooth mic is available, wins
+on its own, and is left alone.
+
+A virtual source in front of Mic2 also works, and was tried first. It was
+dropped for adding a node to the graph for what is only a selection problem.
+
+Verify:
+
+```sh
+pactl get-default-source     # alsa_input.pci-0000_04_00.6.HiFi__Mic2__source
+arecord -D default -d 3 -f S16_LE -r 16000 -c 1 /tmp/m.wav &&
+  ffmpeg -i /tmp/m.wav -af astats -f null - 2>&1 | grep -m1 'DC offset'   # near 0
+```
+
 ## Sample rate is pinned
 
 Stages 2 and 11 use `bq_raw`, which takes raw biquad coefficients. Those are
@@ -1554,8 +1585,11 @@ returns full-scale samples with about a dozen distinct values whatever the
 room is doing, through both `pw-record` and `parecord` — so it is the source,
 not the recorder. **Mic2 is the working internal microphone**; a quiet room
 reads around −60 dBFS through it, and it is what `tools/measure-speaker.sh`
-uses by default. There is also an `acppdmmach` card (the AMD ACP digital mic
-array) that PipeWire is not currently exposing as a source.
+uses by default. Mic1 *is* the `acppdmmach` card (the AMD ACP PDM input), and
+reading it raw with `arecord -D hw:2,0` gives the same stuck signal, DC offset
+−0.9999 — nothing is wired to it. Since 14 Sep 2026 install.sh disables Mic1 and
+makes Mic2 the default source; see *The built-in microphone is the default
+source*.
 
 The tools call `assert_sane_capture` on every capture and refuse to report
 numbers from one that is railed or silent, because a railed capture produces a

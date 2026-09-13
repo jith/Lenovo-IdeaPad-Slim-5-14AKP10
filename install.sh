@@ -32,6 +32,11 @@ SYNC_SCRIPT_OLD=/usr/local/share/wireplumber/scripts/54-volume-sync.lua
 # endpoint for a host that is gone, and the next connect is answered with
 # silence until the device is re-paired. The same script closes the session from
 # the unit's ExecStop on shutdown and from the sleep hook before a suspend.
+# The built-in mic's route reads "not available" because UCM ties it to the
+# headset jack, so WirePlumber will not default to it on its own; and the
+# "Digital Microphone" beside it records a stuck full-scale signal.
+MIC_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/56-internal-mic.conf
+MIC_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/56-internal-mic.lua
 BT_SCRIPT_DEST=/usr/local/bin/speaker-dsp-bt-disconnect
 BT_UNIT_DEST=/etc/systemd/system/speaker-dsp-bt-disconnect.service
 BT_SLEEP_DEST=/usr/lib/systemd/system-sleep/55-speaker-dsp-bt
@@ -57,6 +62,8 @@ uninstall() {
         "$MEM_SCRIPT_DEST" \
         "$SYNC_CONF_OLD" \
         "$SYNC_SCRIPT_OLD" \
+        "$MIC_CONF_DEST" \
+        "$MIC_SCRIPT_DEST" \
         "$BT_SCRIPT_DEST" \
         "$BT_UNIT_DEST" \
         "$BT_SLEEP_DEST" \
@@ -124,6 +131,14 @@ install_filter() {
         echo "missing volume script: $FILES_DIR/54-volume-memory.lua" >&2
         exit 1
     }
+    [ -f "$FILES_DIR/56-internal-mic.conf" ] || {
+        echo "missing microphone config: $FILES_DIR/56-internal-mic.conf" >&2
+        exit 1
+    }
+    [ -f "$FILES_DIR/56-internal-mic.lua" ] || {
+        echo "missing microphone script: $FILES_DIR/56-internal-mic.lua" >&2
+        exit 1
+    }
     [ -f "$FILES_DIR/55-bt-disconnect" ] || {
         echo "missing Bluetooth teardown script: $FILES_DIR/55-bt-disconnect" >&2
         exit 1
@@ -152,6 +167,8 @@ install_filter() {
     # Not the same paths this has just written, so this is safe to do here:
     # the old pair is genuinely a different name.
     rm -f "$SYNC_CONF_OLD" "$SYNC_SCRIPT_OLD"
+    install -D -m644 "$FILES_DIR/56-internal-mic.conf" "$MIC_CONF_DEST"
+    install -D -m644 "$FILES_DIR/56-internal-mic.lua" "$MIC_SCRIPT_DEST"
 
     # The chains are per CLASS of output, not per device, so this expands to the
     # same file every time and can be generated here rather than by hand or by
@@ -179,6 +196,7 @@ install_filter() {
 
     echo "Installed the fourteen-stage Speaker DSP filter chain (internal)"
     echo "and the six-stage External (Tuning) chain for every other output."
+    echo "The built-in analog microphone is the default source."
     print_user_restart_instructions
 }
 
