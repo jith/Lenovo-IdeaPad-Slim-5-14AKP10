@@ -611,6 +611,13 @@ A fresh headless Brave then listed `Default` and `Built-in Microphone`, and
 `getUserMedia` opened it. Mic2 stays out of that list, which is the filter at
 work. The measurement tools still record Mic2 directly.
 
+The loopback's capture side is a recording stream, and GNOME lights its
+microphone indicator for any recording stream it can see. It lit permanently
+while the mic sat suspended. `files/hide-speaker-tuning.lua` hides
+`internal-mic.capture` from GNOME along with the chains' other plumbing. An app
+that records from `internal-mic` has a stream of its own, which stays visible
+and lights the indicator as it should.
+
 Verify:
 
 ```sh

@@ -42,10 +42,18 @@ INTERNAL_SINK = "effect_input.speaker-tuning"
 ONBOARD_CARD = "alsa_card.pci-0000_04_00.6"
 
 -- Every chain's output stream: plumbing, never selectable.
+--
+-- The built-in mic's loopback capture is plumbing too, and it is a recording
+-- stream: shown, it lit GNOME's microphone indicator permanently, with the mic
+-- suspended (24 Sep 2026). Whoever really records from internal-mic has a stream
+-- of its own, which stays visible and lights it.
 nodes_om = ObjectManager {
   Interest { type = "node",
     Constraint { "node.name", "matches", "effect_output.*" },
-  }
+  },
+  Interest { type = "node",
+    Constraint { "node.name", "equals", "internal-mic.capture" },
+  },
 }
 
 -- The raw built-in speaker, and the external chains' own input sinks, which are
