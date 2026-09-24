@@ -33,8 +33,11 @@ SYNC_SCRIPT_OLD=/usr/local/share/wireplumber/scripts/54-volume-sync.lua
 # silence until the device is re-paired. The same script closes the session from
 # the unit's ExecStop on shutdown and from the sleep hook before a suspend.
 # The built-in mic's route reads "not available" because UCM ties it to the
-# headset jack, so WirePlumber will not default to it on its own; and the
-# "Digital Microphone" beside it records a stuck full-scale signal.
+# headset jack, so WirePlumber will not default to it on its own and Chromium
+# and GNOME do not list it at all; and the "Digital Microphone" beside it
+# records a stuck full-scale signal. The source is a portless virtual source in
+# front of it, and the script makes that the default.
+MIC_SOURCE_DEST=/etc/pipewire/pipewire.conf.d/56-internal-mic-source.conf
 MIC_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/56-internal-mic.conf
 MIC_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/56-internal-mic.lua
 BT_SCRIPT_DEST=/usr/local/bin/speaker-dsp-bt-disconnect
@@ -62,6 +65,7 @@ uninstall() {
         "$MEM_SCRIPT_DEST" \
         "$SYNC_CONF_OLD" \
         "$SYNC_SCRIPT_OLD" \
+        "$MIC_SOURCE_DEST" \
         "$MIC_CONF_DEST" \
         "$MIC_SCRIPT_DEST" \
         "$BT_SCRIPT_DEST" \
@@ -131,6 +135,10 @@ install_filter() {
         echo "missing volume script: $FILES_DIR/54-volume-memory.lua" >&2
         exit 1
     }
+    [ -f "$FILES_DIR/56-internal-mic-source.conf" ] || {
+        echo "missing microphone source: $FILES_DIR/56-internal-mic-source.conf" >&2
+        exit 1
+    }
     [ -f "$FILES_DIR/56-internal-mic.conf" ] || {
         echo "missing microphone config: $FILES_DIR/56-internal-mic.conf" >&2
         exit 1
@@ -167,6 +175,7 @@ install_filter() {
     # Not the same paths this has just written, so this is safe to do here:
     # the old pair is genuinely a different name.
     rm -f "$SYNC_CONF_OLD" "$SYNC_SCRIPT_OLD"
+    install -D -m644 "$FILES_DIR/56-internal-mic-source.conf" "$MIC_SOURCE_DEST"
     install -D -m644 "$FILES_DIR/56-internal-mic.conf" "$MIC_CONF_DEST"
     install -D -m644 "$FILES_DIR/56-internal-mic.lua" "$MIC_SCRIPT_DEST"
 
@@ -196,7 +205,7 @@ install_filter() {
 
     echo "Installed the fourteen-stage Speaker DSP filter chain (internal)"
     echo "and the six-stage External (Tuning) chain for every other output."
-    echo "The built-in analog microphone is the default source."
+    echo "The built-in analog microphone is the default source, and browsers list it."
     print_user_restart_instructions
 }
 

@@ -581,19 +581,40 @@ route reads **not available**, and WirePlumber's rescan drops such nodes before
 any selection hook runs. `wpctl set-default` is stored and then ignored. With
 Mic1 disabled and nothing else done, the default fell to a sink monitor: −91 dB.
 
+Selecting Mic2 is not enough either, because the port is also what clients
+see. Chromium leaves out any source whose ports are all unavailable, and GNOME
+Settings does the same. With Mic2 the default and Mic1 gone, Brave listed **no
+audio input at all**, and WhatsApp Web said "Microphone not found" (24 Sep
+2026). Mic1 had only ever been listed because its port reads *unknown*.
+
+So the default is `internal-mic`, **Built-in Microphone**: a loopback in front of
+Mic2, loaded by `files/56-internal-mic-source.conf`. It has no ports, so there is
+no availability to fail. It is passive toward Mic2, so the hardware suspends
+when nothing records, and it sets `node.dont-fallback`, so with Mic2 gone it
+waits rather than linking to the default source — which is itself.
+
 `files/56-internal-mic.conf` disables Mic1 and loads `files/56-internal-mic.lua`,
 a hook that runs between WirePlumber's choice and its application. It selects
-Mic2 only when that choice is not a microphone — nothing, or a sink monitor —
-and was not configured deliberately. A USB or Bluetooth mic is available, wins
-on its own, and is left alone.
+`internal-mic` only when that choice is not a microphone — nothing, or a sink
+monitor — and was not configured deliberately. A USB or Bluetooth mic is
+available, wins on its own, and is left alone.
 
-A virtual source in front of Mic2 also works, and was tried first. It was
-dropped for adding a node to the graph for what is only a selection problem.
+Measured 24 Sep 2026, with Mic2 and `internal-mic` recorded together:
+
+| | Mic2 direct | internal-mic |
+|---|---|---|
+| RMS | −39.1152 dB | −39.1153 dB |
+| peak | −22.9994 dB | −22.9994 dB |
+| DC offset | 0.000187 | 0.000187 |
+
+A fresh headless Brave then listed `Default` and `Built-in Microphone`, and
+`getUserMedia` opened it. Mic2 stays out of that list, which is the filter at
+work. The measurement tools still record Mic2 directly.
 
 Verify:
 
 ```sh
-pactl get-default-source     # alsa_input.pci-0000_04_00.6.HiFi__Mic2__source
+pactl get-default-source     # internal-mic
 arecord -D default -d 3 -f S16_LE -r 16000 -c 1 /tmp/m.wav &&
   ffmpeg -i /tmp/m.wav -af astats -f null - 2>&1 | grep -m1 'DC offset'   # near 0
 ```
@@ -1587,9 +1608,9 @@ not the recorder. **Mic2 is the working internal microphone**; a quiet room
 reads around −60 dBFS through it, and it is what `tools/measure-speaker.sh`
 uses by default. Mic1 *is* the `acppdmmach` card (the AMD ACP PDM input), and
 reading it raw with `arecord -D hw:2,0` gives the same stuck signal, DC offset
-−0.9999 — nothing is wired to it. Since 14 Sep 2026 install.sh disables Mic1 and
-makes Mic2 the default source; see *The built-in microphone is the default
-source*.
+−0.9999 — nothing is wired to it. Since 14 Sep 2026 install.sh disables Mic1, and
+since 24 Sep the default source is `internal-mic`, a virtual source in front of
+Mic2; see *The built-in microphone is the default source*.
 
 The tools call `assert_sane_capture` on every capture and refuse to report
 numbers from one that is railed or silent, because a railed capture produces a

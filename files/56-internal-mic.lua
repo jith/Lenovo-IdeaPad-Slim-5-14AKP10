@@ -1,4 +1,4 @@
--- Make the built-in microphone the default source, without adding a node.
+-- Make the built-in microphone the default source.
 --
 -- THE "DIGITAL MICROPHONE" IS NOT A MICROPHONE. UCM sees the ACP PDM card and
 -- offers it as Mic1, but nothing is wired to it: it records a stuck full-scale
@@ -14,16 +14,20 @@
 -- before any hook sees it. `wpctl set-default` is stored and then ignored, and
 -- with Mic1 gone the default fell to a sink monitor: -91 dB of silence.
 --
--- A virtual source in front of Mic2 would have worked, and was tried, but it is
--- one more node in the graph for a problem that is only a selection. This hook
--- fixes the selection instead. It runs after WirePlumber's own choice and before
--- that choice is applied, and it steps in only when that choice is not a real
--- microphone -- nothing, or a sink monitor -- and was not picked deliberately.
--- A USB or Bluetooth mic is available, is chosen normally, and is left alone.
+-- IT IS NOT ONLY A SELECTION. Selecting Mic2 itself fixed pactl and nothing
+-- else: Chromium and GNOME Settings leave out a source whose ports are all
+-- unavailable, so Brave reported no microphone at all, 24 Sep 2026. So the
+-- default is "internal-mic", a portless virtual source in front of Mic2, loaded
+-- by /etc/pipewire/pipewire.conf.d/56-internal-mic-source.conf.
+--
+-- This hook runs after WirePlumber's own choice and before that choice is
+-- applied, and it steps in only when that choice is not a real microphone --
+-- nothing, or a sink monitor -- and was not picked deliberately. A USB or
+-- Bluetooth mic is available, is chosen normally, and is left alone.
 
 log = Log.open_topic ("s-internal-mic")
 
-INTERNAL_MIC = "alsa_input.pci-0000_04_00.6.HiFi__Mic2__source"
+INTERNAL_MIC = "internal-mic"
 
 mic_om = ObjectManager {
   Interest { type = "node",
