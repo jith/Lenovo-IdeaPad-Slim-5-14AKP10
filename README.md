@@ -46,14 +46,14 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.45`, `Gain 3 = 0.06` — deepened 4 Sep 2026; the chain's biggest **displacement** lever | CN115442709B |
 | 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0`. The clarity profile adds a 300 Hz all-pass on mid. | US8660271B2 |
 | 9b | Upper-bass lift | `s9blift_*` | builtin `bq_peaking` | 200 Hz, Q 1.2, **Gain +3 dB** | **active** — added 4 Sep 2026 at 0 dB, taken to +3, then +6, then back to **+3** when the corrected excursion model showed +6 was spending margin rather than returning it. Aimed at a measured 14 dB gap against an iPhone 13 at 160–250 Hz, the band a phone's bass actually lives in. Sits **before** GOTT, unlike 10b/10c: the compression it provokes pulls down the 25–63 Hz content that moves the cone, so displacement *falls* as this rises | — |
-| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` **+14.81 dB**, `mk_2` **0.00 dB**, `mk_3` −3.17 dB, `mk_4` −6.15 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −4.65 dB, taken in four steps on 1 and 4 Sep 2026 to hold the tilt through stage 11 going multiband and through `g_out` 3.80 → 4.25 → 5.50 → 6.50 — **sized at the listening level, not at unity**; `g_out` came back to **5.50** on 6 Sep 2026 when the makeup was found to be feeding stage 12 a 3.4% IMD knee above 90% volume, see *The distortion above 80% is stage 12*, see *The tilt correction is level-dependent*; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
+| 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` **+13.06 dB** at startup (4.50), **+14.81 dB** on reference (5.50), `mk_2` **0.00 dB**, `mk_3` −3.17 dB, `mk_4` −6.15 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −4.65 dB, taken in four steps on 1 and 4 Sep 2026 to hold the tilt through stage 11 going multiband and through `g_out` 3.80 → 4.25 → 5.50 → 6.50 — **sized at the listening level, not at unity**; `g_out` came back to **5.50** on 6 Sep 2026 when the makeup was found to be feeding stage 12 a 3.4% IMD knee above 90% volume, see *The distortion above 80% is stage 12*, see *The tilt correction is level-dependent*; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
 | 10b | Resonance notch | `s10rbp_*`, `s10rdyn_*`, `s10rneg_*`, `s10rsum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + `invert` + `mixer` | branch 760 Hz Q 1.4262 → **Qbp 2.4245**, anchor **−5.5 dB** (`Gain 2` = 0.4691156), `cr` **1.0** | **active** — since 14 Aug 2026 the *second and last* instrument aimed at the 761 Hz resonance, after stage 2. **Rebuilt as a parallel bandpass 2 Sep 2026 and deepened −3.7 → −5.5**, which is where the frozen Qbp runs out and close to the 4.7 dB residual the A/B measured. The branch compressor is a **wire, by measurement** — both directions were swept and neither has a job, because stages 11–12's give-back is keyed on broadband level, not on 760 Hz | — |
 | 10c | Presence lift | `s10pbp_*`, `s10pdyn_*`, `s10psum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + builtin `mixer` | 2650 Hz, Q 1.4262 branch, `cr` 4.0, `al` −20 dBFS, `rt` 300 ms, branch gain 0.5849 | **active, and dynamic since 1 Sep 2026** — a parallel bandpass with a compressed branch, which is exactly a `bq_peaking` Q 1.2 whose Gain moves between about +2.3 and +4.0 dB. Anchored at the *fitted* +4.0 rather than frozen at the +3.0 the static version had to accept. Delivers **+0.73 dB** more at 2500 Hz than the static bell **and 22% less two-tone IMD**, confirmed on hardware | — |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → **LSP sidechain MULTIBAND comp** | Hx = lowpass 761 Hz Q 2.63; threshold **−5.04 dBFS** on the estimate (`al_0` 0.560), **band 0 only, split 1 kHz** | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress. **Multiband since 1 Sep 2026**: a cone has one displacement and it is a low-frequency quantity, so ducking 3 kHz was collateral, not protection | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
 | 12 | Brickwall | `s12brick` | LSP Limiter | `th = 0.9287`, `ovs = 22`, `lk = 1`, output trim −0.20 dB | Active on both processed profiles. The reference measured −0.561 dBTP on the full-scale sweep and −0.321 dBTP on the gated 22.8 kHz burst. | — |
 | — | Bypass switch | `s0in_*`, `s14byp_*` | builtin `copy` + `mixer` | `In 1` = chain, `In 2` = raw input | **not a stage and not tuning** — `Gain 1 = 1.0`, `Gain 2 = 0.0`, which is the chain. `speaker-dsp off` swaps them and the graph passes the input through bit for bit. Added 6 Sep 2026, because the old `off` switched the default sink to the raw speaker and that sink is hidden from GNOME, so it could not work at all | — |
-| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left hot, by **5.22 LU** as re-measured at `g_out` 5.50 / `th` 0.9287 / `Gain 2` 0.45 / stage 9b +3 / `al_0` 0.560 | ITU-R BS.1770 |
+| 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** on both profiles. The September reference measurement was **5.22 LU** above raw at `g_out` 5.50 / `th` 0.9287 / `Gain 2` 0.45 / stage 9b +3 / `al_0` 0.560 | ITU-R BS.1770 |
 
 ## Signal flow
 
@@ -377,11 +377,10 @@ speaker-dsp status
 
 ### Built-in speaker profiles
 
-**Reference** is the startup voicing. **Clarity** changes the stereo matrix around
-the 300 Hz bass crossover and lowers GOTT makeup from 5.50 to 4.50. Run
-`speaker-dsp profile clarity` with Speaker (Tuning) selected. This engages the
-profile at the current slider setting. Use `speaker-dsp profile reference` to
-switch back. PipeWire reloads the reference profile on restart.
+**Clarity** is the startup profile. It applies a 300 Hz all-pass to the mid signal
+and sets GOTT makeup to 4.50. To hear the previous voicing at the same slider
+setting, select Speaker (Tuning) and run `speaker-dsp profile reference`.
+Run `speaker-dsp profile clarity` to switch back. PipeWire loads clarity on restart.
 
 | Offline measurement | Reference | Clarity |
 |---|---:|---:|
@@ -401,14 +400,14 @@ laptop speakers.
 
 Both profiles include 0.20 dB of attenuation at the limiter output. With the
 previous unity output gain, the gated burst reached −0.121 dBTP on reference,
-above the project's −0.20 dBTP target. To reproduce the reference result
-offline, generate the material and render it through each profile.
+above the project's −0.20 dBTP target. The commands below render the burst
+through clarity first and reference second.
 
 ```sh
 tools/make-test-material.sh
 tools/offline-chain.py --measure tests/material/peak_burst.wav
 tools/offline-chain.py --measure tests/material/peak_burst.wav \
-    --set "s9midselect:Gain 1=0" --set "s9midselect:Gain 2=1" --set s10mbc:g_out=4.50
+    --set "s9midselect:Gain 1=1" --set "s9midselect:Gain 2=0" --set s10mbc:g_out=5.50
 ```
 
 ### Raw bypass

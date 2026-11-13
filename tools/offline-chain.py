@@ -448,6 +448,7 @@ def self_test():
     # hardcoded on purpose: they are the guard that catches a node added to the
     # config and not to the stage table.
     nodes, links = parse_config(CONFIG)
+    check("startup clarity makeup", nodes["s10mbc"]["control"]["g_out"], 4.50, 0)
     check("node count", len(nodes), 120, 0)
     check("link count", len(links), 215, 0)
     check("bq_raw coefficients parsed", nodes["s2lt_l"]["control"]["b0"], 0.9618034723, 1e-9)
@@ -470,8 +471,10 @@ def self_test():
         matrix_links = [(src, dst) for src, dst in links
                         if src.split(":")[0] in matrix and dst.split(":")[0] in matrix]
         stereo_probe = np.column_stack([np.sin(2 * np.pi * 300 * t), np.zeros_like(t)])
-        for profile, gains, expected in (("reference", (1, 0), 0), ("clarity", (0, 1), -15.31)):
-            matrix["s9midselect"] = {"label": "mixer", "control": {"Gain 1": gains[0], "Gain 2": gains[1]}}
+        reference_mid = {"Gain 1": 1, "Gain 2": 0}
+        for profile, control, expected in (("startup clarity", nodes["s9midselect"]["control"], -15.31),
+                                           ("reference", reference_mid, 0)):
+            matrix["s9midselect"] = {"label": "mixer", "control": control}
             y = process(stereo_probe, matrix, matrix_links)[RATE // 2:]
             separation = 10 * np.log10(np.sum(y[:, 1] ** 2) / np.sum(y[:, 0] ** 2))
             check(f"{profile}, hard-left 300 Hz, right/left dB", separation, expected, 0.02)
