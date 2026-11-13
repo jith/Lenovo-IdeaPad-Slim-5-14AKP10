@@ -137,11 +137,8 @@ def main():
 
         if sid == "wired":
             m = m.replace(PLUMBING_LEVEL, LISTENING_LEVEL)
-        # No target here: 52-external-target.lua sets it to whichever device
-        # currently matches speaker-dsp.match. A placeholder that resolves to
-        # nothing would not be safer -- PipeWire falls back to the default sink
-        # either way, which is another tuned sink, so the script running is what
-        # keeps a stream from being processed twice. Verified 20 Aug 2026.
+        # The template supplies a raw startup target. WirePlumber's
+        # target.object metadata takes precedence once a device is selected.
         blocks.append(m)
 
     with (open(dest, "w") if dest != "-" else sys.stdout) as f:

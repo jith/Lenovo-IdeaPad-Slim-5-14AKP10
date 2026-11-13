@@ -177,8 +177,8 @@ if should_write sweep.wav; then
 fi
 
 # The same sweep at FULL SCALE, and it is not redundant with the one above.
-# Stage 12's `th` is bound by the full-scale sweep and by nothing else in this
-# directory, and sweep.wav is 6 dB too quiet to show it. Measured 3 Sep 2026:
+# In the September tuning set this was the binding signal for stage 12.
+# sweep.wav is 6 dB too quiet to show it. Measured 3 Sep 2026:
 # against the quiet file the chain looks like it has 0.59 dB of spare
 # true-peak headroom and `th` could be raised to 0.9650. Against this file the
 # real headroom is 0.470 dB, the ceiling is th = 0.9400 (-0.210 dBTP, 0.010 dB
@@ -187,9 +187,8 @@ fi
 # found there on hardware at +0.137 dBTP and re-derived here from scratch
 # because the quiet sweep hid it a second time.
 #
-# Its true peak is ABOVE 0 dBFS by design, about +0.55 dBTP. A full-scale sine
-# sweep is the worst inter-sample case there is; that is the whole point of
-# keeping it. sox WILL warn here -- "output clipped 224 samples; decrease
+# Its true peak is above 0 dBFS by design, about +0.55 dBTP.
+# sox WILL warn here -- "output clipped 224 samples; decrease
 # volume?" -- and the answer is no. The sample peak lands at exactly 0.000
 # dBFS, which is what a full-scale master looks like. Do not normalise it down
 # to make the warning go away; that turns it back into sweep.wav.
@@ -200,6 +199,15 @@ if should_write sweep_fs.wav; then
     echo "log sweep, full scale ..."
     # shellcheck disable=SC2086
     sox -n $FMT "$OUT/sweep_fs.wav" synth 30 sine 20/20000 gain 0
+fi
+
+# A clipped, gated near-Nyquist burst exercises the limiter on transitions
+# missed by the continuous full-scale sweep. Express the gate in samples to
+# preserve its phase and alignment. Intended for the offline renderer.
+if should_write peak_burst.wav; then
+    burst='if(between(mod(n-24000,2400),338,1679)*between(n,24000,71999),clip(2*sin(2*PI*22817.220731689093*mod(n-24000,2400)/48000+3.0096513647040757),-1,1),0)'
+    ffmpeg -v error -y -f lavfi -i "aevalsrc='$burst|$burst':s=$RATE:d=2" \
+        -c:a pcm_f32le "$OUT/peak_burst.wav"
 fi
 
 # The same sweep 12 dB down, and the ONLY sweep that nulls. Stage 12's

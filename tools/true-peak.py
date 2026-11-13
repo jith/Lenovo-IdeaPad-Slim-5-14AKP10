@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""Exact inter-sample peak of a wav, and what the usual meters say instead.
+"""Estimate the inter-sample peak of a WAV at its native rate and channel count.
 
     tools/true-peak.py FILE [FILE ...] [--ceiling -0.20] [--compare]
 
 Prints sample peak and true peak in dB. Exits non-zero if any file is over the
-ceiling, so it can gate a change: run it on a fresh capture after raising
-g_out and it will tell you whether you have just started clipping the DAC.
+ceiling, so it can gate a change to the output limiter.
 
 WHY THIS EXISTS. ffmpeg's two built-in answers are fine until the moment they
 are not, and the moment they are not is the one you need them for. Measured
-with --compare over tests/captures/gout/, exact against loudnorm and ebur128:
+with --compare over tests/captures/gout/, 16x FFT against loudnorm and ebur128:
 
-    signal              exact   loudnorm   ebur128    error
+    signal            16x FFT   loudnorm   ebur128    difference
     pink.current       -5.551     -5.520    -5.500   +0.03/+0.05
     square100.current  -0.540     -0.580    -0.600   -0.04/-0.06
     sweep.current      -0.908     -1.140    -1.100   -0.23/-0.19
@@ -26,11 +25,10 @@ ebur128 low by about as much. Neither direction nor magnitude reproduces on the
 committed captures -- the error is small, and both meters lean the same way.
 --compare is here so the next such number gets checked rather than believed.)
 
-The method here has no filter design in it and so nothing to be approximately
-right about: zero-pad the spectrum by 16x, inverse transform, take the maximum.
-That is band-limited reconstruction, which is what the DAC does.
-
-Whole-file FFT, so memory is about 16x the file. Fine for a 60 s capture.
+The FFT interpolates each channel on a 16x grid and reports the highest peak.
+It assumes periodic audio, so a discontinuity between file endpoints can
+affect the estimate near the boundary. Memory scales with duration and the
+oversampling factor.
 """
 
 import argparse
@@ -71,17 +69,20 @@ def main():
     ap.add_argument("files", nargs="+")
     ap.add_argument("--ceiling", type=float, default=-0.20,
                     help="fail above this, in dBTP (default -0.20, stage 12's)")
-    ap.add_argument("--oversample", type=int, default=16)
+    ap.add_argument("--oversample", type=int, default=16,
+                    help="FFT interpolation factor (default 16, 1 for sample peak)")
     ap.add_argument("--compare", action="store_true",
                     help="also print loudnorm's and ebur128's answers")
     args = ap.parse_args()
+    if args.oversample < 1:
+        ap.error("--oversample must be positive")
 
     head = f"{'file':<34}{'sample':>9}{'true':>9}{'margin':>9}"
     print(head + (f"{'loudnorm':>10}{'ebur128':>9}" if args.compare else ""))
 
     over = 0
     for path in args.files:
-        x = read_wav(path)
+        x = read_wav(path, rate=None, channels=None)
         sample, tp = sample_peak_db(x), true_peak_db(x, args.oversample)
         margin = args.ceiling - tp
         over += margin < 0

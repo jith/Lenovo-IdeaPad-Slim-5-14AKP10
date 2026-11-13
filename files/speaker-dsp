@@ -7,6 +7,7 @@
 #   speaker-dsp off     bypass it IN PLACE -- same output, same slider, same
 #                       level. Nothing about the routing changes
 #   speaker-dsp ab      toggle between the two
+#   speaker-dsp profile reference|clarity   select a built-in speaker voicing
 #   speaker-dsp status  which one is live, and every volume that can rot
 #   speaker-dsp unity   put every gain below the DSP back to 100%
 #
@@ -29,13 +30,6 @@ RAW=alsa_output.pci-0000_04_00.6.HiFi__Speaker__sink
 STATE_DIR=${XDG_RUNTIME_DIR:-/tmp}
 BYPASS_FLAG=$STATE_DIR/speaker-dsp.bypassed
 
-# The chain is deliberately left hot: stage 13's comment records the tuned path
-# as 5.63 LU above raw at the shipped settings. So bypassing is a real drop in
-# level, and that is the tuning's own decision, not this script's. Said out loud
-# on 'off' rather than silently corrected, because correcting it here would put
-# a gain nobody measured into the comparison the bypass exists to make honest.
-HOT_LU=5.63
-
 # 'off' and 'ab' mean "bypass the DSP on what I am listening to". When the
 # active output is an external device -- a Bluetooth speaker, earbuds,
 # headphones, a USB speaker -- that is external-dsp's job. Without this,
@@ -52,7 +46,7 @@ HOT_LU=5.63
 external_is_active() {
     case "$(pactl get-default-sink 2>/dev/null)" in
         "$RAW") return 1 ;;
-        alsa_output*|bluez_output*) ;;
+        effect_input.tuned-*|alsa_output*|bluez_output*) ;;
         *) return 1 ;;
     esac
     command -v external-dsp >/dev/null 2>&1
@@ -74,10 +68,11 @@ speaker_present() {
 }
 
 usage() {
-    echo "usage: speaker-dsp {on|off|ab|status|unity}" >&2
+    echo "usage: speaker-dsp {on|off|ab|status|unity|profile reference|profile clarity}" >&2
     echo "  on      Speaker (Tuning), the 14-stage filter chain" >&2
     echo "  off     bypass it in place -- same output, same level" >&2
     echo "  ab      toggle between them" >&2
+    echo "  profile select the reference or clarity tuning until PipeWire restarts" >&2
     echo "  status  which one is currently the default output" >&2
     echo "  unity   put every gain below the DSP back to 100%" >&2
     exit 2
@@ -117,7 +112,13 @@ volume_pct() {
 # is not stable across a PipeWire restart, so look it up every time rather than
 # caching it anywhere.
 chain_id() {
-    pactl list sinks short 2>/dev/null | awk -v n="$DSP" '$2 == n { print $1; exit }'
+    # Pulse sink indices can differ from the global node id pw-cli requires.
+    pw-dump "$DSP" | python3 -c '
+import json, sys
+nodes = json.load(sys.stdin)
+if len(nodes) == 1:
+    print(nodes[0]["id"])
+'
 }
 
 # Every graph control's NAME is in the sink node's Props and always readable.
@@ -285,10 +286,8 @@ bypass() {
 # level-carrying arithmetic, its cubic-percentage conversion and its
 # "the slider is inert now" warning are gone.
 note_hot() {
-    echo "note: the chain is deliberately hot -- stage 13 measures the tuned"
-    echo "      path ${HOT_LU} LU above raw -- so bypassing IS quieter. That gap is"
-    echo "      the tuning's, not the switch's; nothing here compensates it,"
-    echo "      because a gain nobody measured would make the A/B dishonest."
+    echo "The tuned path adds loudness. The difference depends on the recording,"
+    echo "the selected profile and the listening volume."
 }
 
 # The hardware sink's volume is the only level in the system that nothing
@@ -314,6 +313,31 @@ warn_hardware_volume() {
 }
 
 case "${1:-status}" in
+    profile)
+        case "${2:-}" in
+            reference) _direct=1; _phase=0; _makeup=5.50 ;;
+            clarity)   _direct=0; _phase=1; _makeup=4.50 ;;
+            *) usage ;;
+        esac
+        if ! speaker_present || ! default_sink_is "$DSP"; then
+            echo "Select Speaker (Tuning) before choosing its profile." >&2
+            exit 1
+        fi
+        _id=$(chain_id)
+        if [ -z "$_id" ] || ! graph_props "$_id" | grep -q '^s9midselect:Gain 2[[:space:]]'; then
+            echo "Install the updated speaker graph and restart PipeWire to use profiles." >&2
+            exit 1
+        fi
+        # Only switch scalar gains. The all-pass has already been running, so
+        # both mid paths have valid filter history when switching during music.
+        pw-cli set-param "$_id" Props "{ params = [
+            \"s9midselect:Gain 1\" $_direct \"s9midselect:Gain 2\" $_phase
+            \"s10mbc:g_out\" $_makeup
+            \"s14byp_l:Gain 2\" 0 \"s14byp_r:Gain 2\" 0
+            \"s14byp_l:Gain 1\" 1 \"s14byp_r:Gain 1\" 1 ] }" >/dev/null || exit 1
+        rm -f "$BYPASS_FLAG"
+        echo "Speaker (Tuning) profile: $2"
+        ;;
     on|dsp|tuning)
         if ! speaker_present; then
             echo "the built-in speaker is not available: the onboard card is on its" >&2
@@ -391,10 +415,15 @@ case "${1:-status}" in
                     esac
                 fi
                 if [ "$_live" = bypassed ] || { [ -z "$_live" ] && bypassed; }; then
-                    echo "state: Speaker (Tuning) -- BYPASSED (raw input, ${HOT_LU} LU"
-                    echo "       below the tuned path, which is the tuning's own offset)"
+                    echo "state: Speaker (Tuning) -- BYPASSED (raw input)"
                 else
                     echo "state: Speaker (Tuning), 14-stage chain"
+                    if [ "$_live" = tuned ]; then
+                        case "$(graph_control "$(chain_id)" "s9midselect:Gain 2")" in
+                            1|1.0) echo "profile: clarity" ;;
+                            0|0.0) echo "profile: reference" ;;
+                        esac
+                    fi
                 fi
                 if [ -n "$_live" ]; then
                     if [ "$_live" = bypassed ] && ! bypassed; then

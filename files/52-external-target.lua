@@ -10,18 +10,14 @@
 -- so a new device's chain could not exist without regenerating the config and
 -- restarting PipeWire.
 --
--- The cost is the name: GNOME shows the class, not "OPPO Enco Buds", because a
--- node cannot be renamed at runtime.
---
--- WHY THIS SCRIPT IS NOT OPTIONAL. A chain whose target does not resolve does
--- not go quiet -- PipeWire routes its output to the default sink, which is the
--- other tuned sink, and the stream is processed twice by two chains tuned
--- differently. Verified 20 Aug 2026. node.autoconnect = false prevents that but
--- also prevents this script's retarget, so the guard has to be that this runs.
+-- GNOME selects the hardware device for Bluetooth and USB. The wired
+-- chain itself is the entry for the onboard jack. Each chain starts on
+-- raw hardware until this script can resolve the selected output.
 
 log = Log.open_topic ("s-external-target")
 
 INTERNAL = "HiFi__Speaker__sink"
+local HEADPHONES = "alsa_output.pci-0000_04_00.6.HiFi__Headphones__sink"
 
 metadata_om = ObjectManager {
   Interest { type = "metadata", Constraint { "metadata.name", "=", "default" } }
@@ -67,10 +63,22 @@ local function candidates (pattern)
   return out
 end
 
+local function default_sink ()
+  local md = metadata_om:lookup ()
+  if md == nil then return nil end
+  local def = md:find (0, "default.audio.sink")
+  if def == nil then return nil end
+  local json = Json.Raw (def)
+  if not json:is_object () then return nil end
+  local parsed = json:parse ()
+  return parsed and parsed["name"] or nil
+end
+
 local function apply ()
   local md = metadata_om:lookup ()
   if md == nil then return end
 
+  local selected = default_sink ()
   for chain in chains_om:iterate () do
     local props = chain.properties
     local pattern = props["speaker-dsp.match"]
@@ -78,19 +86,22 @@ local function apply ()
     if pattern ~= nil and id ~= nil then
       local found = candidates (pattern)
       local want = nil
-      if #found > 0 then
+      if selected == "effect_input.tuned-wired"
+          and props["node.name"] == "effect_output.tuned-wired" then
+        -- GNOME's jack entry selects a card profile. Wait for its sink even
+        -- when a higher-priority USB device already matches this chain.
+        want = HEADPHONES
+      elseif #found > 0 then
         want = found[1].name
+        for _, device in ipairs (found) do
+          if device.name == selected then
+            want = selected
+            break
+          end
+        end
       else
-        -- Nothing of this class is connected. The chain still exists -- these
-        -- are per class, so "Bluetooth (Tuning)" is listed whether or not any
-        -- Bluetooth device is -- and leaving it unpointed is NOT harmless:
-        -- PipeWire routes an unresolved chain to the default sink, which is the
-        -- other tuned sink, and the stream is then processed twice by two
-        -- chains. Measured 20 Aug 2026 with the earbuds off.
-        --
-        -- So park it on a real device instead: any other external one, else the
-        -- built-in speaker. Selecting a class with nothing connected then plays
-        -- somewhere audible and is processed exactly once.
+        -- Park an unused class on raw hardware so it cannot feed another
+        -- tuned sink. A missing explicit target waits for hardware.
         local any = candidates ("^")
         if #any > 0 then
           want = any[1].name
@@ -139,17 +150,6 @@ local function chain_for (device)
   return nil
 end
 
-local function default_sink ()
-  local md = metadata_om:lookup ()
-  if md == nil then return nil end
-  local def = md:find (0, "default.audio.sink")
-  if def == nil then return nil end
-  local json = Json.Raw (def)
-  if not json:is_object () then return nil end
-  local parsed = json:parse ()
-  return parsed and parsed["name"] or nil
-end
-
 -- Redirect app streams into the chain for the currently selected device, and
 -- just as importantly, LET THEM GO again when the selection changes.
 --
@@ -189,7 +189,7 @@ local function redirect ()
             md:set (id, "target.object", "Spa:String", want)
             log:info ("stream " .. name .. " -> " .. want)
           end
-        elseif cur ~= nil and cur:match ("^effect_input%.tuned%-") then
+        elseif cur ~= nil and cur ~= def and cur:match ("^effect_input%.tuned%-") then
           -- We pinned this one; hand it back to the current selection.
           md:set (id, "target.object", "Spa:String", def)
           log:info ("stream " .. name .. " released -> " .. def)
@@ -199,20 +199,24 @@ local function redirect ()
   end
 end
 
-streams_om:connect ("object-added", function () redirect () end)
+-- A selection can move between devices behind the same chain. Point its
+-- output first, then move any app streams that need the new chain.
+local function refresh ()
+  apply ()
+  redirect ()
+end
 
--- The selection changing is the event that matters most here, and it arrives
--- on the metadata rather than on any node.
 metadata_om:connect ("object-added", function (_, md)
   md:connect ("changed", function (_, subject, key)
-    if key == "default.audio.sink" then redirect () end
+    if key == "default.audio.sink" then refresh () end
   end)
-  redirect ()
 end)
-sinks_om:connect ("object-added", function () apply () end)
-sinks_om:connect ("object-removed", function () apply () end)
-chains_om:connect ("object-added", function () apply () end)
-metadata_om:connect ("object-added", function () apply () end)
+-- These notifications see the complete manager inventory, including nodes
+-- which appeared after the default was restored during startup.
+metadata_om:connect ("objects-changed", refresh)
+chains_om:connect ("objects-changed", refresh)
+sinks_om:connect ("objects-changed", refresh)
+streams_om:connect ("objects-changed", redirect)
 
 metadata_om:activate ()
 sinks_om:activate ()

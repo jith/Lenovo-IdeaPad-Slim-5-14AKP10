@@ -26,12 +26,11 @@ A 10.1 dB bass-to-presence tilt survived four tuning sessions that way -- two
 boosts, each measured alone, each nearly free alone, both pushing the same
 direction, sum never taken. --bands prints the total.
 
-AND JUDGE A BASS CHANGE ON DISPLACEMENT, NOT ON TILT. --measure and --sweep
-both print it. These drivers cannot radiate what they are asked for below about
-300 Hz, so extra bass energy is excursion, not sound, and a flatter tilt can be
-bought with excursion the cone has nowhere to put. `envb` looked free on tilt
-and cost up to 4.26 dB of displacement; it was shipped externally and not here.
-Absolute values mean nothing -- read the difference between two runs.
+For a bass change, compare the Hx p99 readings from --measure or --sweep.
+They estimate the 99th-percentile cone excursion from the final stereo output
+using the laptop driver's measured resonance (761 Hz, Q 2.63). Read changes
+in dB between runs. Absolute excursion in millimetres is unknown. The older
+1/f^4 metric is included for comparison with historical results.
 
 ACCURACY, as checked by --verify: within 0.03 LU on integrated loudness, 0.04
 dB on g_out row-to-row deltas, and 1.5 percentage points on THD at 90 Hz. Trust
@@ -41,6 +40,7 @@ it for differences. Confirm absolutes on hardware.
 import argparse
 import os
 import sys
+import tempfile
 from collections import defaultdict, deque
 
 import numpy as np
@@ -212,10 +212,16 @@ def process(x, nodes, links, verbose=False):
     return np.stack([out_l, out_r], 1)
 
 
-def measure(y, tmp="/tmp/offline-chain-measure.wav", tone=None):
-    write_wav(tmp, y)
-    row = {"lufs": lufs(tmp), "sample": sample_peak_db(y), "tp": true_peak_db(y),
-           "disp": displacement_db(y)}
+def measure(y, tmp=None, tone=None):
+    # Programmatic callers may request a retained render. CLI comparisons use
+    # a private scratch file so simultaneous runs measure their own audio.
+    with tempfile.TemporaryDirectory() as directory:
+        if tmp is None:
+            tmp = os.path.join(directory, "measure.wav")
+        write_wav(tmp, y)
+        integrated = lufs(tmp)
+    row = {"lufs": integrated, "sample": sample_peak_db(y), "tp": true_peak_db(y),
+           "hx": excursion_db(y), "disp": displacement_db(y)}
     if tone:
         row["thd"] = thd_percent(y, tone)
     return row
@@ -275,8 +281,8 @@ def excursion_db(y, fc=761.0, q=2.63):
     predicted that 800 Hz is the one frequency where these drivers compress,
     without being told -- see README, "What the drivers actually take".
 
-    Returned as the 99th-percentile level of the estimate, in dBFS, which is
-    what compares against stage 11's al_0 threshold (0.708 = -3.00 dBFS).
+    The result is the 99th percentile of the larger absolute channel value at
+    each sample, in dBFS. Use it to compare the final drive between settings.
     """
     b, a = _rbj("bq_lowpass", fc, q)
     h = np.column_stack([_biquad_fast(y[:, c], b, a) for c in range(y.shape[1])])
@@ -425,6 +431,15 @@ def self_test():
     t = np.arange(n) / RATE
     worst = np.sin(2 * np.pi * 11025 * t + np.pi / 4)   # peaks between samples
     check("true peak of quarter-phase sine", true_peak_db(worst[:, None]), 0.0, 0.02)
+    nyquist = np.tile([0.25, -0.25], 2048)
+    check("true peak preserves an even-length Nyquist cosine",
+          true_peak_db(nyquist), sample_peak_db(nyquist), 1e-9)
+    check("1x true peak equals sample peak",
+          true_peak_db(nyquist, 1), sample_peak_db(nyquist), 1e-9)
+    odd_n = 255
+    last_bin = np.cos(2 * np.pi * (odd_n // 2) * np.arange(odd_n) / odd_n)
+    check("true peak preserves the top bin of an odd-length signal",
+          true_peak_db(last_bin), 0.0, 1e-9)
 
     # THD of a pure sine is zero; of a square wave, the textbook 48.3%.
     check("thd of a sine", thd_percent(np.sin(2 * np.pi * 1000 * t)[:, None], 1000), 0.0, 0.1)
@@ -433,8 +448,8 @@ def self_test():
     # hardcoded on purpose: they are the guard that catches a node added to the
     # config and not to the stage table.
     nodes, links = parse_config(CONFIG)
-    check("node count", len(nodes), 118, 0)
-    check("link count", len(links), 212, 0)
+    check("node count", len(nodes), 120, 0)
+    check("link count", len(links), 215, 0)
     check("bq_raw coefficients parsed", nodes["s2lt_l"]["control"]["b0"], 0.9618034723, 1e-9)
     for name in ("s0trim_l", "s2lt_l", "s10mbc", "s10rbp_l", "s10rdyn_l", "s10rsum_l", "s10pbp_l",
                  "s10pdyn_l", "s10psum_l", "s11xcur", "s12lp_l", "s12brick"):
@@ -447,6 +462,29 @@ def self_test():
     global LV2
     real, LV2 = LV2, _lv2_bypass
     try:
+        # Exercise the matrix wiring with an actual hard-left signal at the
+        # crossover. Power-only tests cannot detect a reversed stereo image.
+        matrix = {name: node for name, node in nodes.items() if name.startswith("s9")}
+        for channel in ("l", "r"):
+            matrix[f"s8sum_{channel}"] = {"label": "copy", "control": {}}
+        matrix_links = [(src, dst) for src, dst in links
+                        if src.split(":")[0] in matrix and dst.split(":")[0] in matrix]
+        stereo_probe = np.column_stack([np.sin(2 * np.pi * 300 * t), np.zeros_like(t)])
+        for profile, gains, expected in (("reference", (1, 0), 0), ("clarity", (0, 1), -15.31)):
+            matrix["s9midselect"] = {"label": "mixer", "control": {"Gain 1": gains[0], "Gain 2": gains[1]}}
+            y = process(stereo_probe, matrix, matrix_links)[RATE // 2:]
+            separation = 10 * np.log10(np.sum(y[:, 1] ** 2) / np.sum(y[:, 0] ** 2))
+            check(f"{profile}, hard-left 300 Hz, right/left dB", separation, expected, 0.02)
+
+        external = os.path.join(ROOT, "files", "52-external-tuning.conf")
+        dry = [f"xbyp_{ch}:Gain {port}={gain}"
+               for ch in ("l", "r") for port, gain in ((1, 0), (2, 1))]
+        dry.extend(["xv1bass_l:Gain=5", "xv1bass_r:Gain=5"])
+        stereo_noise = rng.standard_normal((4096, 2)) * 0.1
+        bypass_audio = process(stereo_noise, *build_graph(external, dry))
+        check("external dry bypass preserves both channels with bass EQ engaged",
+              np.max(np.abs(bypass_audio - stereo_noise)), 0, 0)
+
         t = np.arange(RATE // 2) / RATE
         tone = np.stack([np.sin(2 * np.pi * 90 * t) * 0.5] * 2, 1)
         muted = build_graph(overrides=["s8sum_l:Gain 3=0.0", "s8sum_r:Gain 3=0.0"])
@@ -544,7 +582,8 @@ def compare_dir(path, ceiling=-0.20):
             print(f"{name:<14}   no baseline/current pair")
             continue
         lb, lc = lufs(base), lufs(cur)
-        tb, tc = true_peak_db(read_wav(base)), true_peak_db(read_wav(cur))
+        tb = true_peak_db(read_wav(base, rate=None, channels=None))
+        tc = true_peak_db(read_wav(cur, rate=None, channels=None))
         over += tc > ceiling
         print(f"{name:<14}{lb:11.2f}{lc:10.2f}{lc - lb:+8.2f}"
               f"{tb:10.3f}{tc:9.3f}{tc - tb:+8.3f}   {ceiling - tc:+.3f}"
@@ -565,7 +604,7 @@ def main():
     ap.add_argument("--sweep", metavar="NODE:CTRL=V1,V2,...",
                     help="run once per value and print a comparison table")
     ap.add_argument("--measure", action="store_true",
-                    help="print LUFS / sample peak / true peak instead of writing")
+                    help="print loudness, peaks and modeled laptop cone excursion")
     ap.add_argument("--bands", action="store_true",
                     help="print the whole chain's third-octave transfer and its "
                          "bass-to-presence tilt -- run this before shipping any "
@@ -599,14 +638,16 @@ def main():
             nodes, links = build_graph(args.config, args.set + [f"{target}={v}"])
             row = measure(process(x, nodes, links), tone=args.tone)
             rows.append((v, row))
-        base, base_d = rows[0][1]["lufs"], rows[0][1]["disp"]
+        baseline = rows[0][1]
         head = (f"{target:<20} {'LUFS-I':>9} {'dLU':>7} {'sample':>9} "
-                f"{'true pk':>9} {'disp':>9} {'dDisp':>8}")
+                f"{'true pk':>9} {'Hx p99':>9} {'dHx':>8} "
+                f"{'old 1/f^4':>10} {'d1/f^4':>8}")
         print(head + (f" {'THD%':>7}" if args.tone else ""))
         for v, r in rows:
-            line = (f"{v:<20} {r['lufs']:9.2f} {r['lufs'] - base:+7.2f} "
+            line = (f"{v:<20} {r['lufs']:9.2f} {r['lufs'] - baseline['lufs']:+7.2f} "
                     f"{r['sample']:9.3f} {r['tp']:9.3f} "
-                    f"{r['disp']:9.2f} {r['disp'] - base_d:+8.2f}")
+                    f"{r['hx']:9.2f} {r['hx'] - baseline['hx']:+8.2f} "
+                    f"{r['disp']:10.2f} {r['disp'] - baseline['disp']:+8.2f}")
             print(line + (f" {r['thd']:7.2f}" if args.tone else ""))
         return 0
 
@@ -621,8 +662,8 @@ def main():
         print(f"  LUFS-I    {r['lufs']:.2f}")
         print(f"  sample pk {r['sample']:.3f} dBFS")
         print(f"  true pk   {r['tp']:.3f} dBTP")
-        print(f"  displace  {r['disp']:.2f} dB  1/f^4 20-500 Hz, "
-              f"differences only")
+        print(f"  Hx p99    {r['hx']:.2f} dBFS  modeled laptop cone excursion")
+        print(f"  old 1/f^4 {r['disp']:.2f} dB  20-500 Hz, differences only")
         if args.tone:
             print(f"  THD       {r['thd']:.2f} %")
         return 0

@@ -44,14 +44,14 @@ identical and mechanically mirrored; only stage 9 crosses channels.
 | 6 | Harmonic weighting | `s6w<band>x<order>_*`, `s6sum<band>_*` | `bq_peaking` per order | gain = ln(n)·R(f) scaled to +12 dB max | **active**, +1.9 to +12 dB | CN115442709B |
 | 7 | Gain K | `s7dc_*`, `s7k1..3_*`, `s7sum_*` | `dcblock` + LSP compressor per band | −20 dBFS, 20:1 — levels the n-th power law | **active** | CN115442709B, US10382857 |
 | 8 | Sum | `s8sum_*` | builtin `mixer` | HF, LF and harmonics | **crossfade engaged**, `Gain 2 = 0.45`, `Gain 3 = 0.06` — deepened 4 Sep 2026; the chain's biggest **displacement** lever | CN115442709B |
-| 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0` | US8660271B2 |
+| 9 | M/S widening | `s9*` | explicit M/S matrix | `s9swid` `Gain 1` = bass width, `Gain 2` = above 300 Hz | **bass mono**, `Gain 1 = 0`. The clarity profile adds a 300 Hz all-pass on mid. | US8660271B2 |
 | 9b | Upper-bass lift | `s9blift_*` | builtin `bq_peaking` | 200 Hz, Q 1.2, **Gain +3 dB** | **active** — added 4 Sep 2026 at 0 dB, taken to +3, then +6, then back to **+3** when the corrected excursion model showed +6 was spending margin rather than returning it. Aimed at a measured 14 dB gap against an iPhone 13 at 160–250 Hz, the band a phone's bass actually lives in. Sits **before** GOTT, unlike 10b/10c: the compression it provokes pulls down the 25–63 Hz content that moves the cone, so displacement *falls* as this rises | — |
 | 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` **+14.81 dB**, `mk_2` **0.00 dB**, `mk_3` −3.17 dB, `mk_4` −6.15 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −4.65 dB, taken in four steps on 1 and 4 Sep 2026 to hold the tilt through stage 11 going multiband and through `g_out` 3.80 → 4.25 → 5.50 → 6.50 — **sized at the listening level, not at unity**; `g_out` came back to **5.50** on 6 Sep 2026 when the makeup was found to be feeding stage 12 a 3.4% IMD knee above 90% volume, see *The distortion above 80% is stage 12*, see *The tilt correction is level-dependent*; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
 | 10b | Resonance notch | `s10rbp_*`, `s10rdyn_*`, `s10rneg_*`, `s10rsum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + `invert` + `mixer` | branch 760 Hz Q 1.4262 → **Qbp 2.4245**, anchor **−5.5 dB** (`Gain 2` = 0.4691156), `cr` **1.0** | **active** — since 14 Aug 2026 the *second and last* instrument aimed at the 761 Hz resonance, after stage 2. **Rebuilt as a parallel bandpass 2 Sep 2026 and deepened −3.7 → −5.5**, which is where the frozen Qbp runs out and close to the 4.7 dB residual the A/B measured. The branch compressor is a **wire, by measurement** — both directions were swept and neither has a job, because stages 11–12's give-back is keyed on broadband level, not on 760 Hz | — |
 | 10c | Presence lift | `s10pbp_*`, `s10pdyn_*`, `s10psum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + builtin `mixer` | 2650 Hz, Q 1.4262 branch, `cr` 4.0, `al` −20 dBFS, `rt` 300 ms, branch gain 0.5849 | **active, and dynamic since 1 Sep 2026** — a parallel bandpass with a compressed branch, which is exactly a `bq_peaking` Q 1.2 whose Gain moves between about +2.3 and +4.0 dB. Anchored at the *fitted* +4.0 rather than frozen at the +3.0 the static version had to accept. Delivers **+0.73 dB** more at 2500 Hz than the static bell **and 22% less two-tone IMD**, confirmed on hardware | — |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → **LSP sidechain MULTIBAND comp** | Hx = lowpass 761 Hz Q 2.63; threshold **−5.04 dBFS** on the estimate (`al_0` 0.560), **band 0 only, split 1 kHz** | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress. **Multiband since 1 Sep 2026**: a cone has one displacement and it is a low-frequency quantity, so ducking 3 kHz was collateral, not protection | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
-| 12 | Brickwall | `s12brick` | LSP Limiter | **−0.64 dBFS sample** (`th` 0.9287) → **−0.2 dBFS true peak** (`ovs = 22`), `lk = 1` | **always on** — `th` pays for the sweep so `g_out` can spend. Raised from 0.8900 on 6 Sep 2026 as the other half of `g_out` 6.50 → 5.50, giving back about half what that gave up; 0.161 dB of margin left on `sweep_fs.wav` against the 0.9400 ceiling | — |
+| 12 | Brickwall | `s12brick` | LSP Limiter | `th = 0.9287`, `ovs = 22`, `lk = 1`, output trim −0.20 dB | Active on both processed profiles. The reference measured −0.561 dBTP on the full-scale sweep and −0.321 dBTP on the gated 22.8 kHz burst. | — |
 | — | Bypass switch | `s0in_*`, `s14byp_*` | builtin `copy` + `mixer` | `In 1` = chain, `In 2` = raw input | **not a stage and not tuning** — `Gain 1 = 1.0`, `Gain 2 = 0.0`, which is the chain. `speaker-dsp off` swaps them and the graph passes the input through bit for bit. Added 6 Sep 2026, because the old `off` switched the default sink to the raw speaker and that sink is hidden from GNOME, so it could not work at all | — |
 | 13 | A/B trim | `s13trim_*` | builtin `linear` | static gain from the loudness match | **unity** — tuned deliberately left hot, by **5.22 LU** as re-measured at `g_out` 5.50 / `th` 0.9287 / `Gain 2` 0.45 / stage 9b +3 / `al_0` 0.560 | ITU-R BS.1770 |
 
@@ -369,9 +369,49 @@ load and the journal has the reason. Remove with `sudo sh install.sh uninstall`.
 ```sh
 speaker-dsp on       # Speaker (Tuning), the 14-stage chain
 speaker-dsp off      # bypass it in place -- same output, same level
-speaker-dsp ab       # toggle
+speaker-dsp ab       # toggle tuned / raw
+speaker-dsp profile clarity
+speaker-dsp profile reference
 speaker-dsp status
 ```
+
+### Built-in speaker profiles
+
+**Reference** is the startup voicing. **Clarity** changes the stereo matrix around
+the 300 Hz bass crossover and lowers GOTT makeup from 5.50 to 4.50. Run
+`speaker-dsp profile clarity` with Speaker (Tuning) selected. This engages the
+profile at the current slider setting. Use `speaker-dsp profile reference` to
+switch back. PipeWire reloads the reference profile on restart.
+
+| Offline measurement | Reference | Clarity |
+|---|---:|---:|
+| Hard-left 150 Hz at stage 9, right level relative to left | +3.01 dB | −4.22 dB |
+| Hard-left 300 Hz at stage 9, right level relative to left | 0.00 dB | −15.31 dB |
+| 60 Hz + 2650 Hz at −3 dBFS, full graph intermodulation | 4.82% | 0.40% |
+| Same two-tone signal at −6 dBFS | 0.25% | 0.15% |
+| Full-scale sweep, true peak | −0.561 dBTP | −0.498 dBTP |
+| Gated 22.8 kHz burst, true peak | −0.321 dBTP | −0.323 dBTP |
+
+A hard-left note near the crossover stays on the left with clarity. The filter
+rotates mid phase while preserving its magnitude and the existing side filter.
+On three 40-second music excerpts clarity gave up about 0.4–0.6 LU at full
+volume and about 1.7 LU at a 46% slider setting. The two-tone result measures
+the electrical output. The profile still needs a listening comparison on the
+laptop speakers.
+
+Both profiles include 0.20 dB of attenuation at the limiter output. With the
+previous unity output gain, the gated burst reached −0.121 dBTP on reference,
+above the project's −0.20 dBTP target. To reproduce the reference result
+offline, generate the material and render it through each profile.
+
+```sh
+tools/make-test-material.sh
+tools/offline-chain.py --measure tests/material/peak_burst.wav
+tools/offline-chain.py --measure tests/material/peak_burst.wav \
+    --set "s9midselect:Gain 1=0" --set "s9midselect:Gain 2=1" --set s10mbc:g_out=4.50
+```
+
+### Raw bypass
 
 `off` does **not** move the output. It sets one gain pair at the end of the
 graph, `s14byp`, which chooses between the chain and the untouched input tapped
@@ -399,27 +439,14 @@ digit shown, −7.781735 dBFS both. Measured twice, on a `-TEST` copy of the
 edited graph before installing and again on the installed chain afterwards:
 **the same numbers to the sample**.
 
-`ab` is the one to use for listening comparisons. Note that it will not be
-level-matched: stage 13 leaves the tuned path deliberately hot, 5.63 LU above
-raw at the shipped settings, and nothing in `speaker-dsp` compensates that.
-That gap belongs to the tuning, and putting an unmeasured gain into the bypass
-to hide it would make the comparison the bypass exists to enable dishonest.
-`off` says so every time it runs.
+`ab` switches between the selected profile and the original input. The tuned
+path generally sounds louder at the same slider position. For a level-matched
+comparison, measure the loudness difference for the recording and trim the
+louder render after processing.
 
-### Why `off` is a crossfade and not fourteen neutralised stages
-
-`external-dsp off` neutralises its chain control by control — thresholds and
-makeup to full scale, biquad corners out of band. The same approach does not
-reach this chain: **stage 2 is `bq_raw`**, its coefficients cannot be set live
-without risking a half-applied unstable biquad (see *Tuning live, without
-reinstalling*), and it is one of the most audible stages in the chain. Leaving
-it in would make `off` a partial bypass at best.
-
-A crossfade needs no stage to be neutral. It also does not rot: a stage added
-later is bypassed for free, without anyone remembering to add its controls to a
-list. That is the failure the external chain actually hit — a bypass that was
-complete only while GOTT's upward ratio was 1.0, and measured 5.5 LU loud and
-clipping the moment a preset moved `ru_*` and `mk_*`.
+Both speaker and external chains take their dry signal ahead of the first
+processing stage. The output mixer can select this signal even when an EQ
+preset is set or a compressor is applying makeup gain.
 
 The two gains are only ever 1/0 or 0/1, never both open. `s12brick` runs 1 ms
 of lookahead, so the chain path is late against the raw one and summing them
@@ -1444,11 +1471,12 @@ a second chain every boot.
 ### Tuning live, without reinstalling
 
 Every graph control can be set on the running chain, which is far faster than
-edit → install → restart for finding a value. Find the sink's node id with
-`pactl list sinks short`, then:
+edit → install → restart for finding a value. Get the PipeWire node ID by name.
+PulseAudio sink indices can differ from PipeWire node IDs.
 
 ```sh
-pw-cli set-param 40 Props '{ params = [ "s13trim_l:Mult" 0.25 "s13trim_r:Mult" 0.25 ] }'
+node_id=$(pw-dump effect_input.speaker-tuning | python3 -c 'import json, sys; print(json.load(sys.stdin)[0]["id"])')
+pw-cli set-param "$node_id" Props '{ params = [ "s13trim_l:Mult" 0.25 "s13trim_r:Mult" 0.25 ] }'
 ```
 
 Verified: that command measured −34.10 dBFS at the monitor against −22.12 with
@@ -3809,9 +3837,9 @@ the config rather than a transcription of it, so none of it can quietly drift.
 
 | Tool | What it does |
 |---|---|
-| `tools/offline-chain.py` | Runs the installed graph over a wav without reinstalling. `--sweep` for parameter searches, `--measure` for LUFS / peaks / THD, both reporting **displacement**, `--self-test` for 32 checks that need no hardware. |
+| `tools/offline-chain.py` | Renders the checkout’s graph. `--measure` and `--sweep` report loudness, peaks and the 99th-percentile Hx cone excursion estimate. The older 1/f⁴ figure is included for historical comparisons. `--self-test` exercises the graphs and meters offline. |
 | `tools/dsp_offline.py` | The machinery behind it: config parser, PipeWire builtins in numpy, LSP plugins through `ffmpeg -af lv2`, and the measurement functions. Imported, not run. |
-| `tools/true-peak.py` | Exact inter-sample peak, and `--compare` against the two ffmpeg meters that get it wrong. Exits non-zero above the ceiling, so it can gate a change. |
+| `tools/true-peak.py` | Estimates inter-sample peak on the file’s native channels and sample rate. `--compare` also runs the ffmpeg meters. Exits non-zero above the ceiling, so it can gate a change. |
 | `tools/lt-coeffs.py` | Linkwitz transform coefficients for stage 2, with `--self-test`. |
 | `tools/sweep-response.py` | Response curve, `fc` and `Qtc` from a mic capture. Needs `--reference` or the numbers tilt. |
 | `tools/measure-speaker.sh` | Plays the sweep and captures it on Mic2. |
@@ -3943,11 +3971,12 @@ breaking anything audible — so it went unnoticed until the commands were run:
 | `external-dsp level N` | listening level, on the device, after the graph. Capped at 60 % |
 | `external-dsp unity` | put every chain input back to 100 % |
 
-Bypass raises `x2mbc:td_*` and `x4brick:th` to full scale rather than setting
-`enabled = 0`, which would drop GOTT to its dry path at `g_dry = 0.0` and cost
-12 dB. It is applied to **every** chain, not just the active one: bypassing only
-the active one meant switching from the earbuds to the USB speaker silently
-turned the DSP back on mid-comparison.
+External bypass selects the original stereo input on both class chains.
+Previously, switching off with the bass EQ preset still boosted a 60 Hz tone
+by 4.87 dB. The dry path now reproduces the input samples, and switching on
+restores processing with the selected EQ and density. When two devices share
+a chain, its output follows the selected device. The headphone entry targets
+the onboard jack.
 
 The two volumes are not interchangeable. A chain's input sink is applied
 **before** the graph, so anything below 100 % starves the compressor and limiter
@@ -4208,7 +4237,7 @@ same bypass also neutralises X4.
 Bypassing `crush` that way measured **−5.33 LUFS against a correct −10.82, with
 true peak at +0.049 dBTP** — 5.5 LU loud and clipping, which is exactly the
 distortion the chain exists to prevent. It would have been the first thing to
-happen after choosing any preset. Bypass now neutralises `ru_*` and `mk_*` too.
+happen after choosing any preset. The August fix neutralised `ru_*` and `mk_*` too. The current dry bypass skips the complete graph.
 
 The lesson generalises: a bypass built by neutralising *the controls that were
 in use* silently stops being a bypass when a new control comes into use. It has

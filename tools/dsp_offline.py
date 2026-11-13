@@ -32,13 +32,24 @@ RATE = 48000
 
 # -- audio i/o ---------------------------------------------------------------
 
-def read_wav(path, rate=RATE):
-    """(samples, channels) float64. Resamples if the file is not at `rate`."""
+def read_wav(path, rate=RATE, channels=2):
+    """Decode to float64. Pass None for rate or channels to keep the file's own."""
+    output = []
+    if rate is not None:
+        output += ["-ar", str(rate)]
+    if channels is None:
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a:0",
+             "-show_entries", "stream=channels", "-of", "csv=p=0", path],
+            capture_output=True, text=True, check=True)
+        channels = int(probe.stdout.strip())
+    else:
+        output += ["-ac", str(channels)]
     proc = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", path,
-         "-f", "f32le", "-ar", str(rate), "-ac", "2", "-"],
+        ["ffmpeg", "-v", "error", "-i", path, "-map", "0:a:0",
+         "-f", "f32le", *output, "-"],
         capture_output=True, check=True)
-    return np.frombuffer(proc.stdout, "<f4").reshape(-1, 2).astype(np.float64)
+    return np.frombuffer(proc.stdout, "<f4").reshape(-1, channels).astype(np.float64)
 
 
 def write_wav(path, x, rate=RATE):
@@ -52,14 +63,11 @@ def write_wav(path, x, rate=RATE):
 # -- measurement -------------------------------------------------------------
 
 def true_peak_db(x, oversample=16):
-    """Exact inter-sample peak, by zero-padding the spectrum.
-
-    Not loudnorm and not ebur128. On the sweep loudnorm over-reports by 1.4 dB
-    and ebur128's 4x under-reports by about as much; all three agree on music
-    and diverge on exactly the high-frequency content this limit is about.
-    Zero-padding the spectrum is band-limited reconstruction with no filter
-    design in it, so there is nothing left to be approximately right.
-    """
+    """Estimate inter-sample peak on an FFT-interpolated, periodic sample grid."""
+    if oversample < 1:
+        raise ValueError("oversample must be a positive integer")
+    if oversample == 1:
+        return sample_peak_db(x)
     x = np.atleast_2d(x.T).T
     worst = -np.inf
     for ch in range(x.shape[1]):
@@ -67,6 +75,10 @@ def true_peak_db(x, oversample=16):
         spec = np.fft.rfft(s)
         padded = np.zeros(len(s) * oversample // 2 + 1, complex)
         padded[:len(spec)] = spec * oversample
+        if len(s) % 2 == 0:
+            # The original Nyquist bin represents both frequency signs.
+            # Upsampling moves it inside the band, where irfft adds its mirror.
+            padded[len(spec) - 1] *= 0.5
         y = np.fft.irfft(padded, len(s) * oversample)
         worst = max(worst, 20 * np.log10(np.max(np.abs(y)) + 1e-30))
     return worst
