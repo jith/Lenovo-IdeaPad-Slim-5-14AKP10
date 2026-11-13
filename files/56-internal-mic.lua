@@ -58,9 +58,12 @@ SimpleEventHook {
       available = available and available:parse () or {}
       for _, props in ipairs (available) do
         -- A source that is really a source was chosen on merit. Sink monitors
-        -- are in the candidate list only because they have output ports.
+        -- are in the candidate list only because they have output ports, and
+        -- a filter's output -- Voice Isolation -- carries a link group and is
+        -- only ever picked on purpose, which the configured check below keeps.
         if props ["node.name"] == selected
-            and props ["media.class"] ~= "Audio/Sink" then
+            and props ["media.class"] ~= "Audio/Sink"
+            and props ["node.link-group"] == nil then
           return
         end
       end

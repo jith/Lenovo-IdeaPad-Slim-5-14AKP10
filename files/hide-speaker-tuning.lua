@@ -46,13 +46,17 @@ ONBOARD_CARD = "alsa_card.pci-0000_04_00.6"
 -- The built-in mic's loopback capture is plumbing too, and it is a recording
 -- stream: shown, it lit GNOME's microphone indicator permanently, with the mic
 -- suspended (24 Sep 2026). Whoever really records from internal-mic has a stream
--- of its own, which stays visible and lights it.
+-- of its own, which stays visible and lights it. Voice Isolation's capture is
+-- the same case.
 nodes_om = ObjectManager {
   Interest { type = "node",
     Constraint { "node.name", "matches", "effect_output.*" },
   },
   Interest { type = "node",
     Constraint { "node.name", "equals", "internal-mic.capture" },
+  },
+  Interest { type = "node",
+    Constraint { "node.name", "equals", "voice-isolation.capture" },
   },
 }
 

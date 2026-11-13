@@ -40,6 +40,12 @@ SYNC_SCRIPT_OLD=/usr/local/share/wireplumber/scripts/54-volume-sync.lua
 MIC_SOURCE_DEST=/etc/pipewire/pipewire.conf.d/56-internal-mic-source.conf
 MIC_CONF_DEST=/etc/wireplumber/wireplumber.conf.d/56-internal-mic.conf
 MIC_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/56-internal-mic.lua
+# Voice Isolation, a second built-in microphone with everything but the voice
+# removed. The plugin is compiled here from plugins/voice-isolation, and the
+# graph runs in the filter-chain process, away from the speaker DSP.
+VI_SRC="$ROOT_DIR/plugins/voice-isolation/voice_isolation.c"
+VI_PLUGIN_DEST=/usr/local/lib/ladspa/speaker-dsp-voice-isolation.so
+VI_CONF_DEST=/etc/pipewire/filter-chain.conf.d/57-voice-isolation.conf
 BT_SCRIPT_DEST=/usr/local/bin/speaker-dsp-bt-disconnect
 BT_UNIT_DEST=/etc/systemd/system/speaker-dsp-bt-disconnect.service
 BT_SLEEP_DEST=/usr/lib/systemd/system-sleep/55-speaker-dsp-bt
@@ -47,7 +53,7 @@ EXT_UNIT_OLD=/etc/systemd/user/external-dsp.service
 
 print_user_restart_instructions() {
     echo "For each logged-in user, run:"
-    echo "  systemctl --user restart pipewire pipewire-pulse wireplumber"
+    echo "  systemctl --user restart pipewire pipewire-pulse wireplumber filter-chain"
 }
 
 uninstall() {
@@ -68,6 +74,8 @@ uninstall() {
         "$MIC_SOURCE_DEST" \
         "$MIC_CONF_DEST" \
         "$MIC_SCRIPT_DEST" \
+        "$VI_PLUGIN_DEST" \
+        "$VI_CONF_DEST" \
         "$BT_SCRIPT_DEST" \
         "$BT_UNIT_DEST" \
         "$BT_SLEEP_DEST" \
@@ -147,6 +155,18 @@ install_filter() {
         echo "missing microphone script: $FILES_DIR/56-internal-mic.lua" >&2
         exit 1
     }
+    [ -f "$VI_SRC" ] || {
+        echo "missing Voice Isolation source: $VI_SRC" >&2
+        exit 1
+    }
+    [ -f "$FILES_DIR/57-voice-isolation.conf" ] || {
+        echo "missing Voice Isolation config: $FILES_DIR/57-voice-isolation.conf" >&2
+        exit 1
+    }
+    command -v cc >/dev/null 2>&1 && [ -f /usr/include/ladspa.h ] || {
+        echo "Voice Isolation is built here: install a C compiler and ladspa-sdk" >&2
+        exit 1
+    }
     [ -f "$FILES_DIR/55-bt-disconnect" ] || {
         echo "missing Bluetooth teardown script: $FILES_DIR/55-bt-disconnect" >&2
         exit 1
@@ -179,6 +199,13 @@ install_filter() {
     install -D -m644 "$FILES_DIR/56-internal-mic.conf" "$MIC_CONF_DEST"
     install -D -m644 "$FILES_DIR/56-internal-mic.lua" "$MIC_SCRIPT_DEST"
 
+    # Built in a scratch directory, so nothing root-owned is left in the tree.
+    VI_BUILD=$(mktemp -d)
+    cc -O2 -Wall -fPIC -shared -o "$VI_BUILD/voice_isolation.so" "$VI_SRC" -lm
+    install -D -m644 "$VI_BUILD/voice_isolation.so" "$VI_PLUGIN_DEST"
+    rm -rf "$VI_BUILD"
+    install -D -m644 "$FILES_DIR/57-voice-isolation.conf" "$VI_CONF_DEST"
+
     # The chains are per CLASS of output, not per device, so this expands to the
     # same file every time and can be generated here rather than by hand or by
     # the user. One copy of 150 lines of measured settings, two chains built
@@ -206,6 +233,7 @@ install_filter() {
     echo "Installed the fourteen-stage Speaker DSP filter chain (internal)"
     echo "and the six-stage External (Tuning) chain for every other output."
     echo "The built-in analog microphone is the default source, and browsers list it."
+    echo "Built-in Microphone (Voice Isolation) is offered beside it."
     print_user_restart_instructions
 }
 
