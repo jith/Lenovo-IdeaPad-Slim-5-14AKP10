@@ -652,6 +652,108 @@ arecord -D default -d 3 -f S16_LE -r 16000 -c 1 /tmp/m.wav &&
   ffmpeg -i /tmp/m.wav -af astats -f null - 2>&1 | grep -m1 'DC offset'   # near 0
 ```
 
+### Voice Isolation: a second built-in microphone
+
+**Built-in Microphone (Voice Isolation)** sits beside the plain one in GNOME,
+in the browser and in every app. It keeps the voice of the person at the laptop
+and takes everything else toward silence, like the iPhone's Voice Isolation mic
+mode. Pick it per app, or in GNOME's input menu; the choice sticks.
+
+It is `plugins/voice-isolation/voice_isolation.c`, a LADSPA plugin written for
+this machine, with no neural network. `install.sh` compiles it into
+`/usr/local/lib/ladspa/`, and `files/57-voice-isolation.conf` runs it from
+`/etc/pipewire/filter-chain.conf.d/`: the separate filter-chain process, with
+its own thread, so the speaker DSP never waits on it. It takes both capsules.
+
+Per 21 ms frame it:
+
+- **follows the noise**, per frequency, whenever speech is improbable there;
+- **finds the voice at the laptop**: a pitch (YIN, on a 300 Hz – 1.5 kHz copy)
+  lasting 32 ms, loud enough to be the person at the laptop, with the two
+  capsules agreeing. Loudness and agreement are what separate the user from
+  people talking elsewhere in the house; duration is what separates a voice
+  from a keyboard click. A voice opens a speech region 32 ms early (lookahead),
+  held 250 ms after, so the consonants around the vowels survive;
+- **inside the region** removes noise under the voice by *Strength*;
+- **outside it** gates to *Silence depth* below the input.
+
+| control | default | meaning |
+|---|---|---|
+| Strength | 0.5 | noise removed from *under* the voice: none at 0, up to 20 dB at 1 |
+| Silence depth (dB) | 60 | how far the pauses go down |
+| Reach (dB) | 0 | raise if sitting farther back cuts you out; lower if people farther away get through |
+| Bypass | off | transparent, same delay |
+
+Measured 24 Sep 2026. On the user's own takes, 15 s each:
+
+| take | passed |
+|---|---|
+| their voice at the laptop | 99.8% of speech frames |
+| other people talking elsewhere in the house | 3.4% of frames |
+
+On synthetic scenes with a known answer: clean espeak speech at −34 dBFS, the
+same in both capsules as a near, centred voice is, over this room's own
+two-capsule noise. DeepFilterNet 3, a neural network, is the reference:
+
+| scene | voice SI-SDR gain, this | DeepFilterNet | pauses, input | this | DeepFilterNet |
+|---|---|---|---|---|---|
+| room as recorded | +0.6 dB | +2.1 | −50.9 dBFS | −65.8 | −69.2 |
+| room +12 dB (loud fan) | +1.7 | +5.7 | −38.9 | −44.9 | −45.0 |
+| room + keyboard | +0.7 | +2.3 | −49.6 | −56.6 | −77.0 |
+| room + music −12 dB | +1.4 | +5.6 | −44.1 | −49.0 | −69.1 |
+
+"Pauses" are more than 150 ms from speech, so they include the 250 ms hold.
+What the network does and this cannot is remove sound *under* the voice, and
+it is better with music and keyboard between words.
+
+| | this | DeepFilterNet |
+|---|---|---|
+| CPU while recording | 2% of one cycle's budget (`pw-top`), 1.4% of a core offline | 14% of a core |
+| memory | +4 MB | +169 MB, resident even when idle |
+| latency | 53 ms | 20 ms |
+| idle | suspended, no CPU | suspended, no CPU |
+
+What did not work, each measured:
+
+- **Test speech at the wrong level, again** (see *Test material*): the first
+  thresholds were tuned on espeak at −30 dBFS, 12–15 dB louder than a real
+  voice at this mic. On the user's voice they fired on 1% of frames, gating
+  them out while passing far voices. Every threshold is now set on the user's
+  own labelled takes, `tools/voice-isolation-ab.sh near.wav` and `far.wav`.
+- **Mono room noise in a stereo test** hid the capsule-agreement cue: copied to
+  both channels, the room agrees perfectly, which a real room never does.
+- **An 80 Hz high-pass** cost 10.1 dB of SI-SDR on clean speech by itself: it
+  shifts the phase of a low voice's fundamental. Removed.
+- **Minimum-statistics noise tracking** (MCRA) read this room's noise 2.6x low,
+  and the unbiased SPP estimator that replaced it still reads 6.8 dB low: the
+  fan swells and fades, and its loud moments are taken for speech. The gain
+  uses it; the voice detector does not rely on it.
+- **Pitch from the spectrum** caught 0% of speech frames at 1% false alarms.
+  The room's noise is a few loud steady tones at 160–240 Hz, which every
+  power-domain measure calls periodic, and 47 Hz bins cannot resolve a low
+  voice's harmonics. The cepstrum reached 27%; YIN on the band-limited copy is
+  what works.
+- **A looser pitch bar alone** (0.4) caught the user's voice but opened 81% of
+  keyboard pauses: a click is loud, near and coherent. Requiring 32 ms of voice
+  brought that to 8%.
+- **The level floor** once started from a frame that was mostly zeros and held
+  the gate open for a minute. It now waits for a full frame and has a limit.
+
+Limits: sound that coincides with speech gets through; music opens the region
+more often than keyboard does, since it is pitched and sustained; a soft
+consonant starting a phrase can be softened, since 32 ms is all the lookahead
+(64 ms bought back only 1.5% more speech). Loudness depends on distance, so
+someone sitting well back may need Reach raised.
+
+Hear it on your own voice:
+
+```sh
+tools/voice-isolation-ab.sh      # 25 s; writes raw-then-processed voice-isolation-ab.wav
+```
+
+Its capture stream is hidden from GNOME, like `internal-mic.capture`, so the
+microphone indicator lights only for an app that really records.
+
 ## Sample rate is pinned
 
 Stages 2 and 11 use `bq_raw`, which takes raw biquad coefficients. Those are
