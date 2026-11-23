@@ -46,6 +46,11 @@ MIC_SCRIPT_DEST=/usr/local/share/wireplumber/scripts/56-internal-mic.lua
 VI_SRC="$ROOT_DIR/plugins/voice-isolation/voice_isolation.c"
 VI_PLUGIN_DEST=/usr/local/lib/ladspa/speaker-dsp-voice-isolation.so
 VI_CONF_DEST=/etc/pipewire/filter-chain.conf.d/57-voice-isolation.conf
+BASS_SRC_DIR="$ROOT_DIR/plugins/speaker-bass"
+BASS_PLUGIN_DEST=/usr/local/lib/ladspa/speaker-dsp-bass.so
+BASS_SWITCH_DEST=/usr/local/bin/speaker-bass
+BASS_UI_DEST=/usr/local/share/speaker-dsp/speaker-bass-switch.py
+BASS_DESKTOP_DEST=/usr/local/share/applications/speaker-bass.desktop
 BT_SCRIPT_DEST=/usr/local/bin/speaker-dsp-bt-disconnect
 BT_UNIT_DEST=/etc/systemd/system/speaker-dsp-bt-disconnect.service
 BT_SLEEP_DEST=/usr/lib/systemd/system-sleep/55-speaker-dsp-bt
@@ -76,6 +81,10 @@ uninstall() {
         "$MIC_SCRIPT_DEST" \
         "$VI_PLUGIN_DEST" \
         "$VI_CONF_DEST" \
+        "$BASS_PLUGIN_DEST" \
+        "$BASS_SWITCH_DEST" \
+        "$BASS_UI_DEST" \
+        "$BASS_DESKTOP_DEST" \
         "$BT_SCRIPT_DEST" \
         "$BT_UNIT_DEST" \
         "$BT_SLEEP_DEST" \
@@ -93,6 +102,16 @@ uninstall() {
     echo "Removed the system-wide Speaker DSP files."
     print_user_restart_instructions
 }
+
+install_plugins() (
+    # Build both plugins before publishing a graph that requires them.
+    build_dir=$(mktemp -d)
+    trap 'rm -rf -- "$build_dir"' EXIT
+    cc -O2 -Wall -fPIC -shared -o "$build_dir/voice_isolation.so" "$VI_SRC" -lm
+    "$BASS_SRC_DIR/build.sh" "$build_dir/speaker-bass.so"
+    install -D -m644 "$build_dir/voice_isolation.so" "$VI_PLUGIN_DEST"
+    install -D -m644 "$build_dir/speaker-bass.so" "$BASS_PLUGIN_DEST"
+)
 
 install_filter() {
     [ -f "$FILES_DIR/50-speaker-tuning.conf" ] || {
@@ -115,6 +134,12 @@ install_filter() {
         echo "missing speaker switch helper: $FILES_DIR/speaker-dsp" >&2
         exit 1
     }
+    for file in speaker-bass speaker-bass-switch.py speaker-bass.desktop; do
+        [ -f "$FILES_DIR/$file" ] || {
+            echo "missing bass switch file: $FILES_DIR/$file" >&2
+            exit 1
+        }
+    done
     [ -f "$FILES_DIR/52-external-tuning.conf" ] || {
         echo "missing external filter config: $FILES_DIR/52-external-tuning.conf" >&2
         exit 1
@@ -164,7 +189,7 @@ install_filter() {
         exit 1
     }
     command -v cc >/dev/null 2>&1 && [ -f /usr/include/ladspa.h ] || {
-        echo "Voice Isolation is built here: install a C compiler and ladspa-sdk" >&2
+        echo "Install a C compiler and ladspa-sdk to build the audio plugins." >&2
         exit 1
     }
     [ -f "$FILES_DIR/55-bt-disconnect" ] || {
@@ -181,6 +206,10 @@ install_filter() {
     # everything processed twice, by two chains tuned for different speakers.
     # Refuse to install the filter without its script.
 
+    install_plugins
+    install -D -m755 "$FILES_DIR/speaker-bass" "$BASS_SWITCH_DEST"
+    install -D -m755 "$FILES_DIR/speaker-bass-switch.py" "$BASS_UI_DEST"
+    install -D -m644 "$FILES_DIR/speaker-bass.desktop" "$BASS_DESKTOP_DEST"
     install -D -m644 "$FILES_DIR/50-speaker-tuning.conf" "$FILTER_DEST"
     install -D -m644 "$FILES_DIR/50-hide-speaker-tuning.conf" "$HIDE_CONF_DEST"
     install -D -m644 "$FILES_DIR/51-speaker-sink-priority.conf" "$PRIORITY_CONF_DEST"
@@ -199,11 +228,6 @@ install_filter() {
     install -D -m644 "$FILES_DIR/56-internal-mic.conf" "$MIC_CONF_DEST"
     install -D -m644 "$FILES_DIR/56-internal-mic.lua" "$MIC_SCRIPT_DEST"
 
-    # Built in a scratch directory, so nothing root-owned is left in the tree.
-    VI_BUILD=$(mktemp -d)
-    cc -O2 -Wall -fPIC -shared -o "$VI_BUILD/voice_isolation.so" "$VI_SRC" -lm
-    install -D -m644 "$VI_BUILD/voice_isolation.so" "$VI_PLUGIN_DEST"
-    rm -rf "$VI_BUILD"
     install -D -m644 "$FILES_DIR/57-voice-isolation.conf" "$VI_CONF_DEST"
 
     # The chains are per CLASS of output, not per device, so this expands to the
@@ -230,7 +254,7 @@ install_filter() {
     systemctl daemon-reload >/dev/null 2>&1 || true
     systemctl enable --now speaker-dsp-bt-disconnect.service >/dev/null 2>&1 || true
 
-    echo "Installed the fourteen-stage Speaker DSP filter chain (internal)"
+    echo "Installed Speaker DSP with switchable bass on the internal speakers"
     echo "and the six-stage External (Tuning) chain for every other output."
     echo "The built-in analog microphone is the default source, and browsers list it."
     echo "Built-in Microphone (Voice Isolation) is offered beside it."

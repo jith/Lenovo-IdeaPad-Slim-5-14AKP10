@@ -6,11 +6,13 @@
     tools/offline-chain.py --bands IN.wav [--set ...]
     tools/offline-chain.py --sweep s10mbc:g_out=2.05,2.20,2.40,2.60,2.80 IN.wav
     tools/offline-chain.py --self-test
+    tools/offline-chain.py --bass-test        # full graph, synthetic three-tone IMD
     tools/offline-chain.py --verify            # against the committed captures
 
 The graph is read from files/50-speaker-tuning.conf every run, so this cannot
 drift from what is installed. Builtins are numpy; stages 7, 10, 11 and 12 are
-the real LSP binaries driven through ffmpeg.
+the real LSP binaries driven through ffmpeg. The bass processor is built from
+the sources in this checkout and run through ffmpeg's LADSPA host.
 
 WHAT THIS IS FOR. Sweeping a parameter forty times to find where a limit
 actually is, then confirming the one value you chose on hardware. It is not a
@@ -48,7 +50,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dsp_offline import (RATE, LV2_URI, _rbj, _biquad_fast, dcblock, delay,
                          lv2, lufs, parse_config, read_wav, sample_peak_db,
-                         thd_percent, true_peak_db, write_wav)
+                         speaker_bass, thd_percent, true_peak_db, write_wav)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG = os.path.join(ROOT, "files", "50-speaker-tuning.conf")
@@ -74,6 +76,9 @@ def run_node(node, name, inputs):
     """
     label, ctrl = node["label"], node["control"]
     first = inputs[min(inputs)]
+
+    if node["kind"] == "ladspa" and label == "music_and_subbass":
+        return speaker_bass(inputs, ctrl["Strength"])
 
     if label == "mult":
         out = np.ones_like(first)
@@ -148,6 +153,9 @@ def port_index(nodes, name, port, side):
     from its audio, so it is enough to keep builtins numbered as written and
     LSP ports in l,r then sidechain l,r order.
     """
+    if nodes[name]["label"] == "music_and_subbass":
+        ports = ("Left", "Right", "Body L", "Body R") if side == "in" else ("Cue", "Music L", "Music R")
+        return ports.index(port)
     if port.startswith(("In ", "Out ")):
         return int(port.split()[1]) - 1
     order = {"in_l": 0, "in_r": 1, "sc_l": 2, "sc_r": 3,
@@ -349,6 +357,32 @@ def bands(x, y):
     return 0
 
 
+def bass_test(config):
+    """Measure limiter sidebands on a loud bass chord at unity playback volume."""
+    from imd import imd_percent
+
+    t = np.arange(4 * RATE) / RATE
+    chord = (0.52 * np.sin(2 * np.pi * 75 * t)
+             + 0.30 * np.sin(2 * np.pi * 450 * t + 0.2)
+             + 0.18 * np.sin(2 * np.pi * 2650 * t + 0.5))
+    fade = np.clip(np.minimum(t, 4 - t) / 0.05, 0, 1)
+    mono = chord * (10 ** (-3 / 20) / np.abs(chord).max()) * fade
+    padded = np.pad(mono, (RATE // 4, RATE // 2))
+    x = np.column_stack([padded, padded])
+
+    results = {}
+    previous = ["s12brick:alr=0", "s12brick:knee=1"]
+    for label, overrides in (("Previous limiter", previous), ("Preset", [])):
+        y = process(x, *build_graph(config, overrides))
+        # imd_percent discards its first 0.3 seconds. Measure seconds 1 to 3.
+        imd = imd_percent(y[7 * RATE // 10:3 * RATE], f_lo=75)
+        peak = true_peak_db(y)
+        print(f"{label:<17} {imd:6.3f}% IMD  {peak:+.3f} dBTP")
+        results[label] = (imd, peak)
+    preset_imd, preset_peak = results["Preset"]
+    return 0 if preset_imd < results["Previous limiter"][0] and preset_peak <= -0.2 else 1
+
+
 def self_test():
     """Everything that can be checked without hardware or LSP binaries."""
     ok = fail = 0
@@ -433,12 +467,29 @@ def self_test():
     # hardcoded on purpose: they are the guard that catches a node added to the
     # config and not to the stage table.
     nodes, links = parse_config(CONFIG)
-    check("node count", len(nodes), 118, 0)
-    check("link count", len(links), 212, 0)
+    check("node count", len(nodes), 119, 0)
+    check("link count", len(links), 220, 0)
     check("bq_raw coefficients parsed", nodes["s2lt_l"]["control"]["b0"], 0.9618034723, 1e-9)
     for name in ("s0trim_l", "s2lt_l", "s10mbc", "s10rbp_l", "s10rdyn_l", "s10rsum_l", "s10pbp_l",
                  "s10pdyn_l", "s10psum_l", "s11xcur", "s12lp_l", "s12brick"):
         check(f"{name} present", 1.0 if name in nodes else 0.0, 1.0, 0)
+
+    # Exercise the real LADSPA ports. The isolated note drives only the mono
+    # cue; the bass chord opens the stereo send, with audio on the right only.
+    t = np.arange(2 * RATE) / RATE
+    sub = 0.25 * np.sin(2 * np.pi * 25 * t)
+    body = 0.21 * np.sin(2 * np.pi * 450 * t)
+    chord = body + 0.21 * np.sin(2 * np.pi * 75 * t)
+    zero = np.zeros_like(t)
+    strength = nodes["trialbass"]["control"]["Strength"]
+    cue = speaker_bass({0: sub, 1: sub, 2: zero, 3: zero}, strength)
+    check("25 Hz opens harmonic cue", float(np.max(np.abs(cue[0][RATE:])) > 0.01), 1, 0)
+    ports = {0: chord, 1: chord, 2: zero, 3: body}
+    music = speaker_bass(ports, strength)
+    check("right-only music send", float(np.max(np.abs(music[2][RATE:])) > 0.1), 1, 0)
+    check("silent left music send", np.max(np.abs(music[1])), 0, 0)
+    off = speaker_bass(ports, 0)
+    check("bass off silences every send", max(np.max(np.abs(v)) for v in off.values()), 0, 0)
 
     # Run the whole graph with the LSP stages bypassed. This does not check the
     # LSP stages -- nothing without their binaries can -- but it does check that
@@ -449,7 +500,7 @@ def self_test():
     try:
         t = np.arange(RATE // 2) / RATE
         tone = np.stack([np.sin(2 * np.pi * 90 * t) * 0.5] * 2, 1)
-        muted = build_graph(overrides=["s8sum_l:Gain 3=0.0", "s8sum_r:Gain 3=0.0"])
+        muted = build_graph(overrides=["s8sum_l:Gain 3=0.0", "s8sum_r:Gain 3=0.0", "trialbass:Strength=0"])
         y = process(tone, *muted)
         check("full graph runs, output length", float(len(y)), float(len(tone)), 0)
         check("no NaN or inf in output", float(np.isfinite(y).all()), 1.0, 0)
@@ -574,6 +625,7 @@ def main():
                     help="also report THD, for a pure-tone input at HZ")
     ap.add_argument("--config", default=CONFIG)
     ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--bass-test", action="store_true")
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--compare-dir", metavar="DIR",
                     help="LUFS and true peak for every baseline/current pair "
@@ -583,6 +635,8 @@ def main():
 
     if args.self_test:
         return self_test()
+    if args.bass_test:
+        return bass_test(args.config)
     if args.verify:
         return verify()
     if args.compare_dir:

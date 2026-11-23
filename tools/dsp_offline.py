@@ -21,9 +21,13 @@ without anyone noticing. If the config changes, this follows it.
 I/O goes through ffmpeg as float32, matching pw-record, so nothing requantises.
 """
 
+import functools
 import json
+import os
+from pathlib import Path
 import re
 import subprocess
+import tempfile
 
 import numpy as np
 
@@ -245,6 +249,28 @@ def lv2(x, uri, controls, rate=RATE, sidechain=None):
     return np.frombuffer(proc.stdout, "<f4").reshape(-1, out_nch).astype(np.float64)
 
 
+@functools.lru_cache(maxsize=1)
+def _bass_build():
+    """Use the source in this checkout even when another preset is installed."""
+    directory = tempfile.TemporaryDirectory(prefix="speaker-dsp-bass-")
+    build = Path(__file__).resolve().parents[1] / "plugins/speaker-bass/build.sh"
+    subprocess.run([build, Path(directory.name) / "speaker-dsp-bass.so"], check=True)
+    return directory
+
+
+def speaker_bass(inputs, strength):
+    """Run the LADSPA processor. FFmpeg packs audio ports in descriptor order."""
+    x = np.column_stack([inputs[i] for i in range(4)])
+    proc = subprocess.run(
+        ["ffmpeg", "-v", "error", "-f", "f32le", "-ar", str(RATE), "-ac", "4",
+         "-i", "-", "-af", f"ladspa=f=speaker-dsp-bass:p=music_and_subbass:c={strength}",
+         "-f", "f32le", "-"],
+        env={**os.environ, "LADSPA_PATH": _bass_build().name},
+        input=x.astype("<f4").tobytes(), stdout=subprocess.PIPE, check=True)
+    y = np.frombuffer(proc.stdout, "<f4").reshape(len(x), 3).astype(np.float64)
+    return {i: y[:, i] for i in range(3)}
+
+
 # -- config parsing ----------------------------------------------------------
 #
 # SPA-JSON as the filter-chain module writes it: unquoted keys, `=` or `:`,
@@ -255,7 +281,7 @@ def lv2(x, uri, controls, rate=RATE, sidechain=None):
 _COMMENT = re.compile(r"#.*?$", re.M)
 _CONTROL = re.compile(r"\"?([\w() .]+?)\"?\s*[:=]\s*(-?[\d.eE+-]+)")
 _LINK = re.compile(r"\{\s*output\s*=\s*\"([^\"]+)\"\s+input\s*=\s*\"([^\"]+)\"\s*\}")
-_NODE_START = re.compile(r"\{\s*type\s*=\s*(builtin|lv2)\b")
+_NODE_START = re.compile(r"\{\s*type\s*=\s*(builtin|lv2|ladspa)\b")
 
 
 def _balanced(text, start):
