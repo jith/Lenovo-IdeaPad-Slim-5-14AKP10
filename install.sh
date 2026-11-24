@@ -134,12 +134,6 @@ install_filter() {
         echo "missing speaker switch helper: $FILES_DIR/speaker-dsp" >&2
         exit 1
     }
-    for file in speaker-bass speaker-bass-switch.py speaker-bass.desktop; do
-        [ -f "$FILES_DIR/$file" ] || {
-            echo "missing bass switch file: $FILES_DIR/$file" >&2
-            exit 1
-        }
-    done
     [ -f "$FILES_DIR/52-external-tuning.conf" ] || {
         echo "missing external filter config: $FILES_DIR/52-external-tuning.conf" >&2
         exit 1
@@ -207,10 +201,9 @@ install_filter() {
     # Refuse to install the filter without its script.
 
     install_plugins
-    install -D -m755 "$FILES_DIR/speaker-bass" "$BASS_SWITCH_DEST"
-    install -D -m755 "$FILES_DIR/speaker-bass-switch.py" "$BASS_UI_DEST"
-    install -D -m644 "$FILES_DIR/speaker-bass.desktop" "$BASS_DESKTOP_DEST"
     install -D -m644 "$FILES_DIR/50-speaker-tuning.conf" "$FILTER_DEST"
+    # Earlier releases installed a separate bass switch and desktop launcher.
+    rm -f -- "$BASS_SWITCH_DEST" "$BASS_UI_DEST" "$BASS_DESKTOP_DEST"
     install -D -m644 "$FILES_DIR/50-hide-speaker-tuning.conf" "$HIDE_CONF_DEST"
     install -D -m644 "$FILES_DIR/51-speaker-sink-priority.conf" "$PRIORITY_CONF_DEST"
     install -D -m644 "$FILES_DIR/hide-speaker-tuning.lua" "$HIDE_SCRIPT_DEST"
@@ -254,7 +247,7 @@ install_filter() {
     systemctl daemon-reload >/dev/null 2>&1 || true
     systemctl enable --now speaker-dsp-bt-disconnect.service >/dev/null 2>&1 || true
 
-    echo "Installed Speaker DSP with switchable bass on the internal speakers"
+    echo "Installed Speaker DSP with bass enhancement on the internal speakers"
     echo "and the six-stage External (Tuning) chain for every other output."
     echo "The built-in analog microphone is the default source, and browsers list it."
     echo "Built-in Microphone (Voice Isolation) is offered beside it."

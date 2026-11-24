@@ -9,10 +9,8 @@ set to bypass-equivalent values — so that coefficients could be dropped in one
 stage at a time without ever debugging topology and tuning at once. Each stage
 was then enabled and verified on hardware individually.
 
-**All fourteen stages are live.** The built-in speakers also have a switchable
-bass enhancement, enabled by default. Open **Speaker Bass** or run
-`speaker-bass toggle` to compare it on the same passage. The switch remembers
-your choice across restarts.
+**All fourteen stages are live.** Bass enhancement runs automatically whenever
+audio plays through **Speaker (Tuning)** on the built-in speakers.
 
 ## System and speakers
 
@@ -49,7 +47,7 @@ processor shares its detector and sustained-note cue across the stereo pair.
 | 10 | Multiband compressor | `s10mbc` | **LSP GOTT Compressor** | 120/1000/6000 Hz, `ebe = 1`, `mode = 1`, **`lkahead = 0`**, downward thresholds −20/−15/−9/−9 dB, `g_out` **+14.81 dB**, `mk_2` **0.00 dB**, `mk_3` −3.17 dB, `mk_4` −6.15 dB | **active** — the only loudness lever, and now the only voicing control too. `mk_3`/`mk_4` carry the 14 Aug −1.5 dB **tilt** correction plus a further matched −4.65 dB, taken in four steps on 1 and 4 Sep 2026 to hold the tilt through stage 11 going multiband and through `g_out` 3.80 → 4.25 → 5.50 → 6.50 — **sized at the listening level, not at unity**; `g_out` came back to **5.50** on 6 Sep 2026 when the makeup was found to be feeding stage 12 a 3.4% IMD knee above 90% volume, see *The distortion above 80% is stage 12*, see *The tilt correction is level-dependent*; `mk_2` was **removed** 14 Aug 2026, its job handed to stage 10b. `lkahead` was defaulting to 5 ms and costing the whole latency budget | US12342139B2 |
 | 10b | Resonance notch | `s10rbp_*`, `s10rdyn_*`, `s10rneg_*`, `s10rsum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + `invert` + `mixer` | branch 760 Hz Q 1.4262 → **Qbp 2.4245**, anchor **−5.5 dB** (`Gain 2` = 0.4691156), `cr` **1.0** | **active** — since 14 Aug 2026 the *second and last* instrument aimed at the 761 Hz resonance, after stage 2. **Rebuilt as a parallel bandpass 2 Sep 2026 and deepened −3.7 → −5.5**, which is where the frozen Qbp runs out and close to the 4.7 dB residual the A/B measured. The branch compressor is a **wire, by measurement** — both directions were swept and neither has a job, because stages 11–12's give-back is keyed on broadband level, not on 760 Hz | — |
 | 10c | Presence lift | `s10pbp_*`, `s10pdyn_*`, `s10psum_*` | builtin `bq_bandpass` + LSP `compressor_mono` + builtin `mixer` | 2650 Hz, Q 1.4262 branch, `cr` 4.0, `al` −20 dBFS, `rt` 300 ms, branch gain 0.5849 | **active, and dynamic since 1 Sep 2026** — a parallel bandpass with a compressed branch, which is exactly a `bq_peaking` Q 1.2 whose Gain moves between about +2.3 and +4.0 dB. Anchored at the *fitted* +4.0 rather than frozen at the +3.0 the static version had to accept. Delivers **+0.73 dB** more at 2500 Hz than the static bell **and 22% less two-tone IMD**, confirmed on hardware | — |
-| 10d | Switchable bass | `trialbass`, `s10psum_*` | LADSPA `music_and_subbass` | Shared cue for sustained low notes and stereo music sends centred at 225 and 433 Hz | **On by default**, `Strength = 0.055`. Both sends feed stage 11. | — |
+| 10d | Bass enhancement | `trialbass`, `s10psum_*` | LADSPA `music_and_subbass` | Shared cue for sustained low notes and stereo music sends centred at 225 and 433 Hz | `Strength = 0.055`. Both sends feed stage 11. | — |
 | 11 | Excursion limiter | `s11hx_*`, `s11xcur` | `bq_lowpass` estimate → **LSP sidechain MULTIBAND comp** | Hx = lowpass 761 Hz Q 2.63; threshold **−5.04 dBFS** on the estimate (`al_0` 0.560), **band 0 only, split 1 kHz** | **active**, works on ordinary music, and the `Hx` shape is now confirmed acoustically — 800 Hz is the only frequency where the drivers compress. **Multiband since 1 Sep 2026**: a cone has one displacement and it is a low-frequency quantity, so ducking 3 kHz was collateral, not protection | US12445775B2, CN115442709B |
 | 12a | Band limit | `s12lp_*` | builtin `bq_lowpass` | 22 kHz, Q 0.707 | **active** — buys 0.66 dB of true peak for 0.10 LU on pink | — |
 | 12 | Brickwall | `s12brick` | LSP Limiter | Threshold 0.9287, 1 ms lookahead, `ovs = 22` | **Active** with automatic level regulation, 160 ms attack, 800 ms release and knee 1.6. Digital distortion measurements appear under *Bass enhancement*. | — |
@@ -105,7 +103,7 @@ All fourteen stages and what each one is for. Node-level detail follows below.
                                 branch compressor live (cr = 4.0)
                                 both from the iPhone 13 A/B, both after
                                 GOTT so no band makeup can drift them
-        [10d] switchable bass   mono harmonic cue + stereo upper-bass send
+        [10d] bass enhancement  mono harmonic cue + stereo upper-bass send
          [11] excursion limit   sidechain = Hx displacement estimate
                                 (low-pass 761 Hz Q2.63), -3 dBFS 6:1
         [12a] band limit        low-pass 22 kHz Q0.707 -- first unblocked g_out
@@ -351,8 +349,7 @@ Five places. Each is a decision, not an accident.
 
 The installer builds the audio plugins using a C compiler and the LADSPA
 headers (`build-essential` and `ladspa-sdk` on Ubuntu). The speaker graph
-uses LSP LV2 plugins. The bass command uses Python 3, PipeWire utilities
-and `pactl`. The desktop switch also uses `python3-gi` and `gir1.2-gtk-4.0`.
+uses LSP LV2 plugins.
 
 ```sh
 cd ~/speaker-dsp
@@ -375,23 +372,13 @@ load and the journal has the reason. Remove with `sudo sh install.sh uninstall`.
 
 ### Bass enhancement
 
-Select **Speaker (Tuning)** and open **Speaker Bass** from the applications menu,
-or use the terminal while the same passage plays.
-
-```sh
-speaker-bass on
-speaker-bass off
-speaker-bass toggle
-speaker-bass status
-```
-
-The switch controls the extra bass on the built-in speakers. It defaults to On
-and saves your preference in `$XDG_STATE_HOME/speaker-dsp/bass`
-(usually `~/.local/state/speaker-dsp/bass`). On music, the processor emphasises
+PipeWire loads the enhancement with the built-in speaker profile at startup.
+Headphones and external speakers use their own audio paths.
+On music, the processor emphasises
 existing upper-bass content when low notes are present. For an isolated,
 sustained 25 Hz note, it adds audible harmonics. With a 0.06-peak 25 Hz input,
 a PipeWire test capture measured a 50 dB increase at 75 Hz and the same level
-at the 25 Hz fundamental in both settings. The effect varies with the recording.
+at the 25 Hz fundamental compared with the unenhanced signal. The effect varies with the recording.
 
 Both bass sends pass through the excursion limiter and final peak limiter.
 The final limiter uses automatic level regulation to reduce the treble

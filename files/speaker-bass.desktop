@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Speaker Bass
-Comment=Switch bass enhancement on the built-in speakers
-Icon=audio-speakers
-Exec=/usr/bin/python3 /usr/local/share/speaker-dsp/speaker-bass-switch.py
-Terminal=false
-Categories=AudioVideo;Audio;
-StartupWMClass=local.speaker.Bass
